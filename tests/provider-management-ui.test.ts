@@ -8,10 +8,21 @@
 
 import { describe, test, expect, beforeEach, afterEach, beforeAll, afterAll } from "bun:test"
 
+import {
+  formatDangerousTestSkipMessage,
+  RUN_DANGEROUS_TESTS,
+} from "./test-config"
 import { startUITestServer } from "./ui-test-server"
 
 let BASE = ""
 let stopServer: (() => Promise<void>) | null = null
+const dangerousDescribe = RUN_DANGEROUS_TESTS ? describe : describe.skip
+
+if (!RUN_DANGEROUS_TESTS) {
+  console.warn(
+    formatDangerousTestSkipMessage("tests/provider-management-ui.test.ts"),
+  )
+}
 
 // Helper functions for API calls
 async function get(path: string) {
@@ -69,7 +80,7 @@ const TEST_ANTIGRAVITY_CONFIG = {
   clientSecret: "test-client-secret",
 }
 
-describe("Provider Management UI Operations", () => {
+dangerousDescribe("Provider Management UI Operations", () => {
   let createdProviders: Array<string> = []
 
   beforeAll(async () => {

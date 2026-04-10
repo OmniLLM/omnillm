@@ -114,9 +114,16 @@ func handleResponses(c *gin.Context) {
 			Msg("Trying provider for Responses API request")
 
 		remappedModel := adapter.RemapModel(canonicalRequest.Model)
-		if remappedModel != canonicalRequest.Model {
-			canonicalRequest.Model = remappedModel
-		}
+		log.Debug().
+			Str("request_id", requestIDStr).
+			Str("provider", provider.GetInstanceID()).
+			Str("api_shape", "responses").
+			Str("inbound_path", c.FullPath()).
+			Str("upstream_api", upstreamAPIForProvider(provider.GetID(), remappedModel)).
+			Str("canonical_model", canonicalRequest.Model).
+			Str("upstream_model", remappedModel).
+			Msg("Converted CIF request to upstream model API")
+		canonicalRequest.Model = remappedModel
 
 		if canonicalRequest.Stream {
 			lastErr = handleResponsesStreamingResponse(c, adapter, canonicalRequest, requestIDStr, originalModel, provider.GetInstanceID(), startTime)

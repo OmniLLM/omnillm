@@ -8,7 +8,17 @@
 
 import { describe, test, expect, beforeAll } from "bun:test"
 
+import {
+  formatDangerousTestSkipMessage,
+  RUN_DANGEROUS_TESTS,
+} from "./test-config"
+
 const BASE = "http://localhost:5000"
+const dangerousDescribe = RUN_DANGEROUS_TESTS ? describe : describe.skip
+
+if (!RUN_DANGEROUS_TESTS) {
+  console.warn(formatDangerousTestSkipMessage("tests/integration.test.ts"))
+}
 
 // Test-specific logging that provides clear output during test runs
 const testLog = {
@@ -230,6 +240,10 @@ async function deactivateProvider(providerId: string) {
 let initialProviderState: Array<{ id: string; isActive: boolean }> = []
 
 beforeAll(async () => {
+  if (!RUN_DANGEROUS_TESTS) {
+    return
+  }
+
   try {
     const res = await fetch(`${BASE}/healthz`).catch(() => null)
     if (!res || !res.ok) {
@@ -265,7 +279,7 @@ async function ensureProviderActive(providerId: string) {
 // GitHub Copilot — claude-haiku-4.5 and claude-sonnet-4.6
 // ---------------------------------------------------------------------------
 
-describe("GitHub Copilot - claude-haiku-4.5", () => {
+dangerousDescribe("GitHub Copilot - claude-haiku-4.5", () => {
   test("basic message", async () => {
     await ensureProviderActive("github-copilot-jzhu_abk")
     const { status, json } = await post(
@@ -394,7 +408,7 @@ describe("GitHub Copilot - claude-haiku-4.5", () => {
   })
 })
 
-describe("GitHub Copilot - claude-sonnet-4.6", () => {
+dangerousDescribe("GitHub Copilot - claude-sonnet-4.6", () => {
   test("basic message", async () => {
     await ensureProviderActive("github-copilot-jzhu_abk")
     const { status, json } = await post(
@@ -523,7 +537,7 @@ describe("GitHub Copilot - claude-sonnet-4.6", () => {
 // Azure OpenAI — test available models with enhanced tool usage
 // ---------------------------------------------------------------------------
 
-describe("Azure OpenAI - gpt-5.4-mini", () => {
+dangerousDescribe("Azure OpenAI - gpt-5.4-mini", () => {
   test("basic chat completion", async () => {
     await ensureProviderActive("azure-openai-jzhu-1677-resource")
     const { status, json } = await post("/v1/chat/completions", {
@@ -615,7 +629,7 @@ describe("Azure OpenAI - gpt-5.4-mini", () => {
 // Provider Management Tests
 // ---------------------------------------------------------------------------
 
-describe("Provider Management", () => {
+dangerousDescribe("Provider Management", () => {
   test("get provider list", async () => {
     const { status, json } = await get("/api/admin/providers")
     console.log(`[TEST]📋 Provider list - Status: ${status}`)
@@ -795,7 +809,7 @@ describe("Provider Management", () => {
 // Error Handling and Edge Cases
 // ---------------------------------------------------------------------------
 
-describe("Error Handling", () => {
+dangerousDescribe("Error Handling", () => {
   test("invalid model request", async () => {
     const { status, json } = await post("/v1/chat/completions", {
       model: "nonexistent-model-12345",
@@ -875,7 +889,7 @@ describe("Error Handling", () => {
 // Azure OpenAI GPT-5.4 — Test responses API and longer conversations
 // ---------------------------------------------------------------------------
 
-describe("Azure OpenAI - gpt-5.4 (Responses API)", () => {
+dangerousDescribe("Azure OpenAI - gpt-5.4 (Responses API)", () => {
   test("basic message via responses API", async () => {
     await ensureProviderActive("azure-openai-jzhu-1677-resource")
     const { status, json } = await post(
@@ -1252,7 +1266,7 @@ describe("Azure OpenAI - gpt-5.4 (Responses API)", () => {
 // Enhanced Tool Use Tests
 // ---------------------------------------------------------------------------
 
-describe("Enhanced Tool Use Cases", () => {
+dangerousDescribe("Enhanced Tool Use Cases", () => {
   test("multiple tool calls in sequence with conversation context", async () => {
     await ensureProviderActive("github-copilot-jzhu_abk")
 
@@ -1430,7 +1444,7 @@ describe("Enhanced Tool Use Cases", () => {
 // Azure OpenAI gpt-5.4-pro — Responses API premium model
 // ---------------------------------------------------------------------------
 
-describe("Azure OpenAI - gpt-5.4-pro", () => {
+dangerousDescribe("Azure OpenAI - gpt-5.4-pro", () => {
   test("basic message via responses API", async () => {
     await ensureProviderActive("azure-openai-jzhu-1677-resource")
     const { status, json } = await post(
@@ -1517,7 +1531,7 @@ describe("Azure OpenAI - gpt-5.4-pro", () => {
 // Azure OpenAI gpt-5.3-codex — Responses API code-generation model
 // ---------------------------------------------------------------------------
 
-describe("Azure OpenAI - gpt-5.3-codex", () => {
+dangerousDescribe("Azure OpenAI - gpt-5.3-codex", () => {
   test("basic message", async () => {
     await ensureProviderActive("azure-openai-jzhu-1677-resource")
     const { status, json } = await post(
@@ -1602,7 +1616,7 @@ describe("Azure OpenAI - gpt-5.3-codex", () => {
 // Azure OpenAI gpt-5.1-codex-max — Responses API extended context codex model
 // ---------------------------------------------------------------------------
 
-describe("Azure OpenAI - gpt-5.1-codex-max", () => {
+dangerousDescribe("Azure OpenAI - gpt-5.1-codex-max", () => {
   test("basic message", async () => {
     await ensureProviderActive("azure-openai-jzhu-1677-resource")
     const { status, json } = await post(
@@ -1688,7 +1702,7 @@ describe("Azure OpenAI - gpt-5.1-codex-max", () => {
 // Performance and Load Tests
 // ---------------------------------------------------------------------------
 
-describe("Performance", () => {
+dangerousDescribe("Performance", () => {
   test("concurrent tool call requests", async () => {
     await ensureProviderActive("azure-openai-jzhu-1677-resource")
 

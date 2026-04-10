@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -20,6 +21,13 @@ import (
 func SetupMessageRoutes(router *gin.RouterGroup) {
 	router.POST("/messages", handleMessages)
 	router.POST("/messages/count_tokens", handleCountTokens)
+}
+
+func upstreamAPIForProvider(providerID string, model string) string {
+	if providerID == "azure-openai" && strings.Contains(strings.ToLower(model), "gpt-5.4") {
+		return "responses"
+	}
+	return "chat.completions"
 }
 
 func handleMessages(c *gin.Context) {
@@ -116,9 +124,16 @@ func handleMessages(c *gin.Context) {
 			Msg("Trying provider for Anthropic request")
 
 		remappedModel := adapter.RemapModel(canonicalRequest.Model)
-		if remappedModel != canonicalRequest.Model {
-			canonicalRequest.Model = remappedModel
-		}
+		log.Debug().
+			Str("request_id", requestIDStr).
+			Str("provider", provider.GetInstanceID()).
+			Str("api_shape", "anthropic").
+			Str("inbound_path", c.FullPath()).
+			Str("upstream_api", upstreamAPIForProvider(provider.GetID(), remappedModel)).
+			Str("canonical_model", canonicalRequest.Model).
+			Str("upstream_model", remappedModel).
+			Msg("Converted CIF request to upstream model API")
+		canonicalRequest.Model = remappedModel
 
 		if canonicalRequest.Stream {
 			lastErr = handleAnthropicStreamingResponse(c, adapter, canonicalRequest, requestIDStr, originalModel, provider.GetInstanceID(), startTime)

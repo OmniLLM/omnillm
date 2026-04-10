@@ -8,13 +8,23 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
+
+import {
+  formatDangerousTestSkipMessage,
+  RUN_DANGEROUS_TESTS,
+} from "./test-config"
 import { startUITestServer } from "./ui-test-server"
 
 let BASE = ""
 let FRONTEND_URL = ""
 let stopServer: (() => Promise<void>) | null = null
+const dangerousDescribe = RUN_DANGEROUS_TESTS ? describe : describe.skip
 
-describe("Material Design UI Visual Tests", () => {
+if (!RUN_DANGEROUS_TESTS) {
+  console.warn(formatDangerousTestSkipMessage("tests/material-ui-visual.test.ts"))
+}
+
+dangerousDescribe("Material Design UI Visual Tests", () => {
   beforeAll(async () => {
     const server = await startUITestServer()
     BASE = server.baseUrl

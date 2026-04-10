@@ -62,6 +62,15 @@ touch your real provider database or tokens.
 
 ### Running Tests
 
+Dangerous suites:
+`integration.test.ts`, `provider-management-ui.test.ts`, `provider-ui-workflows.test.ts`, and `material-ui-visual.test.ts` are skipped by default because they can trigger live provider work or expensive local integration flows. Run them only when intentionally requested by setting `OMNIMODEL_RUN_DANGEROUS_TESTS=1`.
+
+PowerShell example:
+```powershell
+$env:OMNIMODEL_RUN_DANGEROUS_TESTS = "1"
+bun test tests/integration.test.ts
+```
+
 #### Option 1: Use the test runner script (Recommended)
 ```bash
 # Run all UI tests

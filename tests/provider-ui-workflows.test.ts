@@ -9,10 +9,21 @@
 
 import { describe, test, expect, beforeEach, afterEach, beforeAll, afterAll } from "bun:test"
 
+import {
+  formatDangerousTestSkipMessage,
+  RUN_DANGEROUS_TESTS,
+} from "./test-config"
 import { startUITestServer } from "./ui-test-server"
 
 let BASE = ""
 let stopServer: (() => Promise<void>) | null = null
+const dangerousDescribe = RUN_DANGEROUS_TESTS ? describe : describe.skip
+
+if (!RUN_DANGEROUS_TESTS) {
+  console.warn(
+    formatDangerousTestSkipMessage("tests/provider-ui-workflows.test.ts"),
+  )
+}
 
 // Helper functions
 async function get(path: string) {
@@ -57,7 +68,7 @@ async function del(path: string) {
   return data
 }
 
-describe("Provider Management UI Workflows", () => {
+dangerousDescribe("Provider Management UI Workflows", () => {
   let testProviders: Array<string> = []
 
   beforeAll(async () => {
