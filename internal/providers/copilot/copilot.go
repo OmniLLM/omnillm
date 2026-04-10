@@ -752,7 +752,8 @@ func (a *CopilotAdapter) executeOpenAIStream(request *cif.CanonicalRequest) (<-c
 	}
 	req.Header.Set("Accept", "text/event-stream")
 
-	client := &http.Client{Timeout: 120 * time.Second}
+	// Streaming requests must not use a fixed client timeout; stream length is model dependent.
+	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("streaming request failed: %w", err)
@@ -830,7 +831,8 @@ func (a *CopilotAdapter) executeResponsesStream(request *cif.CanonicalRequest) (
 	}
 	req.Header.Set("Accept", "text/event-stream")
 
-	client := &http.Client{Timeout: 120 * time.Second}
+	// Streaming requests must not use a fixed client timeout; stream length is model dependent.
+	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("responses streaming request failed: %w", err)
@@ -1405,6 +1407,23 @@ func (a *CopilotAdapter) convertCIFMessageToResponses(message cif.CIFMessage, to
 	}
 }
 
+func normalizeResponsesToolCallID(toolCallID string) string {
+	if toolCallID == "" {
+		return ""
+	}
+
+	if strings.HasPrefix(toolCallID, "fc") {
+		return toolCallID
+	}
+
+	trimmedID := toolCallID
+	if underscoreIdx := strings.Index(trimmedID, "_"); underscoreIdx >= 0 && underscoreIdx < len(trimmedID)-1 {
+		trimmedID = trimmedID[underscoreIdx+1:]
+	}
+
+	return "fc_" + trimmedID
+}
+
 func sanitizeCopilotUserID(userID string) string {
 	trimmed := strings.TrimSpace(userID)
 	if len(trimmed) <= copilotMaxUserIDLength {
@@ -1497,14 +1516,15 @@ func (a *CopilotAdapter) convertResponsesMessageParts(role string, parts []cif.C
 			flushMessage()
 
 			args, _ := json.Marshal(p.ToolArguments)
+			responsesToolCallID := normalizeResponsesToolCallID(p.ToolCallID)
 			item := map[string]interface{}{
 				"type":      "function_call",
 				"name":      toolNameMapper.toUpstream(p.ToolName),
 				"arguments": string(args),
 			}
-			if p.ToolCallID != "" {
-				item["id"] = p.ToolCallID
-				item["call_id"] = p.ToolCallID
+			if responsesToolCallID != "" {
+				item["id"] = responsesToolCallID
+				item["call_id"] = responsesToolCallID
 			}
 			items = append(items, item)
 		case cif.CIFToolResultPart:
@@ -1514,8 +1534,7 @@ func (a *CopilotAdapter) convertResponsesMessageParts(role string, parts []cif.C
 			flushMessage()
 			items = append(items, map[string]interface{}{
 				"type":    "function_call_output",
-				"call_id": p.ToolCallID,
-				"name":    toolNameMapper.toUpstream(p.ToolName),
+				"call_id": normalizeResponsesToolCallID(p.ToolCallID),
 				"output":  p.Content,
 			})
 		}
