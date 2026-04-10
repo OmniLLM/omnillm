@@ -71,10 +71,27 @@ function normalizeModelName(modelName: string): string {
 export async function handleCompletion(c: Context) {
   await checkRateLimit(state)
 
+  const requestId = c.get("requestId")
+  const startTime = Date.now()
+
   let anthropicPayload = await c.req.json<AnthropicMessagesPayload>()
 
   const requestedModel = anthropicPayload.model
   const normalizedModel = normalizeModelName(requestedModel)
+
+  // Log REQUEST
+  consola.info({
+    type: "request",
+    requestId,
+    apiShape: "anthropic",
+    modelRequested: requestedModel,
+    modelNormalized: normalizedModel,
+    messages: anthropicPayload.messages?.length ?? 0,
+    tools: anthropicPayload.tools?.length ?? 0,
+    stream: anthropicPayload.stream ?? false,
+    maxTokens: anthropicPayload.max_tokens,
+    hasSystemPrompt: Boolean(anthropicPayload.system),
+  })
 
   const resolvedRoute = await resolveProvidersForModel(
     requestedModel,
@@ -96,7 +113,6 @@ export async function handleCompletion(c: Context) {
   }
 
   const { availableModels, candidateProviders, selectedModel } = resolvedRoute
-
 
   // Validate that the requested model exists (either original or normalized form)
   if (!selectedModel) {
@@ -191,11 +207,39 @@ export async function handleCompletion(c: Context) {
                 })
               }
             }
+
+            // Log RESPONSE
+            consola.info({
+              type: "response",
+              requestId,
+              apiShape: "anthropic",
+              modelRequested: requestedModel,
+              modelUsed: finalCanonicalReq.model,
+              provider: `${tryProvider.name} (${tryProvider.instanceId})`,
+              stream: true,
+              latencyMs: Date.now() - startTime,
+            })
           })
         } else {
           const canonicalResp =
             await tryProvider.adapter.execute(finalCanonicalReq)
           const anthropicResponse = serializeToAnthropic(canonicalResp)
+
+          // Log RESPONSE
+          consola.info({
+            type: "response",
+            requestId,
+            apiShape: "anthropic",
+            modelRequested: requestedModel,
+            modelUsed: canonicalResp.model,
+            provider: `${tryProvider.name} (${tryProvider.instanceId})`,
+            stopReason: canonicalResp.stopReason,
+            stream: false,
+            inputTokens: canonicalResp.usage?.inputTokens,
+            outputTokens: canonicalResp.usage?.outputTokens,
+            latencyMs: Date.now() - startTime,
+          })
+
           return c.json(anthropicResponse)
         }
       }
@@ -240,10 +284,38 @@ export async function handleCompletion(c: Context) {
               })
             }
           }
+
+          // Log RESPONSE
+          consola.info({
+            type: "response",
+            requestId,
+            apiShape: "anthropic",
+            modelRequested: requestedModel,
+            modelUsed: providerPayload.model,
+            provider: `${tryProvider.name} (${tryProvider.instanceId})`,
+            stream: true,
+            latencyMs: Date.now() - startTime,
+          })
         })
       }
       const json = (await response.json()) as ChatCompletionResponse
       const anthropicResponse = translateToAnthropic(json)
+
+      // Log RESPONSE
+      consola.info({
+        type: "response",
+        requestId,
+        apiShape: "anthropic",
+        modelRequested: requestedModel,
+        modelUsed: json.model,
+        provider: `${tryProvider.name} (${tryProvider.instanceId})`,
+        stopReason: json.choices?.[0]?.finish_reason,
+        stream: false,
+        inputTokens: json.usage?.prompt_tokens,
+        outputTokens: json.usage?.completion_tokens,
+        latencyMs: Date.now() - startTime,
+      })
+
       return c.json(anthropicResponse)
     } catch (err) {
       // Get model name for error reporting (either from CIF or legacy path)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -39,6 +40,10 @@ func ConfigureChatCompletionOptions(rl *ratelimit.RateLimiter, manual bool) {
 }
 
 func handleChatCompletions(c *gin.Context) {
+	requestID, _ := c.Get("request_id")
+	requestIDStr := fmt.Sprintf("%v", requestID)
+	startTime := time.Now()
+
 	// Check rate limits
 	if err := rateLimiter.CheckAndWait(); err != nil {
 		c.JSON(http.StatusTooManyRequests, gin.H{
@@ -66,7 +71,7 @@ func handleChatCompletions(c *gin.Context) {
 	// Parse request as generic map for ingestion
 	var payload map[string]interface{}
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		log.Error().Err(err).Msg("Failed to parse request")
+		log.Error().Err(err).Str("request_id", requestIDStr).Msg("Failed to parse request")
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": gin.H{
 				"message": "Invalid request format",
@@ -79,7 +84,7 @@ func handleChatCompletions(c *gin.Context) {
 	// Convert to CIF
 	canonicalRequest, err := ingestion.ParseOpenAIChatCompletions(payload)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to parse OpenAI request")
+		log.Error().Err(err).Str("request_id", requestIDStr).Msg("Failed to parse OpenAI request")
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": gin.H{
 				"message": fmt.Sprintf("Failed to parse request: %v", err),
@@ -89,6 +94,18 @@ func handleChatCompletions(c *gin.Context) {
 		return
 	}
 
+	originalModel := canonicalRequest.Model
+
+	// Log REQUEST
+	log.Info().
+		Str("request_id", requestIDStr).
+		Str("api_shape", "openai").
+		Str("model_requested", originalModel).
+		Int("messages", len(canonicalRequest.Messages)).
+		Int("tools", len(canonicalRequest.Tools)).
+		Bool("stream", canonicalRequest.Stream).
+		Msg("--> REQUEST")
+
 	// Resolve providers for the requested model
 	normalizedModel := modelrouting.NormalizeModelName(canonicalRequest.Model)
 	modelRoute, err := modelrouting.ResolveProvidersForModel(
@@ -97,7 +114,7 @@ func handleChatCompletions(c *gin.Context) {
 		modelCache,
 	)
 	if err != nil {
-		log.Error().Err(err).Str("model", canonicalRequest.Model).Msg("Failed to resolve providers for model")
+		log.Error().Err(err).Str("request_id", requestIDStr).Str("model", canonicalRequest.Model).Msg("Failed to resolve providers for model")
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": gin.H{
 				"message": fmt.Sprintf("Failed to resolve providers: %v", err),
@@ -108,7 +125,7 @@ func handleChatCompletions(c *gin.Context) {
 	}
 
 	if len(modelRoute.CandidateProviders) == 0 {
-		log.Warn().Str("model", canonicalRequest.Model).Msg("No providers available for model")
+		log.Warn().Str("request_id", requestIDStr).Str("model", canonicalRequest.Model).Msg("No providers available for model")
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": gin.H{
 				"message": fmt.Sprintf("Model '%s' not found or no providers available", canonicalRequest.Model),
@@ -119,7 +136,7 @@ func handleChatCompletions(c *gin.Context) {
 	}
 
 	if normalizedModel != canonicalRequest.Model {
-		log.Debug().Str("from", canonicalRequest.Model).Str("to", normalizedModel).Msg("Normalized chat request model")
+		log.Debug().Str("request_id", requestIDStr).Str("from", canonicalRequest.Model).Str("to", normalizedModel).Msg("Normalized chat request model")
 		canonicalRequest.Model = normalizedModel
 	}
 
@@ -132,6 +149,7 @@ func handleChatCompletions(c *gin.Context) {
 		}
 
 		log.Debug().
+			Str("request_id", requestIDStr).
 			Str("model", canonicalRequest.Model).
 			Str("provider", provider.GetInstanceID()).
 			Msg("Trying provider for request")
@@ -139,14 +157,14 @@ func handleChatCompletions(c *gin.Context) {
 		// Remap model name for this provider
 		remappedModel := adapter.RemapModel(canonicalRequest.Model)
 		if remappedModel != canonicalRequest.Model {
-			log.Debug().Str("from", canonicalRequest.Model).Str("to", remappedModel).Msg("Remapped model name")
+			log.Debug().Str("request_id", requestIDStr).Str("from", canonicalRequest.Model).Str("to", remappedModel).Msg("Remapped model name")
 			canonicalRequest.Model = remappedModel
 		}
 
 		if canonicalRequest.Stream {
-			lastErr = handleStreamingResponse(c, adapter, canonicalRequest)
+			lastErr = handleStreamingResponse(c, adapter, canonicalRequest, requestIDStr, originalModel, provider.GetInstanceID(), startTime)
 		} else {
-			lastErr = handleNonStreamingResponse(c, adapter, canonicalRequest)
+			lastErr = handleNonStreamingResponse(c, adapter, canonicalRequest, requestIDStr, originalModel, provider.GetInstanceID(), startTime)
 		}
 
 		if lastErr == nil {
@@ -154,6 +172,7 @@ func handleChatCompletions(c *gin.Context) {
 		}
 
 		log.Warn().Err(lastErr).
+			Str("request_id", requestIDStr).
 			Str("provider", provider.GetInstanceID()).
 			Msg("Provider failed, trying next")
 	}
@@ -171,7 +190,7 @@ func handleChatCompletions(c *gin.Context) {
 	})
 }
 
-func handleNonStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest) error {
+func handleNonStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID string, originalModel string, providerID string, startTime time.Time) error {
 	response, err := adapter.Execute(canonicalRequest)
 	if err != nil {
 		return fmt.Errorf("adapter execute failed: %w", err)
@@ -184,21 +203,29 @@ func handleNonStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, c
 	}
 
 	log.Info().
-		Str("model", response.Model).
-		Str("id", response.ID).
-		Msg("Chat completion request completed")
+		Str("request_id", requestID).
+		Str("api_shape", "openai").
+		Str("model_requested", originalModel).
+		Str("model_used", response.Model).
+		Str("provider", providerID).
+		Str("stop_reason", string(response.StopReason)).
+		Bool("stream", false).
+		Int("input_tokens", response.Usage.InputTokens).
+		Int("output_tokens", response.Usage.OutputTokens).
+		Int64("latency_ms", time.Since(startTime).Milliseconds()).
+		Msg("<-- RESPONSE")
 
 	c.JSON(http.StatusOK, openaiResp)
 	return nil
 }
 
-func handleStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest) error {
+func handleStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID string, originalModel string, providerID string, startTime time.Time) error {
 	eventCh, err := adapter.ExecuteStream(canonicalRequest)
 	if err != nil {
 		// Fallback to non-streaming if streaming not supported
-		log.Warn().Err(err).Msg("Streaming not supported, falling back to non-streaming")
+		log.Warn().Err(err).Str("request_id", requestID).Msg("Streaming not supported, falling back to non-streaming")
 		canonicalRequest.Stream = false
-		return handleNonStreamingResponse(c, adapter, canonicalRequest)
+		return handleNonStreamingResponse(c, adapter, canonicalRequest, requestID, originalModel, providerID, startTime)
 	}
 
 	// Set SSE headers
@@ -209,6 +236,7 @@ func handleStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, cano
 
 	state := serialization.CreateOpenAIStreamState()
 	flusher, _ := c.Writer.(http.Flusher)
+	modelUsed := canonicalRequest.Model
 
 	c.Stream(func(w io.Writer) bool {
 		event, ok := <-eventCh
@@ -216,9 +244,26 @@ func handleStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, cano
 			return false
 		}
 
+		// Log response on stream end
+		if endEvt, isEnd := event.(cif.CIFStreamEnd); isEnd {
+			log.Info().
+				Str("request_id", requestID).
+				Str("api_shape", "openai").
+				Str("model_requested", originalModel).
+				Str("model_used", modelUsed).
+				Str("provider", providerID).
+				Str("stop_reason", string(endEvt.StopReason)).
+				Bool("stream", true).
+				Int("input_tokens", endEvt.Usage.InputTokens).
+				Int("output_tokens", endEvt.Usage.OutputTokens).
+				Int64("latency_ms", time.Since(startTime).Milliseconds()).
+				Msg("<-- RESPONSE stream")
+			return false
+		}
+
 		sseData, err := serialization.ConvertCIFEventToOpenAISSE(event, state)
 		if err != nil {
-			log.Error().Err(err).Msg("Failed to convert CIF event to SSE")
+			log.Error().Err(err).Str("request_id", requestID).Msg("Failed to convert CIF event to SSE")
 			return false
 		}
 
@@ -230,9 +275,6 @@ func handleStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, cano
 		}
 
 		// Check if this is the end event
-		if _, isEnd := event.(cif.CIFStreamEnd); isEnd {
-			return false
-		}
 		if _, isErr := event.(cif.CIFStreamError); isErr {
 			return false
 		}

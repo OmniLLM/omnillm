@@ -14,12 +14,6 @@ This repository now includes **two backend implementations**:
 
 Both backends implement the same API and can be used interchangeably. Choose based on your team's preferences and deployment requirements.
 
-> [!WARNING]
-> Some providers in this repository, including GitHub Copilot and Antigravity, are reverse-engineered and not officially supported by their vendors. Production suitability depends on your organization's legal, compliance, and operational requirements.
-
-> [!WARNING]
-> **GitHub Copilot:** automated or high-volume scripted usage may trigger abuse-detection systems. Review [GitHub Acceptable Use Policies](https://docs.github.com/site-policy/acceptable-use-policies/github-acceptable-use-policies) and [Copilot Terms](https://docs.github.com/site-policy/github-terms/github-terms-for-additional-products-and-features#github-copilot) before deployment.
-
 ---
 
 ## Executive Summary

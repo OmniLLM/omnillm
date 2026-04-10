@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/rand"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -91,7 +92,30 @@ func RunServer(options StartOptions) error {
 }
 
 func buildRouter() *gin.Engine {
-	r := gin.Default()
+	r := gin.New()
+	r.Use(gin.Recovery())
+
+	// Structured logging middleware with request ID
+	r.Use(func(c *gin.Context) {
+		requestID := generateRequestID()
+		c.Set("request_id", requestID)
+		c.Header("X-Request-Id", requestID)
+
+		start := time.Now()
+		c.Next()
+
+		duration := time.Since(start)
+		latencyMs := duration.Milliseconds()
+		status := c.Writer.Status()
+
+		log.Info().
+			Str("request_id", requestID).
+			Str("method", c.Request.Method).
+			Str("path", c.Request.RequestURI).
+			Int("status", status).
+			Int64("latency_ms", latencyMs).
+			Msg("HTTP request")
+	})
 
 	// Configure CORS
 	corsConfig := cors.DefaultConfig()
@@ -160,6 +184,13 @@ func buildRouter() *gin.Engine {
 	})
 
 	return r
+}
+
+// generateRequestID creates a random request ID for correlation
+func generateRequestID() string {
+	b := make([]byte, 8)
+	rand.Read(b)
+	return fmt.Sprintf("%x", b)
 }
 
 func setupLogging(verbose bool) {

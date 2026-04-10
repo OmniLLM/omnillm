@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -22,6 +23,10 @@ func SetupMessageRoutes(router *gin.RouterGroup) {
 }
 
 func handleMessages(c *gin.Context) {
+	requestID, _ := c.Get("request_id")
+	requestIDStr := fmt.Sprintf("%v", requestID)
+	startTime := time.Now()
+
 	// Parse request as generic map for ingestion
 	var payload map[string]interface{}
 	if err := c.ShouldBindJSON(&payload); err != nil {
@@ -37,7 +42,7 @@ func handleMessages(c *gin.Context) {
 	// Convert Anthropic format to CIF
 	canonicalRequest, err := ingestion.ParseAnthropicMessages(payload)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to parse Anthropic request")
+		log.Error().Err(err).Str("request_id", requestIDStr).Msg("Failed to parse Anthropic request")
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": gin.H{
 				"message": fmt.Sprintf("Failed to parse request: %v", err),
@@ -47,6 +52,18 @@ func handleMessages(c *gin.Context) {
 		return
 	}
 
+	originalModel := canonicalRequest.Model
+
+	// Log REQUEST
+	log.Info().
+		Str("request_id", requestIDStr).
+		Str("api_shape", "anthropic").
+		Str("model_requested", originalModel).
+		Int("messages", len(canonicalRequest.Messages)).
+		Int("tools", len(canonicalRequest.Tools)).
+		Bool("stream", canonicalRequest.Stream).
+		Msg("--> REQUEST")
+
 	// Resolve providers
 	normalizedModel := modelrouting.NormalizeModelName(canonicalRequest.Model)
 	modelRoute, err := modelrouting.ResolveProvidersForModel(
@@ -55,7 +72,7 @@ func handleMessages(c *gin.Context) {
 		modelCache,
 	)
 	if err != nil {
-		log.Error().Err(err).Str("model", canonicalRequest.Model).Msg("Failed to resolve providers")
+		log.Error().Err(err).Str("request_id", requestIDStr).Str("model", canonicalRequest.Model).Msg("Failed to resolve providers")
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": gin.H{
 				"message": fmt.Sprintf("Failed to resolve providers: %v", err),
@@ -77,6 +94,7 @@ func handleMessages(c *gin.Context) {
 
 	if normalizedModel != canonicalRequest.Model {
 		log.Debug().
+			Str("request_id", requestIDStr).
 			Str("from", canonicalRequest.Model).
 			Str("to", normalizedModel).
 			Msg("Normalized Anthropic request model")
@@ -92,6 +110,7 @@ func handleMessages(c *gin.Context) {
 		}
 
 		log.Debug().
+			Str("request_id", requestIDStr).
 			Str("model", canonicalRequest.Model).
 			Str("provider", provider.GetInstanceID()).
 			Msg("Trying provider for Anthropic request")
@@ -102,9 +121,9 @@ func handleMessages(c *gin.Context) {
 		}
 
 		if canonicalRequest.Stream {
-			lastErr = handleAnthropicStreamingResponse(c, adapter, canonicalRequest)
+			lastErr = handleAnthropicStreamingResponse(c, adapter, canonicalRequest, requestIDStr, originalModel, provider.GetInstanceID(), startTime)
 		} else {
-			lastErr = handleAnthropicNonStreamingResponse(c, adapter, canonicalRequest)
+			lastErr = handleAnthropicNonStreamingResponse(c, adapter, canonicalRequest, requestIDStr, originalModel, provider.GetInstanceID(), startTime)
 		}
 
 		if lastErr == nil {
@@ -112,6 +131,7 @@ func handleMessages(c *gin.Context) {
 		}
 
 		log.Warn().Err(lastErr).
+			Str("request_id", requestIDStr).
 			Str("provider", provider.GetInstanceID()).
 			Msg("Provider failed for Anthropic request, trying next")
 	}
@@ -128,7 +148,7 @@ func handleMessages(c *gin.Context) {
 	})
 }
 
-func handleAnthropicNonStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest) error {
+func handleAnthropicNonStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID string, originalModel string, providerID string, startTime time.Time) error {
 	response, err := adapter.Execute(canonicalRequest)
 	if err != nil {
 		return fmt.Errorf("adapter execute failed: %w", err)
@@ -140,20 +160,28 @@ func handleAnthropicNonStreamingResponse(c *gin.Context, adapter types.ProviderA
 	}
 
 	log.Info().
-		Str("model", response.Model).
-		Str("id", response.ID).
-		Msg("Anthropic messages request completed")
+		Str("request_id", requestID).
+		Str("api_shape", "anthropic").
+		Str("model_requested", originalModel).
+		Str("model_used", response.Model).
+		Str("provider", providerID).
+		Str("stop_reason", string(response.StopReason)).
+		Bool("stream", false).
+		Int("input_tokens", response.Usage.InputTokens).
+		Int("output_tokens", response.Usage.OutputTokens).
+		Int64("latency_ms", time.Since(startTime).Milliseconds()).
+		Msg("<-- RESPONSE")
 
 	c.JSON(http.StatusOK, anthropicResp)
 	return nil
 }
 
-func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest) error {
+func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID string, originalModel string, providerID string, startTime time.Time) error {
 	eventCh, err := adapter.ExecuteStream(canonicalRequest)
 	if err != nil {
-		log.Warn().Err(err).Msg("Streaming not supported, falling back to non-streaming")
+		log.Warn().Err(err).Str("request_id", requestID).Msg("Streaming not supported, falling back to non-streaming")
 		canonicalRequest.Stream = false
-		return handleAnthropicNonStreamingResponse(c, adapter, canonicalRequest)
+		return handleAnthropicNonStreamingResponse(c, adapter, canonicalRequest, requestID, originalModel, providerID, startTime)
 	}
 
 	c.Header("Content-Type", "text/event-stream")
@@ -162,6 +190,7 @@ func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 
 	state := serialization.CreateAnthropicStreamState()
 	flusher, _ := c.Writer.(http.Flusher)
+	modelUsed := canonicalRequest.Model
 
 	c.Stream(func(w io.Writer) bool {
 		event, ok := <-eventCh
@@ -169,9 +198,26 @@ func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 			return false
 		}
 
+		// Log response on stream end
+		if endEvt, isEnd := event.(cif.CIFStreamEnd); isEnd {
+			log.Info().
+				Str("request_id", requestID).
+				Str("api_shape", "anthropic").
+				Str("model_requested", originalModel).
+				Str("model_used", modelUsed).
+				Str("provider", providerID).
+				Str("stop_reason", string(endEvt.StopReason)).
+				Bool("stream", true).
+				Int("input_tokens", endEvt.Usage.InputTokens).
+				Int("output_tokens", endEvt.Usage.OutputTokens).
+				Int64("latency_ms", time.Since(startTime).Milliseconds()).
+				Msg("<-- RESPONSE stream")
+			return false
+		}
+
 		anthropicEvents, err := serialization.ConvertCIFEventToAnthropicSSE(event, state)
 		if err != nil {
-			log.Error().Err(err).Msg("Failed to convert CIF event to Anthropic SSE")
+			log.Error().Err(err).Str("request_id", requestID).Msg("Failed to convert CIF event to Anthropic SSE")
 			return false
 		}
 
@@ -188,9 +234,6 @@ func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 			flusher.Flush()
 		}
 
-		if _, isEnd := event.(cif.CIFStreamEnd); isEnd {
-			return false
-		}
 		if _, isErr := event.(cif.CIFStreamError); isErr {
 			return false
 		}

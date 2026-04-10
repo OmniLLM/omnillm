@@ -105,6 +105,9 @@ async function executeResponsesFallback(
   c: Context,
   provider: ReturnType<typeof providerRegistry.getActiveProviders>[number],
   payload: ChatCompletionsPayload,
+  requestId: string,
+  requestedModel: string,
+  startTime: number,
 ) {
   const responsesPayload = chatCompletionsToResponsesPayload(payload)
 
@@ -139,6 +142,18 @@ async function executeResponsesFallback(
           }
         }
         await stream.writeSSE({ data: "[DONE]" })
+
+        // Log RESPONSE
+        consola.info({
+          type: "response",
+          requestId,
+          apiShape: "openai",
+          modelRequested: requestedModel,
+          modelUsed: finalCanonicalReq.model,
+          provider: `${provider.name} (${provider.instanceId})`,
+          stream: true,
+          latencyMs: Date.now() - startTime,
+        })
       })
     }
 
@@ -147,6 +162,22 @@ async function executeResponsesFallback(
     const chatResponse = responsesResponseToChatCompletions(
       responsesResponse as ResponsesResponse,
     )
+
+    // Log RESPONSE
+    consola.info({
+      type: "response",
+      requestId,
+      apiShape: "openai",
+      modelRequested: requestedModel,
+      modelUsed: canonicalResp.model,
+      provider: `${provider.name} (${provider.instanceId})`,
+      stopReason: canonicalResp.stopReason,
+      stream: false,
+      inputTokens: canonicalResp.usage?.inputTokens,
+      outputTokens: canonicalResp.usage?.outputTokens,
+      latencyMs: Date.now() - startTime,
+    })
+
     return c.json(chatResponse)
   }
 
@@ -187,12 +218,40 @@ async function executeResponsesFallback(
         }
       }
       await stream.writeSSE({ data: "[DONE]" })
+
+      // Log RESPONSE
+      consola.info({
+        type: "response",
+        requestId,
+        apiShape: "openai",
+        modelRequested: requestedModel,
+        modelUsed: responsesPayload.model,
+        provider: `${provider.name} (${provider.instanceId})`,
+        stream: true,
+        latencyMs: Date.now() - startTime,
+      })
     })
   }
 
   const json = (await response.json()) as ChatCompletionResponse
   const responsesResponse = translateResponseToResponses(json)
   const chatResponse = responsesResponseToChatCompletions(responsesResponse)
+
+  // Log RESPONSE
+  consola.info({
+    type: "response",
+    requestId,
+    apiShape: "openai",
+    modelRequested: requestedModel,
+    modelUsed: json.model,
+    provider: `${provider.name} (${provider.instanceId})`,
+    stopReason: json.choices?.[0]?.finish_reason,
+    stream: false,
+    inputTokens: json.usage?.prompt_tokens,
+    outputTokens: json.usage?.completion_tokens,
+    latencyMs: Date.now() - startTime,
+  })
+
   return c.json(chatResponse)
 }
 
@@ -200,7 +259,26 @@ async function executeResponsesFallback(
 export async function handleCompletion(c: Context) {
   await checkRateLimit(state)
 
+  const requestId = c.get("requestId")
+  const startTime = Date.now()
+
   let payload = await c.req.json<ChatCompletionsPayload>()
+  const requestedModel = payload.model
+  const normalizedModel = normalizeModelName(requestedModel)
+
+  // Log REQUEST
+  consola.info({
+    type: "request",
+    requestId,
+    apiShape: "openai",
+    modelRequested: requestedModel,
+    modelNormalized: normalizedModel,
+    messages: payload.messages?.length ?? 0,
+    tools: payload.tools?.length ?? 0,
+    stream: payload.stream ?? false,
+    maxTokens: payload.max_tokens,
+  })
+
   consola.debug(
     `Request summary: model=${payload.model}, messages=${payload.messages?.length ?? 0}, tools=${payload.tools?.length ?? 0}, stream=${payload.stream ?? false}, max_tokens=${payload.max_tokens}`,
   )
@@ -377,6 +455,22 @@ export async function handleCompletion(c: Context) {
             `[CIF Path] Received canonical response: ${canonicalResp.content.length} content parts, stop reason: ${canonicalResp.stopReason}`,
           )
           const openAIResponse = serializeToOpenAI(canonicalResp)
+
+          // Log RESPONSE
+          consola.info({
+            type: "response",
+            requestId,
+            apiShape: "openai",
+            modelRequested: requestedModel,
+            modelUsed: canonicalResp.model,
+            provider: `${tryProvider.name} (${tryProvider.instanceId})`,
+            stopReason: canonicalResp.stopReason,
+            stream: false,
+            inputTokens: canonicalResp.usage?.inputTokens,
+            outputTokens: canonicalResp.usage?.outputTokens,
+            latencyMs: Date.now() - startTime,
+          })
+
           return c.json(openAIResponse)
         }
       }
@@ -396,10 +490,38 @@ export async function handleCompletion(c: Context) {
             consola.debug("Streaming chunk received")
             await stream.writeSSE(chunk as SSEMessage)
           }
+
+          // Log RESPONSE
+          consola.info({
+            type: "response",
+            requestId,
+            apiShape: "openai",
+            modelRequested: requestedModel,
+            modelUsed: payload.model,
+            provider: `${tryProvider.name} (${tryProvider.instanceId})`,
+            stream: true,
+            latencyMs: Date.now() - startTime,
+          })
         })
       }
       const json = await response.json()
       consola.debug("Non-streaming response received")
+
+      // Log RESPONSE
+      consola.info({
+        type: "response",
+        requestId,
+        apiShape: "openai",
+        modelRequested: requestedModel,
+        modelUsed: json.model,
+        provider: `${tryProvider.name} (${tryProvider.instanceId})`,
+        stopReason: json.choices?.[0]?.finish_reason,
+        stream: false,
+        inputTokens: json.usage?.prompt_tokens,
+        outputTokens: json.usage?.completion_tokens,
+        latencyMs: Date.now() - startTime,
+      })
+
       return c.json(json)
     } catch (err) {
       if (await shouldFallbackToResponsesAPI(err)) {
@@ -407,7 +529,7 @@ export async function handleCompletion(c: Context) {
           `${tryProvider.name} (${tryProvider.instanceId}) rejected /chat/completions for ${payload.model}; falling back to Responses API`,
         )
         try {
-          return await executeResponsesFallback(c, tryProvider, payload)
+          return await executeResponsesFallback(c, tryProvider, payload, requestId, requestedModel, startTime)
         } catch (fallbackErr) {
           firstError ??= fallbackErr
           if (
