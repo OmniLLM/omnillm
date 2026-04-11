@@ -643,15 +643,10 @@ func (p *GitHubCopilotProvider) CreateEmbeddings(payload map[string]interface{})
 }
 
 func (p *GitHubCopilotProvider) GetUsage() (map[string]interface{}, error) {
-	// Copilot doesn't have a straightforward usage endpoint accessible this way
-	return map[string]interface{}{
-		"quota": map[string]interface{}{
-			"limit":     1000,
-			"used":      0,
-			"remaining": 1000,
-		},
-		"period": "month",
-	}, nil
+	if p.githubToken == "" {
+		return nil, errors.New("GitHub token not available")
+	}
+	return ghservice.GetCopilotUsage(p.githubToken)
 }
 
 func (p *GitHubCopilotProvider) GetAdapter() types.ProviderAdapter {
