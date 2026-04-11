@@ -107,7 +107,9 @@ func handleChatCompletions(c *gin.Context) {
 		Msg("--> REQUEST")
 
 	// Resolve providers for the requested model
-	normalizedModel := modelrouting.NormalizeModelName(canonicalRequest.Model)
+	resolvedModel, normalizedModel := resolveRequestedModel(requestIDStr, canonicalRequest.Model)
+	canonicalRequest.Model = resolvedModel
+
 	modelRoute, err := modelrouting.ResolveProvidersForModel(
 		canonicalRequest.Model,
 		normalizedModel,

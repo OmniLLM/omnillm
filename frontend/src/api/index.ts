@@ -656,3 +656,60 @@ export const deleteChatSession = (sessionId: string) =>
 
 export const deleteAllChatSessions = () =>
   apiFetch<{ ok: boolean }>("/api/admin/chat/sessions", { method: "DELETE" })
+
+// ─── Virtual models ────────────────────────────────────────────────────────────
+
+export type LbStrategy = "round-robin" | "random" | "priority" | "weighted"
+
+export interface VirtualModelUpstream {
+  id?: number
+  virtual_model_id?: string
+  model_id: string
+  weight: number
+  priority: number
+}
+
+export interface VirtualModel {
+  virtual_model_id: string
+  name: string
+  description: string
+  api_shape: string
+  lb_strategy: LbStrategy
+  enabled: boolean
+  created_at?: string
+  updated_at?: string
+  upstreams: Array<VirtualModelUpstream>
+}
+
+export interface VirtualModelPayload {
+  virtual_model_id: string
+  name: string
+  description?: string
+  api_shape?: string
+  lb_strategy: LbStrategy
+  enabled?: boolean
+  upstreams: Array<{ model_id: string; weight?: number; priority?: number }>
+}
+
+export const listVirtualModels = () =>
+  apiFetch<{ data: Array<VirtualModel> }>("/api/admin/vmodels").then((r) => r.data ?? [])
+
+export const getVirtualModel = (id: string) =>
+  apiFetch<VirtualModel>(`/api/admin/vmodels/${encodeURIComponent(id)}`)
+
+export const createVirtualModel = (payload: VirtualModelPayload) =>
+  apiFetch<VirtualModel>("/api/admin/vmodels", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  })
+
+export const updateVirtualModel = (id: string, payload: VirtualModelPayload) =>
+  apiFetch<VirtualModel>(`/api/admin/vmodels/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  })
+
+export const deleteVirtualModel = (id: string) =>
+  apiFetch<{ deleted: string }>(`/api/admin/vmodels/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  })

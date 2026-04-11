@@ -53,9 +53,6 @@
     "test:frontend:integration": "bun test tests/frontend/integration/",
     "test:frontend:pages": "bun test tests/frontend/pages/",
     "test:frontend:watch": "bun test --watch tests/frontend/",
-    "test:integration": "bun test --timeout 30000 tests/integration.test.ts",
-    "test:live:api-shapes": "bun test --timeout 600000 tests/api-shapes-integration.test.ts",
-    "test:ui": "bun test --timeout 30000 tests/provider-management-ui.test.ts && bun test --timeout 30000 tests/provider-ui-workflows.test.ts",
     "typecheck": "tsc && tsc -p frontend/tsconfig.json"
   },
   "simple-git-hooks": {

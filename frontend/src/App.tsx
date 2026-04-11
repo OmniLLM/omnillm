@@ -12,10 +12,11 @@ import { MaterialAboutPageComplete } from "@/pages/MaterialSettingsPageComplete"
 import { ProvidersPage } from "@/pages/ProvidersPage"
 import { ProvidersPageRedesign } from "@/pages/ProvidersPageRedesign"
 import { AboutPage } from "@/pages/SettingsPage"
+import { VmodelPage } from "@/pages/VmodelPage"
 // Import Material Design overlay styles
 import "@/styles/material-overlay.css"
 
-type Tab = "providers" | "chat" | "logging" | "about"
+type Tab = "providers" | "chat" | "logging" | "vmodel" | "about"
 type Theme = "dark" | "light"
 type DesignSystem = "default" | "material"
 type UXMode = "original" | "redesign"
@@ -53,6 +54,7 @@ function isTab(value: string): value is Tab {
     value === "providers"
     || value === "chat"
     || value === "logging"
+    || value === "vmodel"
     || value === "about"
   )
 }
@@ -250,7 +252,7 @@ export default function AppComponent() {
             gap: 2,
           }}
         >
-          {(["providers", "chat", "logging", "about"] as Array<Tab>).map((t) => (
+          {(["providers", "chat", "logging", "vmodel", "about"] as Array<Tab>).map((t) => (
             <button
               key={t}
               onClick={() => handleTabChange(t)}
@@ -275,6 +277,7 @@ export default function AppComponent() {
               {t === "providers" && "Providers"}
               {t === "chat" && "Chat"}
               {t === "logging" && "Logging"}
+              {t === "vmodel" && "Vmodel"}
               {t === "about" && "About"}
             </button>
           ))}
@@ -462,6 +465,7 @@ export default function AppComponent() {
                   {tab === "providers" && <MaterialProvidersPageComplete showToast={showToast} />}
                   {tab === "chat" && <ChatPage showToast={showToast} />}
                   {tab === "logging" && <MaterialLoggingPageComplete showToast={showToast} />}
+                  {tab === "vmodel" && <VmodelPage showToast={showToast} />}
                   {tab === "about" && <MaterialAboutPageComplete showToast={showToast} />}
                 </>
                 // Default versions
@@ -472,6 +476,7 @@ export default function AppComponent() {
                     : <ProvidersPage showToast={showToast} />)}
                   {tab === "chat" && <ChatPage showToast={showToast} />}
                   {tab === "logging" && <LoggingPage showToast={showToast} />}
+                  {tab === "vmodel" && <VmodelPage showToast={showToast} />}
                   {tab === "about" && <AboutPage showToast={showToast} />}
                 </>
 

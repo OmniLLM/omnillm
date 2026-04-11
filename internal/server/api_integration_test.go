@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"omnimodel/internal/cif"
+	"omnimodel/internal/database"
 	providertypes "omnimodel/internal/providers/types"
 	"omnimodel/internal/registry"
 )
@@ -540,6 +541,73 @@ func TestAnthropicMessagesRouteNormalizesAliasesBeforeProviderExecution(t *testi
 				t.Fatalf("expected provider to receive model %q, got %q", tc.expectedModel, capturedModel)
 			}
 		})
+	}
+}
+
+func TestAnthropicMessagesRouteRoutesVirtualModelsBeforeProviderExecution(t *testing.T) {
+	const upstreamModel = "claude-haiku-4.5"
+	const virtualModel = "claude-mythos-5.0"
+
+	var capturedModel string
+
+	registerStubProvider(
+		t,
+		upstreamModel,
+		func(req *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+			capturedModel = req.Model
+			return &cif.CanonicalResponse{
+				ID:    "resp_virtual_model",
+				Model: req.Model,
+				Content: []cif.CIFContentPart{
+					cif.CIFTextPart{Type: "text", Text: "pong"},
+				},
+				StopReason: cif.StopReasonEndTurn,
+			}, nil
+		},
+		nil,
+	)
+
+	vmodelStore := database.NewVirtualModelStore()
+	if err := vmodelStore.Create(&database.VirtualModelRecord{
+		VirtualModelID: virtualModel,
+		Name:           "Claude Mythos 5.0",
+		Description:    "Anthropic virtual model alias",
+		APIShape:       "anthropic",
+		LbStrategy:     database.LbStrategyRoundRobin,
+		Enabled:        true,
+	}); err != nil {
+		t.Fatalf("failed to create virtual model: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = vmodelStore.Delete(virtualModel)
+	})
+
+	upstreamStore := database.NewVirtualModelUpstreamStore()
+	if err := upstreamStore.SetForVModel(virtualModel, []database.VirtualModelUpstreamRecord{{
+		VirtualModelID: virtualModel,
+		ModelID:        upstreamModel,
+		Weight:         1,
+		Priority:       0,
+	}}); err != nil {
+		t.Fatalf("failed to set virtual model upstreams: %v", err)
+	}
+
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	resp := postJSON(
+		t,
+		srv.URL+"/v1/messages",
+		fmt.Sprintf(`{"model":"%s","max_tokens":20,"messages":[{"role":"user","content":"ping"}]}`, virtualModel),
+		map[string]string{"anthropic-version": "2023-06-01"},
+	)
+	body := readBody(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
+	}
+
+	if capturedModel != upstreamModel {
+		t.Fatalf("expected provider to receive upstream model %q, got %q", upstreamModel, capturedModel)
 	}
 }
 

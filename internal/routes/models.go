@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 
+	"omnimodel/internal/database"
 	"omnimodel/internal/registry"
 )
 
@@ -82,6 +83,28 @@ func handleModels(c *gin.Context) {
 		"object":   "list",
 		"data":     allModels,
 		"has_more": false,
+	}
+
+	// Append enabled virtual models
+	vmodelStore := database.NewVirtualModelStore()
+	if vmodels, err := vmodelStore.GetAll(); err == nil {
+		for _, vm := range vmodels {
+			if !vm.Enabled {
+				continue
+			}
+			entry := map[string]interface{}{
+				"id":           vm.VirtualModelID,
+				"object":       "model",
+				"created":      time.Now().Unix(),
+				"owned_by":     "virtual",
+				"display_name": vm.Name,
+			}
+			if vm.Description != "" {
+				entry["description"] = vm.Description
+			}
+			allModels = append(allModels, entry)
+		}
+		response["data"] = allModels
 	}
 
 	log.Debug().Int("model_count", len(allModels)).Msg("Returning models list")

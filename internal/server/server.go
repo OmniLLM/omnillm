@@ -178,6 +178,7 @@ func buildRouter() *gin.Engine {
 	// Admin routes
 	adminAPI := r.Group("/api/admin")
 	routes.SetupAdminRoutes(adminAPI)
+	routes.SetupVirtualModelRoutes(adminAPI)
 
 	// Admin static files redirect
 	r.GET("/admin", func(c *gin.Context) {

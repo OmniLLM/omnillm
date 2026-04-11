@@ -63,7 +63,8 @@ func handleResponses(c *gin.Context) {
 		Msg("--> REQUEST")
 
 	// Resolve providers
-	normalizedModel := modelrouting.NormalizeModelName(canonicalRequest.Model)
+	resolvedModel, normalizedModel := resolveRequestedModel(requestIDStr, canonicalRequest.Model)
+	canonicalRequest.Model = resolvedModel
 	modelRoute, err := modelrouting.ResolveProvidersForModel(
 		canonicalRequest.Model,
 		normalizedModel,

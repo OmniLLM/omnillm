@@ -108,6 +108,35 @@ type ChatMessageRecord struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type LbStrategy string
+
+const (
+	LbStrategyRoundRobin LbStrategy = "round-robin"
+	LbStrategyRandom     LbStrategy = "random"
+	LbStrategyPriority   LbStrategy = "priority"
+	LbStrategyWeighted   LbStrategy = "weighted"
+)
+
+type VirtualModelRecord struct {
+	VirtualModelID string     `json:"virtual_model_id"`
+	Name           string     `json:"name"`
+	Description    string     `json:"description"`
+	APIShape       string     `json:"api_shape"`
+	LbStrategy     LbStrategy `json:"lb_strategy"`
+	Enabled        bool       `json:"enabled"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+}
+
+type VirtualModelUpstreamRecord struct {
+	ID             int64     `json:"id"`
+	VirtualModelID string    `json:"virtual_model_id"`
+	ModelID        string    `json:"model_id"`
+	Weight         int       `json:"weight"`
+	Priority       int       `json:"priority"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
 var globalDB *Database
 
 func InitializeDatabase(configDir string) error {
@@ -223,6 +252,31 @@ func (db *Database) createTables() error {
 			created_at DATETIME NOT NULL DEFAULT (datetime('now')),
 			FOREIGN KEY (session_id) REFERENCES chat_sessions (session_id) ON DELETE CASCADE
 		)`,
+
+		// Virtual models table
+		`CREATE TABLE IF NOT EXISTS virtual_models (
+			virtual_model_id TEXT PRIMARY KEY,
+			name             TEXT NOT NULL,
+			description      TEXT NOT NULL DEFAULT '',
+			api_shape        TEXT NOT NULL DEFAULT 'openai',
+			lb_strategy      TEXT NOT NULL DEFAULT 'round-robin'
+			                 CHECK (lb_strategy IN ('round-robin','random','priority','weighted')),
+			enabled          INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+			created_at       DATETIME NOT NULL DEFAULT (datetime('now')),
+			updated_at       DATETIME NOT NULL DEFAULT (datetime('now'))
+		)`,
+
+		// Virtual model upstreams table
+		`CREATE TABLE IF NOT EXISTS virtual_model_upstreams (
+			id               INTEGER PRIMARY KEY AUTOINCREMENT,
+			virtual_model_id TEXT NOT NULL,
+			model_id         TEXT NOT NULL,
+			weight           INTEGER NOT NULL DEFAULT 1,
+			priority         INTEGER NOT NULL DEFAULT 0,
+			created_at       DATETIME NOT NULL DEFAULT (datetime('now')),
+			FOREIGN KEY (virtual_model_id)
+				REFERENCES virtual_models(virtual_model_id) ON DELETE CASCADE
+		)`,
 	}
 
 	for _, query := range queries {
@@ -242,6 +296,7 @@ func (db *Database) createTables() error {
 		`CREATE INDEX IF NOT EXISTS idx_model_configs_instance_id ON model_configs (instance_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_model_configs_model_id ON model_configs (model_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id ON chat_messages (session_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_virtual_model_upstreams_vmodel_id ON virtual_model_upstreams (virtual_model_id)`,
 	}
 
 	for _, indexQuery := range indexes {
@@ -801,4 +856,147 @@ func (mcs *ModelConfigStore) Delete(instanceID, modelID string) error {
 		instanceID, modelID,
 	)
 	return err
+}
+
+// ─── Virtual model operations ─────────────────────────────────────────────────
+
+type VirtualModelStore struct {
+	db *Database
+}
+
+func NewVirtualModelStore() *VirtualModelStore {
+	return &VirtualModelStore{db: GetDatabase()}
+}
+
+func (s *VirtualModelStore) GetAll() ([]VirtualModelRecord, error) {
+	rows, err := s.db.db.Query(`
+		SELECT virtual_model_id, name, description, api_shape, lb_strategy, enabled, created_at, updated_at
+		FROM virtual_models ORDER BY created_at ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var records []VirtualModelRecord
+	for rows.Next() {
+		var r VirtualModelRecord
+		var enabledInt int
+		var createdAtStr, updatedAtStr string
+		if err := rows.Scan(&r.VirtualModelID, &r.Name, &r.Description, &r.APIShape, &r.LbStrategy, &enabledInt, &createdAtStr, &updatedAtStr); err != nil {
+			return nil, err
+		}
+		r.Enabled = enabledInt == 1
+		r.CreatedAt = parseTime(createdAtStr)
+		r.UpdatedAt = parseTime(updatedAtStr)
+		records = append(records, r)
+	}
+	return records, nil
+}
+
+func (s *VirtualModelStore) Get(virtualModelID string) (*VirtualModelRecord, error) {
+	var r VirtualModelRecord
+	var enabledInt int
+	var createdAtStr, updatedAtStr string
+	err := s.db.db.QueryRow(`
+		SELECT virtual_model_id, name, description, api_shape, lb_strategy, enabled, created_at, updated_at
+		FROM virtual_models WHERE virtual_model_id = ?
+	`, virtualModelID).Scan(&r.VirtualModelID, &r.Name, &r.Description, &r.APIShape, &r.LbStrategy, &enabledInt, &createdAtStr, &updatedAtStr)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	r.Enabled = enabledInt == 1
+	r.CreatedAt = parseTime(createdAtStr)
+	r.UpdatedAt = parseTime(updatedAtStr)
+	return &r, nil
+}
+
+func (s *VirtualModelStore) Create(r *VirtualModelRecord) error {
+	enabledInt := 0
+	if r.Enabled {
+		enabledInt = 1
+	}
+	_, err := s.db.db.Exec(`
+		INSERT INTO virtual_models (virtual_model_id, name, description, api_shape, lb_strategy, enabled)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, r.VirtualModelID, r.Name, r.Description, r.APIShape, string(r.LbStrategy), enabledInt)
+	return err
+}
+
+func (s *VirtualModelStore) Update(r *VirtualModelRecord) error {
+	enabledInt := 0
+	if r.Enabled {
+		enabledInt = 1
+	}
+	_, err := s.db.db.Exec(`
+		UPDATE virtual_models
+		SET name = ?, description = ?, api_shape = ?, lb_strategy = ?, enabled = ?, updated_at = datetime('now')
+		WHERE virtual_model_id = ?
+	`, r.Name, r.Description, r.APIShape, string(r.LbStrategy), enabledInt, r.VirtualModelID)
+	return err
+}
+
+func (s *VirtualModelStore) Delete(virtualModelID string) error {
+	_, err := s.db.db.Exec("DELETE FROM virtual_models WHERE virtual_model_id = ?", virtualModelID)
+	return err
+}
+
+// ─── Virtual model upstream operations ───────────────────────────────────────
+
+type VirtualModelUpstreamStore struct {
+	db *Database
+}
+
+func NewVirtualModelUpstreamStore() *VirtualModelUpstreamStore {
+	return &VirtualModelUpstreamStore{db: GetDatabase()}
+}
+
+func (s *VirtualModelUpstreamStore) GetForVModel(virtualModelID string) ([]VirtualModelUpstreamRecord, error) {
+	rows, err := s.db.db.Query(`
+		SELECT id, virtual_model_id, model_id, weight, priority, created_at
+		FROM virtual_model_upstreams
+		WHERE virtual_model_id = ?
+		ORDER BY priority ASC, id ASC
+	`, virtualModelID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var records []VirtualModelUpstreamRecord
+	for rows.Next() {
+		var r VirtualModelUpstreamRecord
+		var createdAtStr string
+		if err := rows.Scan(&r.ID, &r.VirtualModelID, &r.ModelID, &r.Weight, &r.Priority, &createdAtStr); err != nil {
+			return nil, err
+		}
+		r.CreatedAt = parseTime(createdAtStr)
+		records = append(records, r)
+	}
+	return records, nil
+}
+
+// SetForVModel atomically replaces all upstreams for a virtual model.
+func (s *VirtualModelUpstreamStore) SetForVModel(virtualModelID string, upstreams []VirtualModelUpstreamRecord) error {
+	tx, err := s.db.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec("DELETE FROM virtual_model_upstreams WHERE virtual_model_id = ?", virtualModelID); err != nil {
+		return err
+	}
+	for _, u := range upstreams {
+		if _, err := tx.Exec(`
+			INSERT INTO virtual_model_upstreams (virtual_model_id, model_id, weight, priority)
+			VALUES (?, ?, ?, ?)
+		`, virtualModelID, u.ModelID, u.Weight, u.Priority); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
