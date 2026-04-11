@@ -263,8 +263,7 @@ export async function handleGetProviderUsage(c: Context) {
   try {
     const provider = providerRegistry.getProvider(id)
     const response = await provider.getUsage()
-    const data = await response.json()
-    return c.json(data)
+    return response
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     return c.json({ error: message }, 500)

@@ -11,8 +11,7 @@ usageRoute.get("/", async (c) => {
     const provider = state.currentProvider
     if (provider && provider.id !== "github-copilot") {
       const response = await provider.getUsage()
-      const data = await response.json()
-      return c.json(data)
+      return response
     }
     const usage = await getCopilotUsage()
     return c.json(usage)
