@@ -22,6 +22,7 @@ import {
   type Status,
   type UsageData,
 } from "@/api"
+import { getDeviceAuthCopy } from "@/lib/device-auth"
 
 import { createLogger } from "@/lib/logger"
 
@@ -77,6 +78,7 @@ function AuthFlowBanner({
   const name =
     providers.find((p) => p.id === authFlow.providerId)?.name
     ?? authFlow.providerId
+  const authCopy = getDeviceAuthCopy(authFlow, providers)
 
   return (
     <div
@@ -123,7 +125,7 @@ function AuthFlowBanner({
                   marginBottom: 6,
                 }}
               >
-                Enter this code:
+                {authCopy.codeLabel}
               </div>
               <div
                 style={{
@@ -141,6 +143,18 @@ function AuthFlowBanner({
               >
                 {authFlow.userCode}
               </div>
+              {authCopy.codeHint && (
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "var(--color-text-secondary)",
+                    marginTop: 8,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {authCopy.codeHint}
+                </div>
+              )}
             </div>
           )}
           {authFlow.instructionURL && (
@@ -190,7 +204,7 @@ function AuthFlowBanner({
             }}
           >
             <Spin size={13} />
-            Waiting for authorization…
+            {authCopy.waitingLabel}
           </div>
           <div>
             <button

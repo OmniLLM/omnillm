@@ -6,7 +6,9 @@ import { parseArgs } from "node:util"
 import consola from "consola"
 import {
   appendFileSync,
+  closeSync,
   existsSync,
+  openSync,
   readFileSync,
   unlinkSync,
   writeFileSync,
@@ -74,6 +76,7 @@ const { values, positionals } = parseArgs({
     "help": { type: "boolean", short: "h" },
     "verbose": { type: "boolean", short: "v" },
     "rebuild": { type: "boolean", short: "r" },
+    "follow": { type: "boolean", short: "f" },
   },
 })
 
@@ -82,6 +85,7 @@ const serverPort = values["server-port"]
 const frontendPort = values["frontend-port"]
 const verbose = values["verbose"]
 const rebuild = values["rebuild"]
+const follow = values["follow"]
 
 function showHelp() {
   console.log(`
@@ -104,6 +108,7 @@ OPTIONS:
   --frontend-port <port>  Frontend dev server port (default: 5080)
   --verbose, -v           Enable verbose logging
   --rebuild, -r           Stop services, rebuild both frontend and backend, then start
+  --follow, -f            Follow logs in real-time (like tail -f)
   --help, -h              Show help
 
 EXAMPLES:
@@ -122,8 +127,11 @@ EXAMPLES:
   # Stop all services
   bun run omni-dev.ts stop
 
-  # View logs
+  # View recent logs
   bun run omni-dev.ts logs
+
+  # Follow logs in real-time
+  bun run omni-dev.ts logs -f
 
 SERVICE ENDPOINTS:
   Backend API:     http://localhost:${serverPort}
@@ -253,21 +261,25 @@ async function findMatchingPids(): Promise<number[]> {
 }
 
 async function checkPortAvailable(port: number): Promise<boolean> {
-  try {
-    await Bun.connect({
-      hostname: "127.0.0.1",
-      port,
-      socket: {
-        open: (s) => s.end(),
-        data: () => {},
-        close: () => {},
-        error: () => {},
-      },
-    })
-    return false // Port is occupied
-  } catch {
-    return true // Port is available
+  for (const hostname of ["127.0.0.1", "::1"]) {
+    try {
+      await Bun.connect({
+        hostname,
+        port,
+        socket: {
+          open: (s) => s.end(),
+          data: () => {},
+          close: () => {},
+          error: () => {},
+        },
+      })
+      return false // Port is occupied
+    } catch {
+      // Try the next loopback address family.
+    }
   }
+
+  return true // Port is available
 }
 
 function stripAnsi(value: string): string {
@@ -470,6 +482,26 @@ function formatProcessLogLine(
   }
 }
 
+function appendManagerLog(label: string, rawLine: string, isError = false) {
+  const timestamp = new Date().toISOString()
+  const { fileEntry, consoleEntry } = formatProcessLogLine(
+    label,
+    rawLine,
+    timestamp,
+    isError,
+  )
+
+  try {
+    appendFileSync(LOG_FILE, `${fileEntry}\n`)
+  } catch {
+    // ignore log file write errors
+  }
+
+  if (verbose) {
+    process[isError ? "stderr" : "stdout"].write(`${consoleEntry}\n`)
+  }
+}
+
 function createLoggedProcess(
   label: string,
   options: { color: string; cmd: string; args: Array<string> },
@@ -481,61 +513,18 @@ function createLoggedProcess(
     FRONTEND_PORT: frontendPort,
   }
 
+  const logFd = openSync(LOG_FILE, "a")
+  appendManagerLog(label, `Starting ${options.cmd} ${options.args.join(" ")}`)
   const proc = Bun.spawn([options.cmd, ...options.args], {
     env,
-    stdout: "pipe",
-    stderr: "pipe",
+    stdin: "ignore",
+    stdout: logFd,
+    stderr: logFd,
     detached: true,
   })
-
-  function logOutput(stream: ReadableStream<Uint8Array>, isError = false) {
-    void (async () => {
-      const reader = stream.getReader()
-      const decoder = new TextDecoder()
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        const text = decoder.decode(value)
-
-        // Filter out verbose logs
-        const lines = text.split("\n").filter(line => line.trim())
-        for (const line of lines) {
-          // Filter out noisy Gin debug routes and warnings unless verbose
-          if (!verbose) {
-            if (line.includes("[GIN-debug]") ||
-                line.includes("trusted all proxies") ||
-                line.includes("pkg.go.dev/github.com/gin-gonic/gin") ||
-                line.includes("Creating an Engine instance")) {
-              continue
-            }
-          }
-
-          const timestamp = new Date().toISOString()
-          const { fileEntry, consoleEntry } = formatProcessLogLine(
-            label,
-            line,
-            timestamp,
-            isError,
-          )
-
-          // Write to log file
-          try {
-            appendFileSync(LOG_FILE, `${fileEntry}\n`)
-          } catch {
-            // ignore log file write errors
-          }
-
-          // Print to console if verbose or if it's startup info
-          if (verbose || line.includes("running at") || line.includes("ready in")) {
-            process[isError ? "stderr" : "stdout"].write(`${consoleEntry}\n`)
-          }
-        }
-      }
-    })()
-  }
-
-  logOutput(proc.stdout, false)
-  logOutput(proc.stderr, true)
+  closeSync(logFd)
+  proc.unref()
+  appendManagerLog(label, `Spawned detached process (PID: ${proc.pid})`)
 
   return proc
 }
@@ -580,9 +569,10 @@ async function startServices() {
 
   const bunExe = process.execPath
 
-  // Build and start Go backend
+  // Build Go backend: build locally first, then copy to ~/.local/bin
   const isWindows = process.platform === "win32"
-  const binaryPath = isWindows
+  const localBin = isWindows ? "omnimodel.exe" : "omnimodel"
+  const installPath = isWindows
     ? `${process.env.USERPROFILE}/.local/bin/omnimodel.exe`
     : `${homedir()}/.local/bin/omnimodel`
 
@@ -590,7 +580,7 @@ async function startServices() {
   const goExe = process.platform === "win32"
     ? `C:\\Program Files\\Go\\bin\\go.exe`
     : `go`
-  const buildResult = Bun.spawn([goExe, "build", "-o", binaryPath, "main.go"], {
+  const buildResult = Bun.spawn([goExe, "build", "-o", localBin, "main.go"], {
     stdout: "inherit",
     stderr: "inherit",
   })
@@ -599,11 +589,15 @@ async function startServices() {
     consola.error("❌ Failed to build Golang backend")
     process.exit(1)
   }
+
+  // Copy to install path
+  const { copyFileSync } = await import("node:fs")
+  copyFileSync(localBin, installPath)
   consola.success("✅ Golang backend built successfully")
 
   const backendProc = createLoggedProcess("go-backend", {
     color: "31",
-    cmd: binaryPath,
+    cmd: installPath,
     args: ["start", "--port", serverPort],
   })
 
@@ -621,6 +615,11 @@ async function startServices() {
     backend: backendProc.pid,
     frontend: frontendProc.pid,
   })
+
+  if (verbose) {
+    await Bun.sleep(1500)
+    showLogs()
+  }
 
   consola.success("🎉 Services started successfully!")
   consola.info("💡 Use 'bun run omni-dev.ts stop' to stop services")
@@ -747,26 +746,133 @@ async function showStatus() {
   }
 }
 
-function showLogs() {
+function showLogs({ follow = false } = {}) {
   if (!existsSync(LOG_FILE)) {
     consola.info("📭 No logs available yet")
     consola.info("💡 Start services first to generate logs")
     return
   }
 
-  try {
-    const logs = readFileSync(LOG_FILE, "utf8")
-    const lines = logs.split("\n").filter(line => line.trim())
-    const recentLines = lines.slice(-50) // Show last 50 lines
+  if (!follow) {
+    try {
+      const logs = readFileSync(LOG_FILE, "utf8")
+      const lines = logs.split("\n").filter(line => line.trim())
+      const recentLines = lines.slice(-50) // Show last 50 lines
 
-    consola.info("📋 Recent Service Logs (last 50 lines):")
-    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    console.log(recentLines.join("\n"))
-    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    consola.info(`💡 Full logs: ${LOG_FILE}`)
-  } catch (error) {
-    consola.error("❌ Could not read log file")
+      consola.info("📋 Recent Service Logs (last 50 lines):")
+      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+      console.log(recentLines.join("\n"))
+      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+      consola.info(`💡 Full logs: ${LOG_FILE}`)
+    } catch {
+      consola.error("❌ Could not read log file")
+    }
+    return
   }
+
+  // ── Follow mode: tail last 50 lines then stream new ones ──────────────────
+  const logs = readFileSync(LOG_FILE, "utf8")
+  const allLines = logs.split("\n").filter(line => line.trim())
+  const tailLines = allLines.slice(-50)
+
+  consola.info("📋 Streaming logs (last 50 lines, then live)…")
+  consola.info("💡 Press Ctrl+C to stop")
+  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+  // Print recent lines with colorization
+  for (const line of tailLines) {
+    printLogLine(line)
+  }
+  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+  // Track the number of lines we've already processed
+  let processedLineCount = allLines.length
+
+  // Use a polling approach: read file periodically and detect new lines
+  const pollInterval = 500 // ms
+  let stopped = false
+
+  const poll = () => {
+    if (stopped) return
+    try {
+      const content = readFileSync(LOG_FILE, "utf8")
+      const currentLines = content.split("\n").filter(line => line.trim())
+
+      // Only process new lines since our last check
+      if (currentLines.length > processedLineCount) {
+        const newLines = currentLines.slice(processedLineCount)
+        processedLineCount = currentLines.length
+
+        for (const line of newLines) {
+          printLogLine(line)
+        }
+      }
+    } catch {
+      // File may be truncated or inaccessible momentarily
+    }
+    setTimeout(poll, pollInterval)
+  }
+
+  poll()
+
+  // Handle graceful shutdown
+  const onSignal = () => {
+    stopped = true
+    consola.info("\n🛑 Stopping log stream")
+    process.exit(0)
+  }
+
+  process.on("SIGINT", onSignal)
+  process.on("SIGTERM", onSignal)
+}
+
+function printLogLine(rawLine: string) {
+  const trimmed = rawLine.trim()
+  if (!trimmed) return
+
+  // If the line is already pipe-formatted, just colorize it directly.
+  // Check this before trying JSON parse — a pipe line starts with [timestamp].
+  const pipeSegments = trimmed.split(" | ")
+  if (pipeSegments.length >= 4 && /^\[.+\]$/.test(pipeSegments[0])) {
+    const level = pipeSegments[2] ?? "INFO"
+    const clean = stripAnsi(trimmed)
+    process.stdout.write(`${colorizeLogLine(clean, pipeSegments[1] ?? "backend", level)}\n`)
+    return
+  }
+
+  // Otherwise try to parse as JSON from zerolog.
+  try {
+    const parsed = JSON.parse(trimmed) as unknown
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const payload = { ...parsed } as StructuredLogPayload
+
+      // ANSI escapes in the message field are stored as JSON unicode
+      // (e.g. \u001b[32m). After JSON.parse they become actual escape codes
+      // which corrupts terminal output — strip them.
+      if (typeof payload.message === "string") {
+        payload.message = stripAnsi(payload.message)
+      }
+
+      const formatted = formatStructuredLogLine(
+        "backend",
+        payload,
+        new Date().toISOString(),
+        inferTextLogLevel(trimmed, false),
+      )
+      const levelSeg = formatted.split(" | ")[2] ?? "INFO"
+      process.stdout.write(`${colorizeLogLine(formatted, "backend", levelSeg)}\n`)
+      return
+    }
+  } catch {
+    // Not JSON — fall through to plain-text formatting.
+  }
+
+  // Plain text — wrap with timestamp/source/level.
+  const timestamp = new Date().toISOString()
+  const clean = stripAnsi(trimmed)
+  const level = inferTextLogLevel(clean, false)
+  const entry = [`[${timestamp}]`, "backend", level, clean].join(" | ")
+  process.stdout.write(`${colorizeLogLine(entry, "backend", level)}\n`)
 }
 
 // Main command handling
@@ -780,33 +886,38 @@ if (values.help || command === "help") {
   await stopServices()
   await Bun.sleep(2000)
   if (rebuild) {
-    // Rebuild Go backend
+    // Rebuild Go backend: build locally first, then copy to ~/.local/bin
     const isWindows = process.platform === "win32"
-    const binaryPath = isWindows
+    const localBin = isWindows ? "omnimodel.exe" : "omnimodel"
+    const installPath = isWindows
       ? `${process.env.USERPROFILE}/.local/bin/omnimodel.exe`
       : `${homedir()}/.local/bin/omnimodel`
     consola.info("🔨 Rebuilding Golang backend...")
     const goExe = process.platform === "win32"
       ? `C:\\Program Files\\Go\\bin\\go.exe`
       : `go`
-    const buildResult = Bun.spawn([goExe, "build", "-o", binaryPath, "main.go"], {
+    const backendBuild = Bun.spawn([goExe, "build", "-o", localBin, "main.go"], {
       stdout: "inherit",
       stderr: "inherit",
     })
-    await buildResult.exited
-    if (buildResult.exitCode !== 0) {
+    await backendBuild.exited
+    if (backendBuild.exitCode !== 0) {
       consola.error("❌ Failed to rebuild Golang backend")
       process.exit(1)
     }
+
+    // Copy to install path
+    const { copyFileSync } = await import("node:fs")
+    copyFileSync(localBin, installPath)
     consola.success("✅ Golang backend rebuilt successfully")
     // Rebuild frontend
     consola.info("🔨 Rebuilding frontend...")
-    const buildResult = Bun.spawn([process.execPath, "run", "build:frontend"], {
+    const frontendBuild = Bun.spawn([process.execPath, "run", "build"], {
       stdout: "inherit",
       stderr: "inherit",
     })
-    await buildResult.exited
-    if (buildResult.exitCode !== 0) {
+    await frontendBuild.exited
+    if (frontendBuild.exitCode !== 0) {
       consola.error("❌ Failed to rebuild frontend")
       process.exit(1)
     }
@@ -816,7 +927,7 @@ if (values.help || command === "help") {
 } else if (command === "status") {
   await showStatus()
 } else if (command === "logs") {
-  showLogs()
+  showLogs({ follow })
 } else {
   consola.error(`❌ Unknown command: ${command}`)
   console.log()

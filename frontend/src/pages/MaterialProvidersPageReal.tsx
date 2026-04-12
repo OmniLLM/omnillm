@@ -33,6 +33,7 @@ import {
   type Provider,
   type Status,
 } from "@/api"
+import { getDeviceAuthCopy } from "@/lib/device-auth"
 
 interface MaterialProvidersPageProps {
   showToast: (msg: string, type?: "success" | "error") => void
@@ -61,6 +62,7 @@ function MaterialAuthFlowBanner({
   const name =
     providers.find((p) => p.id === authFlow.providerId)?.name
     ?? authFlow.providerId
+  const authCopy = getDeviceAuthCopy(authFlow, providers)
 
   return (
     <Alert
@@ -89,7 +91,7 @@ function MaterialAuthFlowBanner({
                 color="text.secondary"
                 display="block"
               >
-                Enter this code:
+                {authCopy.codeLabel}
               </Typography>
               <Paper
                 sx={{
@@ -112,6 +114,16 @@ function MaterialAuthFlowBanner({
                   {authFlow.userCode}
                 </Typography>
               </Paper>
+              {authCopy.codeHint && (
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  display="block"
+                  sx={{ mt: 1, lineHeight: 1.5 }}
+                >
+                  {authCopy.codeHint}
+                </Typography>
+              )}
             </Box>
           )}
           {authFlow.instructionURL && (

@@ -37,6 +37,9 @@ var providerModels = map[string][]types.Model{
 		{ID: "gpt-oss-120b-medium", Name: "GPT-OSS 120B (Medium)", MaxTokens: 32768, Provider: "antigravity"},
 	},
 	"alibaba": {
+		{ID: "qwen3.6-plus", Name: "Qwen3.6 Plus", MaxTokens: 131072, Provider: "alibaba"},
+		{ID: "qwen3.5-omni-flash", Name: "Qwen3.5 Omni Flash", MaxTokens: 131072, Provider: "alibaba"},
+		{ID: "qwen3-coder-next", Name: "Qwen3 Coder Next", MaxTokens: 131072, Provider: "alibaba"},
 		{ID: "qwen3-coder-plus", Name: "Qwen3 Coder Plus", MaxTokens: 131072, Provider: "alibaba"},
 		{ID: "qwen3-coder-flash", Name: "Qwen3 Coder Flash", MaxTokens: 131072, Provider: "alibaba"},
 		{ID: "qwen3-max", Name: "Qwen3 Max", MaxTokens: 32768, Provider: "alibaba"},
@@ -198,8 +201,19 @@ func (p *GenericProvider) SaveAlibabaOAuthToken(td *alibabapkg.TokenData) (newIn
 		region = "global"
 	}
 
-	// Compute the canonical instance ID: "alibaba-oauth-<region>"
-	newInstanceID = "alibaba-oauth-" + region
+	// Try to extract email from the JWT for the display name and unique instance ID.
+	email := extractEmailFromJWT(td.AccessToken)
+	if email != "" {
+		// Sanitize email for use in instance ID: replace @ and dots with hyphens.
+		safe := strings.ReplaceAll(email, "@", "-")
+		safe = strings.ReplaceAll(safe, ".", "-")
+		newInstanceID = "alibaba-oauth-" + region + "-" + safe
+		p.name = "Alibaba (" + email + ")"
+	} else {
+		suffix := shortTokenSuffix(td.AccessToken)
+		newInstanceID = "alibaba-oauth-" + region + "-" + suffix
+		p.name = "Alibaba OAuth (" + suffix + ")"
+	}
 
 	// Save the token under the new instance ID.
 	tokenStore := database.NewTokenStore()
@@ -215,19 +229,29 @@ func (p *GenericProvider) SaveAlibabaOAuthToken(td *alibabapkg.TokenData) (newIn
 	// Update in-memory instance ID.
 	p.instanceID = newInstanceID
 
-	// Try to extract email from the JWT for the display name.
-	if email := extractEmailFromJWT(td.AccessToken); email != "" {
-		p.name = "Alibaba (" + email + ")"
-	} else {
-		p.name = "Alibaba OAuth (" + region + ")"
-	}
-
 	log.Info().
 		Str("instanceID", p.instanceID).
 		Str("name", p.name).
 		Str("resource_url", td.ResourceURL).
 		Msg("Alibaba OAuth token saved")
 	return newInstanceID, nil
+}
+
+// isJWT checks if a token has the format of a JWT (xxx.yyy.zzz)
+func isJWT(token string) bool {
+	parts := strings.Split(token, ".")
+	return len(parts) == 3 && len(parts[0]) > 0 && len(parts[1]) > 0 && len(parts[2]) > 0
+}
+
+func shortTokenSuffix(token string) string {
+	trimmed := strings.TrimSpace(token)
+	if len(trimmed) >= 5 {
+		return trimmed[len(trimmed)-5:]
+	}
+	if trimmed == "" {
+		return "oauth"
+	}
+	return trimmed
 }
 
 // extractEmailFromJWT decodes the payload of a JWT access token and extracts the email claim.
@@ -421,12 +445,63 @@ func (p *GenericProvider) LoadFromDB() error {
 		}
 
 		p.applyConfig(tokenData)
-	}
 
-	p.loadConfigFromDB()
+		// Load additional config from the config store
+		p.loadConfigFromDB()
+
+		// For Alibaba OAuth, refresh the display name from the JWT.
+		// This ensures stale records (e.g. "alibaba-oauth-china" from before
+		// the email was added to the instance ID) show the correct user email.
+		if p.id == "alibaba" && p.token != "" {
+			region := p.detectRegion()
+			// Only try JWT extraction for OAuth tokens that actually look like JWTs
+			authType, _ := firstString(p.config, "auth_type", "authType")
+
+			if authType == "oauth" && isJWT(p.token) {
+				if email := extractEmailFromJWT(p.token); email != "" {
+					p.name = "Alibaba (" + email + ")"
+					log.Info().
+						Str("instanceID", p.instanceID).
+						Str("extractedEmail", email).
+						Str("newName", p.name).
+						Msg("Updated Alibaba provider name from JWT email")
+				} else {
+					suffix := shortTokenSuffix(p.token)
+					p.name = "Alibaba OAuth (" + suffix + ")"
+					log.Warn().
+						Str("instanceID", p.instanceID).
+						Str("tokenSuffix", suffix).
+						Msg("Failed to extract email from Alibaba JWT token; using token suffix")
+				}
+			} else if authType == "oauth" {
+				// OAuth but not a JWT token (likely opaque OAuth token)
+				suffix := shortTokenSuffix(p.token)
+				p.name = "Alibaba OAuth (" + suffix + ")"
+				log.Info().
+					Str("instanceID", p.instanceID).
+					Str("tokenSuffix", suffix).
+					Msg("Alibaba OAuth provider has non-JWT token; using token suffix")
+			} else {
+				// API key provider - keep default naming
+				p.name = "Alibaba DashScope (" + region + ")"
+				log.Info().
+					Str("instanceID", p.instanceID).
+					Str("authType", authType).
+					Str("newName", p.name).
+					Msg("Updated Alibaba API key provider name")
+			}
+		}
+	}
 
 	log.Debug().Str("provider", p.instanceID).Bool("has_token", p.token != "").Msg("Loaded generic provider token")
 	return nil
+}
+
+func (p *GenericProvider) detectRegion() string {
+	if p.baseURL != "" && strings.Contains(strings.ToLower(p.baseURL), "dashscope-intl") {
+		return "global"
+	}
+	return "china"
 }
 
 func (p *GenericProvider) loadConfigFromDB() {

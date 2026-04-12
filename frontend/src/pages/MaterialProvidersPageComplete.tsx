@@ -81,6 +81,7 @@ import {
   type Status,
   type UsageData,
 } from "@/api"
+import { getDeviceAuthCopy } from "@/lib/device-auth"
 
 interface MaterialProvidersPageCompleteProps {
   showToast: (msg: string, type?: "success" | "error") => void
@@ -104,6 +105,7 @@ function MaterialAuthFlowBanner({
   const name =
     providers.find((p) => p.id === authFlow.providerId)?.name
     ?? authFlow.providerId
+  const authCopy = getDeviceAuthCopy(authFlow, providers)
 
   return (
     <Alert
@@ -133,7 +135,7 @@ function MaterialAuthFlowBanner({
                 display="block"
                 gutterBottom
               >
-                Enter this code:
+                {authCopy.codeLabel}
               </Typography>
               <Paper
                 elevation={0}
@@ -158,6 +160,16 @@ function MaterialAuthFlowBanner({
                   {authFlow.userCode}
                 </Typography>
               </Paper>
+              {authCopy.codeHint && (
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  display="block"
+                  sx={{ mt: 1, lineHeight: 1.5 }}
+                >
+                  {authCopy.codeHint}
+                </Typography>
+              )}
             </Box>
           )}
           {authFlow.instructionURL && (
@@ -185,7 +197,7 @@ function MaterialAuthFlowBanner({
           <Box sx={{ mt: 2, display: "flex", alignItems: "center", gap: 1 }}>
             <CircularProgress size={16} color="inherit" />
             <Typography variant="body2" color="text.secondary">
-              Waiting for authorization…
+              {authCopy.waitingLabel}
             </Typography>
           </Box>
         </Box>
