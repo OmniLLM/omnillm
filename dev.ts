@@ -1,28 +1,39 @@
 #!/usr/bin/env bun
-// dev.ts — cross-platform dev launcher with auto port detection
-// Usage: bun run dev.ts [--server-port 4141] [--frontend-port 5173]
+// dev.ts — unified dev launcher for Go or Node backend + frontend
+// Usage: bun run dev [--backend go] [--server-port 5002] [--frontend-port 5080]
 
-import { parseArgs } from "node:util"
 import consola from "consola"
+import { homedir } from "node:os"
+import { parseArgs } from "node:util"
 
 const { values } = parseArgs({
   args: Bun.argv.slice(2),
   options: {
-    "server-port": { type: "string", default: "4141" },
-    "frontend-port": { type: "string", default: "5173" },
+    "server-port": { type: "string", default: "5002" },
+    "frontend-port": { type: "string", default: "5080" },
+    backend: { type: "string", default: "go" }, // go or node
   },
 })
 
 const serverPort = values["server-port"]
 const frontendPort = values["frontend-port"]
+const backend = values["backend"]
+
 const env = {
   ...process.env,
+  GO_PORT: serverPort,
   SERVER_PORT: serverPort,
   FRONTEND_PORT: frontendPort,
 }
 
-consola.info(`🚀 Starting development environment:`)
-consola.info(`   🖥️  Backend server: http://localhost:${serverPort}`)
+consola.info(
+  `🚀 Starting development environment with ${backend.toUpperCase()} backend:`,
+)
+if (backend === "go") {
+  consola.info(`   🔥 Golang backend: http://localhost:${serverPort}`)
+} else {
+  consola.info(`   🟦 TypeScript backend: http://localhost:${serverPort}`)
+}
 consola.info(`   🌐 Frontend dev server: http://localhost:${frontendPort}`)
 consola.info(`   📱 Admin UI: http://localhost:${frontendPort}/admin/`)
 consola.info(``)
@@ -79,15 +90,16 @@ function run(label: string, color: string, cmd: string, args: Array<string>) {
         })
 
         if (filteredLines.length > 0 && filteredLines.join("\n").trim()) {
-          // Preserve enhanced logging format, just add label color coding
           const output = filteredLines.join("\n")
-          const processedOutput = output.split("\n").map(line => {
-            if (line.trim()) {
-              // Add colored label only at the start of non-empty lines
-              return `${labelColor}[${label}]${resetColor} ${line}`
-            }
-            return line
-          }).join("\n")
+          const processedOutput = output
+            .split("\n")
+            .map((line) => {
+              if (line.trim()) {
+                return `${labelColor}[${label}]${resetColor} ${line}`
+              }
+              return line
+            })
+            .join("\n")
 
           out.write(processedOutput)
         }
@@ -99,8 +111,6 @@ function run(label: string, color: string, cmd: string, args: Array<string>) {
   pipe(proc.stderr, process.stderr)
   return proc
 }
-
-const bunExe = process.execPath // path to the current bun executable
 
 async function waitForPort(port: number, timeoutMs = 30_000): Promise<void> {
   const deadline = Date.now() + timeoutMs
@@ -124,22 +134,13 @@ async function waitForPort(port: number, timeoutMs = 30_000): Promise<void> {
   throw new Error(`Server did not start on port ${port} within ${timeoutMs}ms`)
 }
 
-const server = run("server", "34", bunExe, [
-  "--watch",
-  "src/main.ts",
-  "start",
-  "--port",
-  serverPort,
-])
-
-// Check if ports are available before starting
 async function preflightCheck() {
   const serverAvailable = await checkPortAvailable(Number(serverPort))
   const frontendAvailable = await checkPortAvailable(Number(frontendPort))
 
   if (!serverAvailable) {
     consola.warn(
-      `⚠️  Port ${serverPort} is already in use - server may fail to start`,
+      `⚠️  Port ${serverPort} is already in use - backend may fail to start`,
     )
   }
   if (!frontendAvailable) {
@@ -151,8 +152,38 @@ async function preflightCheck() {
 
 await preflightCheck()
 
+const bunExe = process.execPath
+
+// Start the selected backend
+let server: ReturnType<typeof Bun.spawn>
+if (backend === "go") {
+  const isWindows = process.platform === "win32"
+  const binaryPath =
+    isWindows ?
+      `${process.env.USERPROFILE}/.local/bin/omnimodel.exe`
+    : `${homedir()}/.local/bin/omnimodel`
+
+  server = run("go-server", "31", binaryPath, [
+    "start",
+    "--port",
+    serverPort,
+    "--verbose",
+  ])
+} else {
+  server = run("ts-server", "34", bunExe, [
+    "--watch",
+    "src/main.ts",
+    "start",
+    "--port",
+    serverPort,
+  ])
+}
+
+// Wait for backend to be ready
 // eslint-disable-next-line @typescript-eslint/no-floating-promises
 waitForPort(Number(serverPort))
+
+// Start frontend
 const frontend = run("frontend", "32", bunExe, [
   "node_modules/.bin/vite",
   "--config",
@@ -161,8 +192,7 @@ const frontend = run("frontend", "32", bunExe, [
   frontendPort,
 ])
 
-// eslint-disable-next-line @typescript-eslint/require-await
-async function cleanup() {
+function cleanup() {
   server.kill()
   frontend.kill()
   process.exit(0)
@@ -172,4 +202,5 @@ process.on("SIGINT", cleanup)
 process.on("SIGTERM", cleanup)
 
 // Keep the process alive
+
 await Promise.all([server.exited, frontend.exited])

@@ -115,7 +115,7 @@ func buildRouter(port int) *gin.Engine {
 			Str("path", c.Request.RequestURI).
 			Int("status", status).
 			Int64("latency_ms", latencyMs).
-			Msg("HTTP request")
+			Msg(fmt.Sprintf("[33m-->[0m %s %s [32m<-- %d[0m", c.Request.Method, c.Request.RequestURI, status))
 	})
 
 	// Configure CORS

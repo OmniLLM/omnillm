@@ -115,65 +115,73 @@ Recommended when standardizing runtime packaging, mounting persistent state, and
 
 ### Prerequisites
 
-- [Bun](https://bun.sh) >= 1.2 (for TypeScript backend)
+- [Bun](https://bun.sh) >= 1.2
 - [Go](https://golang.org) >= 1.22 (for Golang backend)
 
-### Run from source (TypeScript backend - original)
+### Development mode (foreground, Ctrl+C to stop)
 
 ```sh
-git clone https://github.com/zhujian0805/OmniModel
-cd OmniModel
-bun install
 bun run dev
 ```
 
-Default endpoints:
+Starts both backend and frontend. The frontend is available at `http://localhost:5080` and proxies API calls to the Go backend at `http://localhost:5002`.
 
-- API: `http://localhost:4141`
-- Admin UI: `http://localhost:4141/admin/`
+Options:
 
-### 🚀 Run from source (Golang backend - new)
-
-**Simple commands:**
 ```sh
-# Start both backend and frontend
-./omni start
+# Use TypeScript backend
+bun run dev --backend node
 
-# Check status 
-./omni status
+# Custom ports
+bun run dev --server-port 8000 --frontend-port 3000
+```
+
+### Background mode with service management
+
+For persistent services with start/stop/status/log management:
+
+```sh
+# Start both backend and frontend (runs in background)
+bun run omni start
+
+# Check service status
+bun run omni status
 
 # Stop all services
-./omni stop
+bun run omni stop
 
-# View logs
-./omni logs
+# View recent logs
+bun run omni logs
 
 # Restart services
-./omni restart
+bun run omni restart
+
+# Rebuild and restart (rebuilds Go binary + frontend)
+bun run omni restart --rebuild
+
+# Rebuild entire stack with custom ports and verbose logging
+bun run omni restart --rebuild --server-port 5000 --frontend-port 5080 -v
 ```
 
-**Advanced usage:**
+Options:
+
 ```sh
 # Custom ports
-./omni start --server-port 8000 --frontend-port 3000
+bun run omni start --server-port 8000 --frontend-port 3000
 
-# Use TypeScript backend instead
-./omni start --backend node
+# Use TypeScript backend instead of Go
+bun run omni start --backend node
 
 # Verbose logging
-./omni start --verbose
+bun run omni start --verbose
 ```
 
-Default endpoints:
+Available endpoints:
 
-- API: `http://localhost:5002`
-- Admin UI: `http://localhost:5080/admin/`
-
-**Benefits of the Golang backend:**
-- Lower memory footprint
-- Better performance for high-throughput scenarios
-- Single binary deployment
-- Faster startup time
+| Backend | API | Admin UI |
+|---|---|---|
+| Go (default) | `http://localhost:5002` | `http://localhost:5080/admin/` |
+| Node (`--backend node`) | `http://localhost:4141` | `http://localhost:4141/admin/` |
 
 ### Run with bunx
 
@@ -476,13 +484,18 @@ This ensures only your main conversation requests go through the per-request-bil
 ```sh
 bun install
 
-# Start backend + frontend dev servers
+# Start backend + frontend dev servers (foreground)
 bun run dev
 
 # Custom ports
-bun run dev.ts --server-port 8080 --frontend-port 3000
+bun run dev --server-port 8080 --frontend-port 3000
 
-# Backend only
+# Background mode with service management
+bun run omni start
+bun run omni status
+bun run omni stop
+
+# Backend only (TypeScript)
 bun run dev:server
 
 # Frontend only

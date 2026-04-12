@@ -70,7 +70,7 @@ func handleMessages(c *gin.Context) {
 		Int("messages", len(canonicalRequest.Messages)).
 		Int("tools", len(canonicalRequest.Tools)).
 		Bool("stream", canonicalRequest.Stream).
-		Msg("--> REQUEST")
+		Msg("\x1b[33m-->\x1b[0m REQUEST")
 
 	// Resolve providers
 	attempts := resolveRequestedModels(requestIDStr, canonicalRequest.Model)
@@ -196,7 +196,7 @@ func handleAnthropicNonStreamingResponse(c *gin.Context, adapter types.ProviderA
 		Int("input_tokens", inputTokens).
 		Int("output_tokens", outputTokens).
 		Int64("latency_ms", time.Since(startTime).Milliseconds()).
-		Msg("<-- RESPONSE")
+		Msg("\x1b[32m<--\x1b[0m RESPONSE")
 
 	c.JSON(http.StatusOK, anthropicResp)
 	return nil
@@ -265,7 +265,7 @@ func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 				Int("input_tokens", inputTokens).
 				Int("output_tokens", outputTokens).
 				Int64("latency_ms", time.Since(startTime).Milliseconds()).
-				Msg("<-- RESPONSE stream")
+				Msg("\x1b[32m<--\x1b[0m RESPONSE stream")
 			return false
 		}
 
