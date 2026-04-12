@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
-// dev.ts — unified dev launcher for Go or Node backend + frontend
-// Usage: bun run dev [--backend go] [--server-port 5002] [--frontend-port 5080]
+// dev.ts — dev launcher for Go backend + frontend
+// Usage: bun run dev [--server-port 5002] [--frontend-port 5080]
 
 import consola from "consola"
 import { homedir } from "node:os"
@@ -11,13 +11,11 @@ const { values } = parseArgs({
   options: {
     "server-port": { type: "string", default: "5002" },
     "frontend-port": { type: "string", default: "5080" },
-    backend: { type: "string", default: "go" }, // go or node
   },
 })
 
 const serverPort = values["server-port"]
 const frontendPort = values["frontend-port"]
-const backend = values["backend"]
 
 const env = {
   ...process.env,
@@ -26,14 +24,8 @@ const env = {
   FRONTEND_PORT: frontendPort,
 }
 
-consola.info(
-  `🚀 Starting development environment with ${backend.toUpperCase()} backend:`,
-)
-if (backend === "go") {
-  consola.info(`   🔥 Golang backend: http://localhost:${serverPort}`)
-} else {
-  consola.info(`   🟦 TypeScript backend: http://localhost:${serverPort}`)
-}
+consola.info(`🚀 Starting development environment:`)
+consola.info(`   🔥 Golang backend: http://localhost:${serverPort}`)
 consola.info(`   🌐 Frontend dev server: http://localhost:${frontendPort}`)
 consola.info(`   📱 Admin UI: http://localhost:${frontendPort}/admin/`)
 consola.info(``)
@@ -154,30 +146,18 @@ await preflightCheck()
 
 const bunExe = process.execPath
 
-// Start the selected backend
-let server: ReturnType<typeof Bun.spawn>
-if (backend === "go") {
-  const isWindows = process.platform === "win32"
-  const binaryPath =
-    isWindows ?
-      `${process.env.USERPROFILE}/.local/bin/omnimodel.exe`
-    : `${homedir()}/.local/bin/omnimodel`
+const isWindows = process.platform === "win32"
+const binaryPath =
+  isWindows ?
+    `${process.env.USERPROFILE}/.local/bin/omnimodel.exe`
+  : `${homedir()}/.local/bin/omnimodel`
 
-  server = run("go-server", "31", binaryPath, [
-    "start",
-    "--port",
-    serverPort,
-    "--verbose",
-  ])
-} else {
-  server = run("ts-server", "34", bunExe, [
-    "--watch",
-    "src/main.ts",
-    "start",
-    "--port",
-    serverPort,
-  ])
-}
+const server = run("go-server", "31", binaryPath, [
+  "start",
+  "--port",
+  serverPort,
+  "--verbose",
+])
 
 // Wait for backend to be ready
 // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -202,5 +182,4 @@ process.on("SIGINT", cleanup)
 process.on("SIGTERM", cleanup)
 
 // Keep the process alive
-
 await Promise.all([server.exited, frontend.exited])

@@ -1,24 +1,36 @@
-FROM oven/bun:1.2.19-alpine AS builder
+# ── Build stage: compile Go binary ─────────────────────────────────────────
+FROM golang:1.23-alpine AS go-builder
 WORKDIR /app
 
-COPY ./package.json ./bun.lock ./
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o omnimodel main.go
+
+# ── Build stage: build frontend assets ─────────────────────────────────────
+FROM oven/bun:1.2.19-alpine AS frontend-builder
+WORKDIR /app
+
+COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 
 COPY . .
 RUN bun run build
 
-FROM oven/bun:1.2.19-alpine AS runner
+# ── Runner stage ─────────────────────────────────────────────────────────────
+FROM alpine:3.20 AS runner
 WORKDIR /app
 
-COPY ./package.json ./bun.lock ./
-RUN bun install --frozen-lockfile --production --ignore-scripts --no-cache
+RUN apk add --no-cache ca-certificates
 
-COPY --from=builder /app/dist ./dist
+COPY --from=go-builder /app/omnimodel ./omnimodel
+COPY --from=frontend-builder /app/pages ./pages
 
-EXPOSE 4141
+EXPOSE 5002
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget --spider -q http://localhost:4141/ || exit 1
+  CMD wget --spider -q http://localhost:5002/ || exit 1
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

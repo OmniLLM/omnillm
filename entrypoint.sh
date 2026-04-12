@@ -1,9 +1,6 @@
 #!/bin/sh
 if [ "$1" = "--auth" ]; then
-  # Run auth command
-  exec bun dist/main.js auth
+  exec /app/omnimodel auth
 else
-  # Default command
-  exec bun dist/main.js start -g "$GH_TOKEN" "$@"
+  exec /app/omnimodel start --port 5002 "$@"
 fi
-

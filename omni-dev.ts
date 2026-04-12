@@ -71,7 +71,6 @@ const { values, positionals } = parseArgs({
   options: {
     "server-port": { type: "string", default: "5002" },
     "frontend-port": { type: "string", default: "5080" },
-    "backend": { type: "string", default: "go" }, // go or node
     "help": { type: "boolean", short: "h" },
     "verbose": { type: "boolean", short: "v" },
     "rebuild": { type: "boolean", short: "r" },
@@ -81,7 +80,6 @@ const { values, positionals } = parseArgs({
 const command = positionals[0] || "help"
 const serverPort = values["server-port"]
 const frontendPort = values["frontend-port"]
-const backend = values["backend"]
 const verbose = values["verbose"]
 const rebuild = values["rebuild"]
 
@@ -104,7 +102,6 @@ COMMANDS:
 OPTIONS:
   --server-port <port>    Backend server port (default: 5002)
   --frontend-port <port>  Frontend dev server port (default: 5080)
-  --backend <type>        Backend type: 'go' or 'node' (default: go)
   --verbose, -v           Enable verbose logging
   --rebuild, -r           Stop services, rebuild both frontend and backend, then start
   --help, -h              Show help
@@ -118,9 +115,6 @@ EXAMPLES:
 
   # Rebuild and restart with custom ports
   bun run omni-dev.ts restart --rebuild --server-port 5000 --frontend-port 5080
-
-  # Start with TypeScript backend instead of Go
-  bun run omni-dev.ts start --backend node
 
   # Check service status
   bun run omni-dev.ts status
@@ -137,8 +131,7 @@ SERVICE ENDPOINTS:
   Admin UI:        http://localhost:${frontendPort}/admin/
 
 FEATURES:
-  • 🔥 High-performance Golang backend (default)
-  • 🟦 TypeScript/Node.js backend (alternative)
+  • 🔥 Golang backend
   • 🌐 React frontend with Vite dev server
   • 📱 Integrated admin UI
   • 🔗 Automatic API proxying
@@ -240,7 +233,6 @@ async function findMatchingPids(): Promise<number[]> {
   // Use path-separator-agnostic keywords (avoid / vs \ issues on Windows)
   const patterns: Array<string[]> = [
     ["omnimodel", "start", "--port"], // Go binary
-    ["src/main.ts", "start", "--port"], // TS backend via bun
     ["vite.config.ts", "--port"], // Frontend Vite (matches forward or backslash paths)
   ]
 
@@ -561,7 +553,7 @@ async function startServices() {
   }
 
   consola.info("🚀 Starting OmniModel development environment...")
-  consola.info(`   🔥 Backend (${backend.toUpperCase()}): http://localhost:${serverPort}`)
+  consola.info(`   🔥 Backend (Go): http://localhost:${serverPort}`)
   consola.info(`   🌐 Frontend: http://localhost:${frontendPort}`)
   consola.info(`   📱 Admin UI: http://localhost:${frontendPort}/admin/`)
   if (!verbose) {
@@ -587,43 +579,33 @@ async function startServices() {
   }
 
   const bunExe = process.execPath
-  let backendProc: ReturnType<typeof Bun.spawn>
 
-  if (backend === "go") {
-    // Ensure Go binary exists
-    const isWindows = process.platform === "win32"
-    const binaryPath = isWindows
-      ? `${process.env.USERPROFILE}/.local/bin/omnimodel.exe`
-      : `${homedir()}/.local/bin/omnimodel`
+  // Build and start Go backend
+  const isWindows = process.platform === "win32"
+  const binaryPath = isWindows
+    ? `${process.env.USERPROFILE}/.local/bin/omnimodel.exe`
+    : `${homedir()}/.local/bin/omnimodel`
 
-    consola.info("🔨 Building Golang backend...")
-    const goExe = process.platform === "win32"
-      ? `C:\\Program Files\\Go\\bin\\go.exe`
-      : `go`
-    // Using modernc.org/sqlite (pure Go) instead of go-sqlite3, so no CGO needed
-    const buildResult = Bun.spawn([goExe, "build", "-o", binaryPath, "main.go"], {
-      stdout: "inherit",
-      stderr: "inherit",
-    })
-    await buildResult.exited
-    if (buildResult.exitCode !== 0) {
-      consola.error("❌ Failed to build Golang backend")
-      process.exit(1)
-    }
-    consola.success("✅ Golang backend built successfully")
-
-    backendProc = createLoggedProcess("go-backend", {
-      color: "31",
-      cmd: binaryPath,
-      args: ["start", "--port", serverPort],
-    })
-  } else {
-    backendProc = createLoggedProcess("ts-backend", {
-      color: "34",
-      cmd: bunExe,
-      args: ["--watch", "src/main.ts", "start", "--port", serverPort],
-    })
+  consola.info("🔨 Building Golang backend...")
+  const goExe = process.platform === "win32"
+    ? `C:\\Program Files\\Go\\bin\\go.exe`
+    : `go`
+  const buildResult = Bun.spawn([goExe, "build", "-o", binaryPath, "main.go"], {
+    stdout: "inherit",
+    stderr: "inherit",
+  })
+  await buildResult.exited
+  if (buildResult.exitCode !== 0) {
+    consola.error("❌ Failed to build Golang backend")
+    process.exit(1)
   }
+  consola.success("✅ Golang backend built successfully")
+
+  const backendProc = createLoggedProcess("go-backend", {
+    color: "31",
+    cmd: binaryPath,
+    args: ["start", "--port", serverPort],
+  })
 
   // Wait a bit for backend to start
   await Bun.sleep(2000)
@@ -735,7 +717,7 @@ async function showStatus() {
   const backendRunning = pids.backend && isProcessRunning(pids.backend)
   const backendPortBusy = !(await checkPortAvailable(Number(serverPort)))
 
-  console.log(`🔥 Backend (${backend.toUpperCase()}):`)
+  console.log(`🔥 Backend (Go):`)
   console.log(`   Status: ${backendRunning ? '🟢 Running' : '🔴 Stopped'}`)
   console.log(`   PID: ${pids.backend || 'N/A'}`)
   console.log(`   Port: ${serverPort} ${backendPortBusy ? '(🔒 Busy)' : '(🔓 Free)'}`)
@@ -799,26 +781,24 @@ if (values.help || command === "help") {
   await Bun.sleep(2000)
   if (rebuild) {
     // Rebuild Go backend
-    if (backend === "go") {
-      const isWindows = process.platform === "win32"
-      const binaryPath = isWindows
-        ? `${process.env.USERPROFILE}/.local/bin/omnimodel.exe`
-        : `${homedir()}/.local/bin/omnimodel`
-      consola.info("🔨 Rebuilding Golang backend...")
-      const goExe = process.platform === "win32"
-        ? `C:\\Program Files\\Go\\bin\\go.exe`
-        : `go`
-      const buildResult = Bun.spawn([goExe, "build", "-o", binaryPath, "main.go"], {
-        stdout: "inherit",
-        stderr: "inherit",
-      })
-      await buildResult.exited
-      if (buildResult.exitCode !== 0) {
-        consola.error("❌ Failed to rebuild Golang backend")
-        process.exit(1)
-      }
-      consola.success("✅ Golang backend rebuilt successfully")
+    const isWindows = process.platform === "win32"
+    const binaryPath = isWindows
+      ? `${process.env.USERPROFILE}/.local/bin/omnimodel.exe`
+      : `${homedir()}/.local/bin/omnimodel`
+    consola.info("🔨 Rebuilding Golang backend...")
+    const goExe = process.platform === "win32"
+      ? `C:\\Program Files\\Go\\bin\\go.exe`
+      : `go`
+    const buildResult = Bun.spawn([goExe, "build", "-o", binaryPath, "main.go"], {
+      stdout: "inherit",
+      stderr: "inherit",
+    })
+    await buildResult.exited
+    if (buildResult.exitCode !== 0) {
+      consola.error("❌ Failed to rebuild Golang backend")
+      process.exit(1)
     }
+    consola.success("✅ Golang backend rebuilt successfully")
     // Rebuild frontend
     consola.info("🔨 Rebuilding frontend...")
     const buildResult = Bun.spawn([process.execPath, "run", "build:frontend"], {

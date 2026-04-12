@@ -1,7 +1,7 @@
 {
   "name": "omnimodel",
   "version": "0.0.1",
-  "description": "Turn GitHub Copilot into OpenAI/Anthropic API compatible server. Usable with Claude Code!",
+  "description": "Multi-provider LLM gateway with OpenAI/Anthropic-compatible APIs",
   "keywords": [
     "proxy",
     "github-copilot",
@@ -15,36 +15,23 @@
   },
   "author": "Erick Christian <erickchristian48@gmail.com>",
   "type": "module",
-  "bin": {
-    "omnimodel": "./dist/main.js"
-  },
-  "files": [
-    "dist",
-    "pages"
-  ],
   "scripts": {
-    "build": "vite build --config frontend/vite.config.ts && tsdown",
-    "build:frontend": "vite build --config frontend/vite.config.ts",
+    "build": "vite build --config frontend/vite.config.ts",
     "build:go": "go build -o ~/.local/bin/omnimodel main.go",
-    "build:server": "tsdown",
     "dev": "bun run dev.ts",
     "dev:frontend": "vite --config frontend/vite.config.ts",
-    "dev:server": "bun run --watch ./src/main.ts start",
     "knip": "knip-bun",
     "lint": "eslint --cache",
     "lint:all": "eslint --cache .",
     "omni": "bun run omni-dev.ts",
-    "prepack": "bun run build",
     "prepare": "simple-git-hooks",
-    "release": "bumpp && bun publish --access public",
-    "start": "bun run ./src/main.ts",
     "test": "bun test --timeout 30000 tests/",
     "test:frontend": "bun test tests/frontend/",
     "test:frontend:edge-cases": "bun test tests/frontend/edge-cases/",
     "test:frontend:integration": "bun test tests/frontend/integration/",
     "test:frontend:pages": "bun test tests/frontend/pages/",
     "test:frontend:watch": "bun test --watch tests/frontend/",
-    "typecheck": "tsc && tsc -p frontend/tsconfig.json"
+    "typecheck": "tsc -p frontend/tsconfig.json"
   },
   "simple-git-hooks": {
     "pre-commit": "bunx lint-staged"
@@ -58,18 +45,7 @@
     "@mui/icons-material": "^7.3.9",
     "@mui/lab": "^7.0.1-beta.23",
     "@mui/material": "^7.3.9",
-    "citty": "^0.1.6",
-    "clipboardy": "^5.0.0",
-    "consola": "^3.4.2",
-    "fetch-event-stream": "^0.1.5",
-    "gpt-tokenizer": "^3.0.1",
-    "hono": "^4.9.9",
-    "openai": "^6.33.0",
-    "proxy-from-env": "^1.1.0",
-    "srvx": "^0.8.9",
-    "tiny-invariant": "^1.3.3",
-    "undici": "^7.16.0",
-    "zod": "^4.1.11"
+    "consola": "^3.4.2"
   },
   "devDependencies": {
     "@echristian/eslint-config": "^0.0.54",
@@ -80,14 +56,11 @@
     "@radix-ui/react-tabs": "^1.1.13",
     "@tailwindcss/vite": "^4.2.2",
     "@types/bun": "^1.3.11",
-    "@types/proxy-from-env": "^1.0.4",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
-    "bumpp": "^10.2.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "concurrently": "^9.2.1",
     "eslint": "^9.37.0",
     "knip": "^5.64.1",
     "lint-staged": "^16.2.3",
@@ -98,20 +71,7 @@
     "simple-git-hooks": "^2.13.1",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.2",
-    "tsdown": "^0.15.6",
     "typescript": "^5.9.3",
     "vite": "^8.0.3"
-  },
-  "peerDependencies": {
-    "@opentui/core": "^0.1.96",
-    "@opentui/react": "^0.1.96"
-  },
-  "peerDependenciesMeta": {
-    "@opentui/core": {
-      "optional": true
-    },
-    "@opentui/react": {
-      "optional": true
-    }
   }
 }
