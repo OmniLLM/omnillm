@@ -4,6 +4,7 @@ import {
   activateProvider,
   addProviderInstance,
   authProvider,
+  cancelAuth,
   deactivateProvider,
   deleteProvider,
   getAuthStatus,
@@ -61,9 +62,11 @@ function Spin({ size = 14 }: { size?: number }) {
 function AuthFlowBanner({
   authFlow,
   providers,
+  onCancel,
 }: {
   authFlow: AuthFlow | null | undefined
   providers: Array<Provider>
+  onCancel: () => void
 }) {
   if (
     !authFlow
@@ -188,6 +191,15 @@ function AuthFlowBanner({
           >
             <Spin size={13} />
             Waiting for authorization…
+          </div>
+          <div>
+            <button
+              className="btn btn-sm"
+              style={{ color: "var(--color-text-secondary)" }}
+              onClick={onCancel}
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}
@@ -1969,6 +1981,16 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
     }, 2000)
   }, [load, showToast, stopPoll])
 
+  const handleCancelAuth = useCallback(async () => {
+    stopPoll()
+    setStatus((prev) => (prev ? { ...prev, authFlow: null } : prev))
+    try {
+      await cancelAuth()
+    } catch {
+      /* ignore */
+    }
+  }, [stopPoll])
+
   useEffect(() => {
     void load()
     return stopPoll
@@ -2150,7 +2172,7 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
 
   return (
     <div>
-      <AuthFlowBanner authFlow={status?.authFlow} providers={providers} />
+      <AuthFlowBanner authFlow={status?.authFlow} providers={providers} onCancel={handleCancelAuth} />
 
       {/* Page header */}
       <div

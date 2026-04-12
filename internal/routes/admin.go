@@ -47,8 +47,9 @@ type authFlowState struct {
 	InstructionURL string `json:"instructionURL,omitempty"`
 	UserCode       string `json:"userCode,omitempty"`
 	Error          string `json:"error,omitempty"`
-	deviceCode   string // internal, not exposed
-	codeVerifier string // internal PKCE verifier for Alibaba OAuth
+	deviceCode   string              // internal, not exposed
+	codeVerifier string              // internal PKCE verifier for Alibaba OAuth
+	cancelFn     context.CancelFunc // cancels the background polling goroutine
 }
 
 // BroadcastLog sends a log message to all SSE subscribers
@@ -111,6 +112,7 @@ func SetupAdminRoutes(router *gin.RouterGroup, port int) {
 	router.GET("/info", makeGetInfoHandler(port))
 	router.GET("/status", handleGetStatus)
 	router.GET("/auth-status", handleGetAuthStatus)
+	router.POST("/auth/cancel", handleCancelAuth)
 
 	// Settings
 	router.GET("/settings/log-level", handleGetLogLevel)
@@ -640,10 +642,25 @@ func handleProviderAuth(c *gin.Context) {
 		}
 
 		// Pick the best verification URL to show the user.
+		// Append prompt=login so Qwen shows the account chooser instead of
+		// auto-signing in with the already-logged-in session.
 		verifyURL := flow.VerificationURIComplete
 		if verifyURL == "" {
 			verifyURL = flow.VerificationURI
 		}
+		if verifyURL != "" && !strings.Contains(verifyURL, "prompt=") {
+			sep := "&"
+			if !strings.Contains(verifyURL, "?") {
+				sep = "?"
+			}
+			verifyURL += sep + "prompt=login"
+		}
+
+		// Poll for the token in the background.
+		alibabaCtx, alibabaCancel := context.WithCancel(context.Background())
+		alibabaFlow := flow
+		alibabaGen := gen
+		alibabaReg := providerRegistry
 
 		activeAuthFlowMu.Lock()
 		activeAuthFlow = &authFlowState{
@@ -653,22 +670,24 @@ func handleProviderAuth(c *gin.Context) {
 			UserCode:       flow.UserCode,
 			deviceCode:     flow.DeviceCode,
 			codeVerifier:   flow.CodeVerifier,
+			cancelFn:       alibabaCancel,
 		}
 		activeAuthFlowMu.Unlock()
 
-		// Poll for the token in the background.
-		alibabaFlow := flow
-		alibabaGen := gen
-		alibabaReg := providerRegistry
 		go func() {
+			defer alibabaCancel()
 			td, err := alibabapkg.PollForToken(
-				context.Background(),
+				alibabaCtx,
 				alibabaFlow.DeviceCode,
 				alibabaFlow.CodeVerifier,
 				alibabaFlow.Interval,
 				alibabaFlow.ExpiresIn,
 			)
 			if err != nil {
+				// Ignore cancellation — user cancelled intentionally
+				if alibabaCtx.Err() != nil {
+					return
+				}
 				activeAuthFlowMu.Lock()
 				if activeAuthFlow != nil && activeAuthFlow.ProviderID == providerID {
 					activeAuthFlow.Status = "error"
@@ -729,6 +748,7 @@ func handleProviderAuth(c *gin.Context) {
 		}
 
 		// Set auth flow state to awaiting_user
+		copilotCtx, copilotCancel := context.WithCancel(context.Background())
 		activeAuthFlowMu.Lock()
 		activeAuthFlow = &authFlowState{
 			ProviderID:     providerID,
@@ -736,6 +756,7 @@ func handleProviderAuth(c *gin.Context) {
 			InstructionURL: deviceCode.VerificationURI,
 			UserCode:       deviceCode.UserCode,
 			deviceCode:     deviceCode.DeviceCode,
+			cancelFn:       copilotCancel,
 		}
 		activeAuthFlowMu.Unlock()
 
@@ -744,7 +765,12 @@ func handleProviderAuth(c *gin.Context) {
 		prov := cop
 		reg := providerRegistry
 		go func() {
+			defer copilotCancel()
 			if err := prov.PollAndCompleteDeviceCodeFlow(dc); err != nil {
+				// Ignore if cancelled
+				if copilotCtx.Err() != nil {
+					return
+				}
 				activeAuthFlowMu.Lock()
 				if activeAuthFlow != nil && activeAuthFlow.ProviderID == providerID {
 					activeAuthFlow.Status = "error"
@@ -1266,7 +1292,24 @@ func handleGetAuthStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// ─── Settings ───
+func handleCancelAuth(c *gin.Context) {
+	activeAuthFlowMu.Lock()
+	flow := activeAuthFlow
+	if flow != nil {
+		if flow.cancelFn != nil {
+			flow.cancelFn()
+		}
+		activeAuthFlow = nil
+	}
+	activeAuthFlowMu.Unlock()
+
+	if flow == nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "No active auth flow"})
+		return
+	}
+	log.Info().Str("provider", flow.ProviderID).Msg("OAuth flow cancelled by user")
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Auth flow cancelled"})
+}
 
 func handleGetLogLevel(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{

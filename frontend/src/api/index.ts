@@ -423,6 +423,9 @@ export const getStatus = () => apiFetch<Status>("/api/admin/status")
 export const getAuthStatus = () =>
   apiFetch<AuthFlow | null>("/api/admin/auth-status")
 
+export const cancelAuth = () =>
+  apiFetch<{ success: boolean }>("/api/admin/auth/cancel", { method: "POST" })
+
 // ─── Info ─────────────────────────────────────────────────────────────────────
 
 export const getInfo = () => apiFetch<ServerInfo>("/api/admin/info")
