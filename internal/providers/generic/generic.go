@@ -4,6 +4,8 @@ package generic
 import (
 	"bufio"
 	"bytes"
+	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +16,7 @@ import (
 
 	"omnimodel/internal/cif"
 	"omnimodel/internal/database"
+	alibabapkg "omnimodel/internal/providers/alibaba"
 	"omnimodel/internal/providers/types"
 
 	"github.com/rs/zerolog/log"
@@ -89,6 +92,9 @@ func (p *GenericProvider) GetID() string         { return p.id }
 func (p *GenericProvider) GetInstanceID() string { return p.instanceID }
 func (p *GenericProvider) GetName() string       { return p.name }
 
+// SetInstanceID updates the provider's in-memory instance ID after a registry rename.
+func (p *GenericProvider) SetInstanceID(newID string) { p.instanceID = newID }
+
 func (p *GenericProvider) SetupAuth(options *types.AuthOptions) error {
 	switch p.id {
 	case "alibaba":
@@ -132,14 +138,166 @@ func (p *GenericProvider) setupAlibabaAuth(options *types.AuthOptions) error {
 		return nil
 
 	case "oauth":
-		// OAuth is handled via separate device code endpoints in the admin routes.
-		// This method just acknowledges the OAuth method was selected.
-		log.Info().Str("provider", p.instanceID).Msg("Alibaba OAuth method selected - use device code endpoints")
-		return nil
+		// The OAuth device-code flow is driven by admin.go (same pattern as GitHub Copilot).
+		// This path is reached after the token has already been obtained and persisted;
+		// reload the token from the database so the provider is ready to serve requests.
+		return p.loadAlibabaTokenFromDB()
 
 	default:
 		return fmt.Errorf("alibaba: unsupported auth method: %s", options.Method)
 	}
+}
+
+// loadAlibabaTokenFromDB reads the persisted Alibaba token and applies it to the provider.
+func (p *GenericProvider) loadAlibabaTokenFromDB() error {
+	tokenStore := database.NewTokenStore()
+	record, err := tokenStore.Get(p.instanceID)
+	if err != nil {
+		return fmt.Errorf("alibaba: failed to load token from DB: %w", err)
+	}
+	if record == nil {
+		return nil
+	}
+
+	var td alibabapkg.TokenData
+	if err := json.Unmarshal([]byte(record.TokenData), &td); err != nil {
+		return fmt.Errorf("alibaba: failed to parse token data: %w", err)
+	}
+
+	p.token = td.AccessToken
+
+	// Rebuild the base URL from token fields.
+	cfg := map[string]interface{}{
+		"auth_type":    td.AuthType,
+		"base_url":     td.BaseURL,
+		"resource_url": td.ResourceURL,
+	}
+	p.applyConfig(cfg)
+	return nil
+}
+
+// SaveAlibabaOAuthToken persists a completed OAuth token for this instance,
+// updates in-memory state, and returns the new canonical instance ID
+// (e.g. "alibaba-oauth-china") so the caller can rename in the registry.
+// The token is saved under the new instance ID; the old record is removed.
+func (p *GenericProvider) SaveAlibabaOAuthToken(td *alibabapkg.TokenData) (newInstanceID string, err error) {
+	p.token = td.AccessToken
+
+	cfg := map[string]interface{}{
+		"auth_type":    td.AuthType,
+		"base_url":     td.BaseURL,
+		"resource_url": td.ResourceURL,
+	}
+	p.applyConfig(cfg)
+
+	// Determine region from resource_url or the resolved baseURL.
+	region := "china"
+	if td.ResourceURL != "" && strings.Contains(strings.ToLower(td.ResourceURL), "dashscope-intl") {
+		region = "global"
+	} else if p.baseURL != "" && strings.Contains(strings.ToLower(p.baseURL), "dashscope-intl") {
+		region = "global"
+	}
+
+	// Compute the canonical instance ID: "alibaba-oauth-<region>"
+	newInstanceID = "alibaba-oauth-" + region
+
+	// Save the token under the new instance ID.
+	tokenStore := database.NewTokenStore()
+	if err := tokenStore.Save(newInstanceID, p.id, td); err != nil {
+		return "", fmt.Errorf("alibaba: failed to save OAuth token: %w", err)
+	}
+
+	// Remove the old temporary record (best-effort).
+	if p.instanceID != newInstanceID {
+		_ = tokenStore.Delete(p.instanceID)
+	}
+
+	// Update in-memory instance ID.
+	p.instanceID = newInstanceID
+
+	// Try to extract email from the JWT for the display name.
+	if email := extractEmailFromJWT(td.AccessToken); email != "" {
+		p.name = "Alibaba (" + email + ")"
+	} else {
+		p.name = "Alibaba OAuth (" + region + ")"
+	}
+
+	log.Info().
+		Str("instanceID", p.instanceID).
+		Str("name", p.name).
+		Str("resource_url", td.ResourceURL).
+		Msg("Alibaba OAuth token saved")
+	return newInstanceID, nil
+}
+
+// extractEmailFromJWT decodes the payload of a JWT access token and extracts the email claim.
+func extractEmailFromJWT(token string) string {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return ""
+	}
+
+	payload := parts[1]
+	// Add padding if needed.
+	switch len(payload) % 4 {
+	case 2:
+		payload += "=="
+	case 3:
+		payload += "="
+	}
+
+	decoded, err := base64.RawURLEncoding.DecodeString(payload)
+	if err != nil {
+		return ""
+	}
+
+	var claims struct {
+		Email string `json:"email"`
+	}
+	if err := json.Unmarshal(decoded, &claims); err != nil {
+		return ""
+	}
+
+	return claims.Email
+}
+
+// ensureFreshAlibabaToken refreshes the OAuth token if it is about to expire.
+// It returns the current (possibly refreshed) access token.
+// Errors are logged but not propagated so callers always get a token to try.
+func (p *GenericProvider) ensureFreshAlibabaToken() string {
+	tokenStore := database.NewTokenStore()
+	record, err := tokenStore.Get(p.instanceID)
+	if err != nil || record == nil {
+		return p.token
+	}
+
+	var td alibabapkg.TokenData
+	if err := json.Unmarshal([]byte(record.TokenData), &td); err != nil {
+		return p.token
+	}
+
+	if !alibabapkg.IsExpiringSoon(&td) {
+		p.token = td.AccessToken
+		return p.token
+	}
+
+	// Token is expiring – attempt a refresh.
+	if td.RefreshToken == "" {
+		log.Warn().Str("provider", p.instanceID).Msg("Alibaba OAuth token expiring but no refresh token available")
+		return p.token
+	}
+
+	refreshed, err := alibabapkg.RefreshToken(context.Background(), td.RefreshToken)
+	if err != nil {
+		log.Warn().Err(err).Str("provider", p.instanceID).Msg("Alibaba OAuth token refresh failed")
+		return p.token
+	}
+
+	if _, saveErr := p.SaveAlibabaOAuthToken(refreshed); saveErr != nil {
+		log.Warn().Err(saveErr).Str("provider", p.instanceID).Msg("Failed to persist refreshed Alibaba token")
+	}
+
+	return p.token
 }
 
 func (p *GenericProvider) setupAzureAuth(options *types.AuthOptions) error {
@@ -350,6 +508,39 @@ func (p *GenericProvider) getAlibabaModels() (*types.ModelsResponse, error) {
 		return nil, fmt.Errorf("alibaba: not authenticated (set access_token via admin UI)")
 	}
 
+	// For OAuth, portal.qwen.ai does NOT expose a /models endpoint.
+	// Return the hardcoded model list (same approach as CLIProxyAPI).
+	// For API-key, try the DashScope /models endpoint first, fall back to hardcoded.
+	authType, _ := firstString(p.config, "auth_type", "authType")
+	if authType == "oauth" {
+		return p.getAlibabaModelsHardcoded(), nil
+	}
+
+	// API-key: try fetching models from DashScope
+	resp, err := p.fetchAlibabaModelsFromAPI()
+	if err == nil && len(resp.Data) > 0 {
+		return resp, nil
+	}
+
+	// Fallback to hardcoded list
+	log.Warn().Err(err).Str("provider", p.instanceID).Msg("Failed to fetch models from API, using hardcoded list")
+	return p.getAlibabaModelsHardcoded(), nil
+}
+
+func (p *GenericProvider) getAlibabaModelsHardcoded() *types.ModelsResponse {
+	models := providerModels["alibaba"]
+	if models == nil {
+		models = []types.Model{}
+	}
+	result := make([]types.Model, len(models))
+	for i, m := range models {
+		result[i] = m
+		result[i].Provider = p.instanceID
+	}
+	return &types.ModelsResponse{Data: result, Object: "list"}
+}
+
+func (p *GenericProvider) fetchAlibabaModelsFromAPI() (*types.ModelsResponse, error) {
 	url := strings.TrimRight(p.baseURL, "/") + "/models"
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
@@ -417,8 +608,11 @@ func isAlibabaChatCompletionsModel(modelID string) bool {
 }
 
 func (p *GenericProvider) alibabaHeaders(stream bool) map[string]string {
+	// Proactively refresh if the OAuth token is about to expire.
+	token := p.ensureFreshAlibabaToken()
+
 	headers := map[string]string{
-		"Authorization": "Bearer " + p.token,
+		"Authorization": "Bearer " + token,
 		"Content-Type":  "application/json",
 		"Accept":        "application/json",
 	}
@@ -432,9 +626,13 @@ func (p *GenericProvider) alibabaHeaders(stream bool) map[string]string {
 		headers["X-DashScope-UserAgent"] = alibabaUserAgent
 		headers["X-DashScope-AuthType"] = "qwen-oauth"
 		headers["X-DashScope-CacheControl"] = "enable"
-		headers["X-Stainless-Lang"] = "go"
+		headers["X-Stainless-Runtime"] = "node"
+		headers["X-Stainless-Runtime-Version"] = "v22.17.0"
+		headers["X-Stainless-Lang"] = "js"
+		headers["X-Stainless-Arch"] = "arm64"
+		headers["X-Stainless-Os"] = "MacOS"
+		headers["X-Stainless-Package-Version"] = "5.11.0"
 		headers["X-Stainless-Retry-Count"] = "0"
-		headers["X-Stainless-Runtime"] = "go"
 	}
 
 	return headers
@@ -446,28 +644,36 @@ func normalizeAlibabaBaseURL(config map[string]interface{}) string {
 	switch authType {
 	case "api-key":
 		if baseURL, ok := firstString(config, "base_url", "baseUrl"); ok {
-			return ensureAlibabaBaseURL(baseURL)
+			return ensureAlibabaBaseURL(baseURL, false)
 		}
 	case "oauth":
 		if resourceURL, ok := firstString(config, "resource_url", "resourceUrl"); ok {
-			return ensureAlibabaBaseURL(resourceURL)
+			return ensureAlibabaBaseURL(resourceURL, true)
 		}
+		// OAuth default: portal.qwen.ai/v1 (CLIProxyAPI confirmed this)
+		return "https://portal.qwen.ai/v1"
 	default:
 		if baseURL, ok := firstString(config, "base_url", "baseUrl"); ok {
-			return ensureAlibabaBaseURL(baseURL)
+			return ensureAlibabaBaseURL(baseURL, false)
 		}
 		if resourceURL, ok := firstString(config, "resource_url", "resourceUrl"); ok {
-			return ensureAlibabaBaseURL(resourceURL)
+			return ensureAlibabaBaseURL(resourceURL, true)
 		}
 	}
 
-	return ensureAlibabaBaseURL(providerBaseURLs["alibaba"])
+	return ensureAlibabaBaseURL(providerBaseURLs["alibaba"], false)
 }
 
-func ensureAlibabaBaseURL(raw string) string {
+// ensureAlibabaBaseURL normalizes a base URL. When forOAuth is true, it uses
+// portal.qwen.ai/v1 as the fallback (confirmed by CLIProxyAPI test cases).
+func ensureAlibabaBaseURL(raw string, forOAuth bool) string {
 	baseURL := strings.TrimSpace(raw)
 	if baseURL == "" {
-		baseURL = providerBaseURLs["alibaba"]
+		if forOAuth {
+			baseURL = "https://portal.qwen.ai/v1"
+		} else {
+			baseURL = providerBaseURLs["alibaba"]
+		}
 	}
 
 	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
@@ -952,9 +1158,22 @@ func azureResponsesRespToCIF(resp map[string]interface{}, originalModel string) 
 
 func (a *GenericAdapter) buildOpenAIPayload(request *cif.CanonicalRequest) map[string]interface{} {
 	model := a.RemapModel(request.Model)
+	messages := cifMessagesToOpenAI(request.Messages)
+	if request.SystemPrompt != nil && strings.TrimSpace(*request.SystemPrompt) != "" {
+		messages = append([]map[string]interface{}{{
+			"role":    "system",
+			"content": *request.SystemPrompt,
+		}}, messages...)
+	}
+	if a.provider.id == "alibaba" {
+		if authType, _ := firstString(a.provider.config, "auth_type", "authType"); authType == "oauth" {
+			messages = ensureAlibabaOAuthSystemMessage(messages)
+		}
+	}
+
 	payload := map[string]interface{}{
 		"model":    model,
-		"messages": cifMessagesToOpenAI(request.Messages),
+		"messages": messages,
 	}
 
 	if request.Temperature != nil {
@@ -1026,6 +1245,60 @@ func (a *GenericAdapter) buildOpenAIPayload(request *cif.CanonicalRequest) map[s
 	}
 
 	return payload
+}
+
+// portal.qwen.ai rejects OAuth chat-completions requests unless a leading system
+// message is present, so we collapse any existing system text into one message.
+func ensureAlibabaOAuthSystemMessage(messages []map[string]interface{}) []map[string]interface{} {
+	systemParts := []string{"You are Qwen Code."}
+	nonSystemMessages := make([]map[string]interface{}, 0, len(messages))
+
+	for _, message := range messages {
+		role, _ := message["role"].(string)
+		if !strings.EqualFold(role, "system") {
+			nonSystemMessages = append(nonSystemMessages, message)
+			continue
+		}
+
+		text := strings.TrimSpace(openAIMessageContentText(message["content"]))
+		if text == "" || text == "You are Qwen Code." {
+			continue
+		}
+		systemParts = append(systemParts, text)
+	}
+
+	result := make([]map[string]interface{}, 0, len(nonSystemMessages)+1)
+	result = append(result, map[string]interface{}{
+		"role":    "system",
+		"content": strings.Join(systemParts, "\n\n"),
+	})
+	result = append(result, nonSystemMessages...)
+	return result
+}
+
+func openAIMessageContentText(content interface{}) string {
+	switch value := content.(type) {
+	case string:
+		return strings.TrimSpace(value)
+	case map[string]interface{}:
+		if text, ok := value["text"].(string); ok {
+			return strings.TrimSpace(text)
+		}
+		if nested, ok := value["content"]; ok {
+			return openAIMessageContentText(nested)
+		}
+	case []interface{}:
+		parts := make([]string, 0, len(value))
+		for _, item := range value {
+			text := openAIMessageContentText(item)
+			if text != "" {
+				parts = append(parts, text)
+			}
+		}
+		return strings.Join(parts, "\n\n")
+	}
+
+	return ""
 }
 
 func convertCanonicalToolChoiceToOpenAI(toolChoice interface{}) interface{} {

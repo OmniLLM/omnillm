@@ -41,26 +41,6 @@ export const writeAlibabaToken = async (
   await dbWriteToken(data, instanceId)
 }
 
-// ─── PKCE helpers ────────────────────────────────────────────────────────────
-
-function generateCodeVerifier(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(32))
-  return btoa(String.fromCodePoint(...bytes))
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replace(/=+$/, "")
-}
-
-async function generateCodeChallenge(verifier: string): Promise<string> {
-  const encoder = new TextEncoder()
-  const data = encoder.encode(verifier)
-  const hash = await crypto.subtle.digest("SHA-256", data)
-  return btoa(String.fromCodePoint(...new Uint8Array(hash)))
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replace(/=+$/, "")
-}
-
 // ─── OAuth device flow ───────────────────────────────────────────────────────
 
 interface DeviceFlowResponse {
@@ -80,14 +60,10 @@ interface TokenResponse {
   expires_in: number
 }
 
-async function initiateDeviceFlow(
-  codeChallenge: string,
-): Promise<DeviceFlowResponse> {
+async function initiateDeviceFlow(): Promise<DeviceFlowResponse> {
   const body = new URLSearchParams({
     client_id: ALIBABA_OAUTH_CLIENT_ID,
     scope: ALIBABA_OAUTH_SCOPE,
-    code_challenge: codeChallenge,
-    code_challenge_method: "S256",
   })
 
   const headers: Record<string, string> = {
@@ -113,7 +89,6 @@ async function initiateDeviceFlow(
 
 interface PollForTokenOptions {
   deviceCode: string
-  codeVerifier: string
   intervalSeconds: number | undefined
   expiresIn: number
 }
@@ -121,7 +96,7 @@ interface PollForTokenOptions {
 async function pollForToken(
   opts: PollForTokenOptions,
 ): Promise<AlibabaTokenData> {
-  const { deviceCode, codeVerifier, intervalSeconds, expiresIn } = opts
+  const { deviceCode, intervalSeconds, expiresIn } = opts
   const deadline = Date.now() + expiresIn * 1000
   const resolvedIntervalMs =
     typeof intervalSeconds === "number" && intervalSeconds > 0 ?
@@ -136,7 +111,6 @@ async function pollForToken(
       grant_type: ALIBABA_OAUTH_GRANT_TYPE,
       client_id: ALIBABA_OAUTH_CLIENT_ID,
       device_code: deviceCode,
-      code_verifier: codeVerifier,
     })
 
     const response = await fetch(ALIBABA_OAUTH_TOKEN_ENDPOINT, {
@@ -202,11 +176,8 @@ async function pollForToken(
 }
 
 async function setupOAuth(instanceId: string): Promise<void> {
-  const codeVerifier = generateCodeVerifier()
-  const codeChallenge = await generateCodeChallenge(codeVerifier)
-
   consola.debug("Alibaba: initiating device flow...")
-  const deviceFlow = await initiateDeviceFlow(codeChallenge)
+  const deviceFlow = await initiateDeviceFlow()
 
   if (state.authFlow) {
     state.authFlow.status = "awaiting_user"
@@ -242,7 +213,6 @@ async function setupOAuth(instanceId: string): Promise<void> {
   consola.info("Waiting for authorization...")
   const tokenData = await pollForToken({
     deviceCode: deviceFlow.device_code,
-    codeVerifier,
     intervalSeconds: deviceFlow.interval,
     expiresIn: deviceFlow.expires_in,
   })

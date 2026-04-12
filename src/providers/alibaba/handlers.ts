@@ -39,6 +39,8 @@ const ALIBABA_DUMMY_TOOL = {
   },
 }
 
+const QWEN_OAUTH_SYSTEM_PROMPT = "You are Qwen Code."
+
 function injectDummyToolIfNeeded(
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -47,6 +49,74 @@ function injectDummyToolIfNeeded(
     return { ...payload, tools: [ALIBABA_DUMMY_TOOL] }
   }
   return payload
+}
+
+function extractQwenMessageText(content: unknown): string {
+  if (typeof content === "string") {
+    return content.trim()
+  }
+
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => extractQwenMessageText(part))
+      .filter((part) => part.length > 0)
+      .join("\n\n")
+  }
+
+  if (content && typeof content === "object") {
+    const record = content as Record<string, unknown>
+    if (typeof record.text === "string") {
+      return record.text.trim()
+    }
+    if ("content" in record) {
+      return extractQwenMessageText(record.content)
+    }
+  }
+
+  return ""
+}
+
+// portal.qwen.ai rejects OAuth chat-completions requests unless a leading
+// system message is present, so we collapse all system text into one message.
+function ensureQwenOAuthSystemMessage(
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const messages = payload.messages
+  if (!Array.isArray(messages)) {
+    return payload
+  }
+
+  const systemParts = [QWEN_OAUTH_SYSTEM_PROMPT]
+  const nonSystemMessages: Array<Record<string, unknown>> = []
+
+  for (const rawMessage of messages) {
+    if (!rawMessage || typeof rawMessage !== "object") {
+      continue
+    }
+
+    const message = rawMessage as Record<string, unknown>
+    const role = typeof message.role === "string" ? message.role : "user"
+    if (role.toLowerCase() !== "system") {
+      nonSystemMessages.push(message)
+      continue
+    }
+
+    const text = extractQwenMessageText(message.content)
+    if (text && text !== QWEN_OAUTH_SYSTEM_PROMPT) {
+      systemParts.push(text)
+    }
+  }
+
+  return {
+    ...payload,
+    messages: [
+      {
+        role: "system",
+        content: systemParts.join("\n\n"),
+      },
+      ...nonSystemMessages,
+    ],
+  }
 }
 
 // Translate incoming API format to Qwen's chat completions format
@@ -236,7 +306,10 @@ export class AlibabaProvider implements Provider {
     const headers = getAlibabaHeaders(tokenData, stream)
 
     // Translate to Qwen format and inject dummy tool if needed
-    const finalPayload = injectDummyToolIfNeeded(translateToQwenFormat(payload))
+    let finalPayload = injectDummyToolIfNeeded(translateToQwenFormat(payload))
+    if (tokenData.auth_type === "oauth") {
+      finalPayload = ensureQwenOAuthSystemMessage(finalPayload)
+    }
     if (stream) {
       Object.assign(finalPayload, { stream_options: { include_usage: true } })
     }

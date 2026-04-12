@@ -19,6 +19,10 @@ import {
   resolveUpstreamProvider,
 } from "@/lib/vmodels"
 
+import { createLogger } from "@/lib/logger"
+
+const _log = createLogger("vmodel-page")
+
 interface Props {
   showToast: (msg: string, type?: "success" | "error") => void
 }

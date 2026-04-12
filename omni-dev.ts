@@ -74,6 +74,7 @@ const { values, positionals } = parseArgs({
     "backend": { type: "string", default: "go" }, // go or node
     "help": { type: "boolean", short: "h" },
     "verbose": { type: "boolean", short: "v" },
+    "rebuild": { type: "boolean", short: "r" },
   },
 })
 
@@ -82,6 +83,7 @@ const serverPort = values["server-port"]
 const frontendPort = values["frontend-port"]
 const backend = values["backend"]
 const verbose = values["verbose"]
+const rebuild = values["rebuild"]
 
 function showHelp() {
   console.log(`
@@ -94,6 +96,7 @@ COMMANDS:
   start          Start both frontend and backend services
   stop           Stop all running services
   restart        Stop and start services
+  restart --rebuild    Stop, rebuild frontend and backend, then start
   status         Show service status and ports
   logs           Show recent service logs
   help           Show this help message
@@ -103,6 +106,7 @@ OPTIONS:
   --frontend-port <port>  Frontend dev server port (default: 5080)
   --backend <type>        Backend type: 'go' or 'node' (default: go)
   --verbose, -v           Enable verbose logging
+  --rebuild, -r           Stop services, rebuild both frontend and backend, then start
   --help, -h              Show help
 
 EXAMPLES:
@@ -110,7 +114,10 @@ EXAMPLES:
   bun run omni-dev.ts start
 
   # Start with custom ports
-  bun run omni-dev.ts start --server-port 8000 --frontend-port 3000
+  bun run omni-dev.ts start --server-port 5000 --frontend-port 5080
+
+  # Rebuild and restart with custom ports
+  bun run omni-dev.ts restart --rebuild --server-port 5000 --frontend-port 5080
 
   # Start with TypeScript backend instead of Go
   bun run omni-dev.ts start --backend node
@@ -569,7 +576,7 @@ async function startServices() {
   if (!serverAvailable) {
     consola.error(`❌ Port ${serverPort} is already in use by another service`)
     consola.info(`💡 Try a different port: ./omni start --server-port 5003`)
-    return
+    process.exit(1)
   }
 
   // Note: We don't strictly check frontend port as Vite will auto-find an available one
@@ -601,7 +608,7 @@ async function startServices() {
     await buildResult.exited
     if (buildResult.exitCode !== 0) {
       consola.error("❌ Failed to build Golang backend")
-      return
+      process.exit(1)
     }
     consola.success("✅ Golang backend built successfully")
 
@@ -790,6 +797,41 @@ if (values.help || command === "help") {
 } else if (command === "restart") {
   await stopServices()
   await Bun.sleep(2000)
+  if (rebuild) {
+    // Rebuild Go backend
+    if (backend === "go") {
+      const isWindows = process.platform === "win32"
+      const binaryPath = isWindows
+        ? `${process.env.USERPROFILE}/.local/bin/omnimodel.exe`
+        : `${homedir()}/.local/bin/omnimodel`
+      consola.info("🔨 Rebuilding Golang backend...")
+      const goExe = process.platform === "win32"
+        ? `C:\\Program Files\\Go\\bin\\go.exe`
+        : `go`
+      const buildResult = Bun.spawn([goExe, "build", "-o", binaryPath, "main.go"], {
+        stdout: "inherit",
+        stderr: "inherit",
+      })
+      await buildResult.exited
+      if (buildResult.exitCode !== 0) {
+        consola.error("❌ Failed to rebuild Golang backend")
+        process.exit(1)
+      }
+      consola.success("✅ Golang backend rebuilt successfully")
+    }
+    // Rebuild frontend
+    consola.info("🔨 Rebuilding frontend...")
+    const buildResult = Bun.spawn([process.execPath, "run", "build:frontend"], {
+      stdout: "inherit",
+      stderr: "inherit",
+    })
+    await buildResult.exited
+    if (buildResult.exitCode !== 0) {
+      consola.error("❌ Failed to rebuild frontend")
+      process.exit(1)
+    }
+    consola.success("✅ Frontend rebuilt successfully")
+  }
   await startServices()
 } else if (command === "status") {
   await showStatus()

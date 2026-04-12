@@ -22,6 +22,10 @@ import {
   type UsageData,
 } from "@/api"
 
+import { createLogger } from "@/lib/logger"
+
+const _log = createLogger("providers-page")
+
 interface ProvidersPageProps {
   showToast: (msg: string, type?: "success" | "error") => void
 }

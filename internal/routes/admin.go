@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"omnimodel/internal/database"
+	alibabapkg "omnimodel/internal/providers/alibaba"
 	"omnimodel/internal/providers/copilot"
 	"omnimodel/internal/providers/generic"
 	"omnimodel/internal/providers/types"
@@ -45,7 +47,8 @@ type authFlowState struct {
 	InstructionURL string `json:"instructionURL,omitempty"`
 	UserCode       string `json:"userCode,omitempty"`
 	Error          string `json:"error,omitempty"`
-	deviceCode     string // internal, not exposed
+	deviceCode   string // internal, not exposed
+	codeVerifier string // internal PKCE verifier for Alibaba OAuth
 }
 
 // BroadcastLog sends a log message to all SSE subscribers
@@ -623,6 +626,95 @@ func handleProviderAuth(c *gin.Context) {
 	}
 
 	cop, isCopilot := provider.(*copilot.GitHubCopilotProvider)
+	gen, isGeneric := provider.(*generic.GenericProvider)
+
+	// ── Alibaba OAuth device-code flow ───────────────────────────────────────
+	if isGeneric && gen.GetID() == "alibaba" && req.Method == "oauth" {
+		flow, err := alibabapkg.InitiateDeviceFlow(context.Background())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": fmt.Sprintf("Failed to initiate Alibaba OAuth: %v", err),
+			})
+			return
+		}
+
+		// Pick the best verification URL to show the user.
+		verifyURL := flow.VerificationURIComplete
+		if verifyURL == "" {
+			verifyURL = flow.VerificationURI
+		}
+
+		activeAuthFlowMu.Lock()
+		activeAuthFlow = &authFlowState{
+			ProviderID:     providerID,
+			Status:         "awaiting_user",
+			InstructionURL: verifyURL,
+			UserCode:       flow.UserCode,
+			deviceCode:     flow.DeviceCode,
+			codeVerifier:   flow.CodeVerifier,
+		}
+		activeAuthFlowMu.Unlock()
+
+		// Poll for the token in the background.
+		alibabaFlow := flow
+		alibabaGen := gen
+		alibabaReg := providerRegistry
+		go func() {
+			td, err := alibabapkg.PollForToken(
+				context.Background(),
+				alibabaFlow.DeviceCode,
+				alibabaFlow.CodeVerifier,
+				alibabaFlow.Interval,
+				alibabaFlow.ExpiresIn,
+			)
+			if err != nil {
+				activeAuthFlowMu.Lock()
+				if activeAuthFlow != nil && activeAuthFlow.ProviderID == providerID {
+					activeAuthFlow.Status = "error"
+					activeAuthFlow.Error = err.Error()
+				}
+				activeAuthFlowMu.Unlock()
+				log.Error().Err(err).Str("provider", providerID).Msg("Alibaba OAuth device code flow failed")
+				return
+			}
+
+			newInstanceID, err := alibabaGen.SaveAlibabaOAuthToken(td)
+			if err != nil {
+				log.Error().Err(err).Str("provider", providerID).Msg("Failed to save Alibaba OAuth token")
+			}
+
+			// Rename in registry: "alibaba-2" → "alibaba-oauth-china" etc.
+			if newInstanceID != "" && newInstanceID != providerID {
+				if err := alibabaReg.Rename(providerID, newInstanceID); err != nil {
+					log.Warn().Err(err).Str("old", providerID).Str("new", newInstanceID).Msg("Failed to rename Alibaba provider in registry")
+				} else {
+					log.Info().Str("old", providerID).Str("new", newInstanceID).Msg("Alibaba provider renamed")
+				}
+			}
+
+			if err := alibabaReg.Register(alibabaGen, true); err != nil {
+				log.Warn().Err(err).Str("provider", alibabaGen.GetInstanceID()).Msg("Failed to update Alibaba provider in registry")
+			}
+
+			activeAuthFlowMu.Lock()
+			if activeAuthFlow != nil && activeAuthFlow.ProviderID == providerID {
+				activeAuthFlow.Status = "complete"
+			}
+			activeAuthFlowMu.Unlock()
+
+			log.Info().Str("provider", providerID).Msg("Alibaba OAuth completed")
+		}()
+
+		c.JSON(http.StatusOK, gin.H{
+			"success":          false,
+			"requiresAuth":     true,
+			"user_code":        flow.UserCode,
+			"verification_uri": verifyURL,
+			"message":          fmt.Sprintf("Visit %s and enter code: %s", verifyURL, flow.UserCode),
+		})
+		return
+	}
 
 	// Handle OAuth device code flow for GitHub Copilot
 	if isCopilot && (req.Method == "oauth" || (req.GithubToken == "" && req.Token == "")) {
@@ -733,11 +825,51 @@ func handleInitiateDeviceCode(c *gin.Context) {
 		return
 	}
 
-	// Only GitHub Copilot supports device code flow
+	// ── Alibaba OAuth device-code initiation ──────────────────────────────
+	if gen, ok := provider.(*generic.GenericProvider); ok && gen.GetID() == "alibaba" {
+		flow, err := alibabapkg.InitiateDeviceFlow(context.Background())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"error":   fmt.Sprintf("Failed to initiate Alibaba device code flow: %v", err),
+			})
+			return
+		}
+
+		verifyURL := flow.VerificationURIComplete
+		if verifyURL == "" {
+			verifyURL = flow.VerificationURI
+		}
+
+		// Store the flow state (including PKCE verifier) for the frontend-driven poll.
+		activeAuthFlowMu.Lock()
+		activeAuthFlow = &authFlowState{
+			ProviderID:     providerID,
+			Status:         "awaiting_user",
+			InstructionURL: verifyURL,
+			UserCode:       flow.UserCode,
+			deviceCode:     flow.DeviceCode,
+			codeVerifier:   flow.CodeVerifier,
+		}
+		activeAuthFlowMu.Unlock()
+
+		c.JSON(http.StatusOK, gin.H{
+			"success":          true,
+			"user_code":        flow.UserCode,
+			"device_code":      flow.DeviceCode,
+			"verification_uri": verifyURL,
+			"expires_in":       flow.ExpiresIn,
+			"interval":         flow.Interval,
+			"message":          fmt.Sprintf("Please visit %s and enter code: %s", verifyURL, flow.UserCode),
+		})
+		return
+	}
+
+	// ── GitHub Copilot device-code initiation ─────────────────────────────
 	cop, ok := provider.(*copilot.GitHubCopilotProvider)
 	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Only GitHub Copilot provider supports device code OAuth flow",
+			"error": "Provider does not support device code OAuth flow",
 		})
 		return
 	}
@@ -766,8 +898,9 @@ func handleCompleteDeviceCode(c *gin.Context) {
 	providerID := c.Param("id")
 
 	var req struct {
-		DeviceCode string `json:"device_code"`
-		UserCode   string `json:"user_code"`
+		DeviceCode   string `json:"device_code"`
+		UserCode     string `json:"user_code"`
+		CodeVerifier string `json:"code_verifier"` // Alibaba PKCE; optional for GitHub
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body - requires device_code and user_code"})
@@ -781,11 +914,64 @@ func handleCompleteDeviceCode(c *gin.Context) {
 		return
 	}
 
-	// Only GitHub Copilot supports device code flow
+	// ── Alibaba OAuth device-code completion ──────────────────────────────
+	if gen, ok := provider.(*generic.GenericProvider); ok && gen.GetID() == "alibaba" {
+		td, err := alibabapkg.PollForToken(
+			context.Background(),
+			req.DeviceCode,
+			req.CodeVerifier,
+			5,   // default interval
+			600, // default expires_in
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"error":   fmt.Sprintf("Failed to complete Alibaba OAuth: %v", err),
+			})
+			return
+		}
+
+		newInstanceID, err := gen.SaveAlibabaOAuthToken(td)
+		if err != nil {
+			log.Error().Err(err).Str("provider", providerID).Msg("Failed to save Alibaba OAuth token")
+		}
+
+		// Rename in registry: e.g. "alibaba-2" → "alibaba-oauth-china"
+		if newInstanceID != "" && newInstanceID != providerID {
+			if err := providerRegistry.Rename(providerID, newInstanceID); err != nil {
+				log.Warn().Err(err).Str("old", providerID).Str("new", newInstanceID).Msg("Failed to rename Alibaba provider in registry")
+			} else {
+				log.Info().Str("old", providerID).Str("new", newInstanceID).Msg("Alibaba provider renamed")
+			}
+		}
+
+		if err := providerRegistry.Register(gen, true); err != nil {
+			log.Warn().Err(err).Str("provider", gen.GetInstanceID()).Msg("Failed to update Alibaba provider in registry")
+		}
+
+		activeAuthFlowMu.Lock()
+		if activeAuthFlow != nil && activeAuthFlow.ProviderID == providerID {
+			activeAuthFlow.Status = "complete"
+		}
+		activeAuthFlowMu.Unlock()
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "Alibaba authenticated successfully",
+			"provider": gin.H{
+				"id":   gen.GetInstanceID(),
+				"name": gen.GetName(),
+				"type": "alibaba",
+			},
+		})
+		return
+	}
+
+	// ── GitHub Copilot device-code completion ─────────────────────────────
 	cop, ok := provider.(*copilot.GitHubCopilotProvider)
 	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Only GitHub Copilot provider supports device code OAuth flow",
+			"error": "Provider does not support device code OAuth flow",
 		})
 		return
 	}

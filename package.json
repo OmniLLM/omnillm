@@ -39,6 +39,7 @@
     "omni": "bun run omni-dev.ts",
     "omni:logs": "bun run omni-dev.ts logs",
     "omni:restart": "bun run omni-dev.ts restart",
+    "omni:restart:rebuild": "bun run omni-dev.ts restart --rebuild",
     "omni:start": "bun run omni-dev.ts start",
     "omni:status": "bun run omni-dev.ts status",
     "omni:stop": "bun run omni-dev.ts stop",

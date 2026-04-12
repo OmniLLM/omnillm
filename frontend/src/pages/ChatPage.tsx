@@ -19,6 +19,10 @@ import {
   type ResponsesResponse
 } from "@/api"
 
+import { createLogger } from "@/lib/logger"
+
+const _log = createLogger("chat-page")
+
 interface ChatPageProps {
   showToast: (msg: string, type?: "success" | "error") => void
 }
