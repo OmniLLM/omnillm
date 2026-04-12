@@ -67,6 +67,20 @@ const LEVEL_COLORS: Record<string, string> = {
   TRACE: "90",
 }
 
+// ─── Per-request-ID colors for session tracing ─────────────────────────────
+
+const REQUEST_COLORS = ["33", "36", "35", "93", "92", "94", "96", "95", "97"]
+const requestIdColorCache = new Map<string, string>()
+
+function getRequestColor(requestId: string): string {
+  let color = requestIdColorCache.get(requestId)
+  if (!color) {
+    color = REQUEST_COLORS[requestIdColorCache.size % REQUEST_COLORS.length]
+    requestIdColorCache.set(requestId, color)
+  }
+  return color
+}
+
 const { values, positionals } = parseArgs({
   args: Bun.argv.slice(2),
   allowPositionals: true,
@@ -322,7 +336,8 @@ function formatStructuredField(key: string, value: unknown): string | null {
 
   switch (key) {
     case "request_id": {
-      return `request=${formattedValue}`
+      const color = getRequestColor(formattedValue)
+      return `\x1b[${color}mrequest=${formattedValue}\x1b[0m`
     }
     case "api_shape": {
       return `api=${formattedValue}`
@@ -342,8 +357,14 @@ function formatStructuredField(key: string, value: unknown): string | null {
     case "output_tokens": {
       return `output=${formattedValue}`
     }
+    case "message": {
+      // Colorize incoming/outgoing request arrows
+      if (formattedValue.startsWith("--> ") || formattedValue.startsWith("<-- ")) {
+        return colorizeMessageArrows(formattedValue)
+      }
+      return formattedValue
+    }
     case "level":
-    case "message":
     case "time": {
       return null
     }
@@ -351,6 +372,29 @@ function formatStructuredField(key: string, value: unknown): string | null {
       return `${key}=${formattedValue}`
     }
   }
+}
+
+function colorizeMessageArrows(text: string): string {
+  // Match patterns like:
+  //   --> POST /v1/chat/completions <-- 200
+  //   --> REQUEST
+  //   <-- RESPONSE
+  const arrowPattern = /^(-->|<--)(.*)?$/
+
+  if (arrowPattern.test(text)) {
+    return text
+      .replace(/(-->)/g, "\x1b[33m$1\x1b[0m")    // yellow outgoing
+      .replace(/(<--)/g, "\x1b[32m$1\x1b[0m")    // green incoming
+  }
+
+  // For messages like:
+  //   --> GET /api/admin/info <-- 200
+  const fullPattern = /(-->|<--)/g
+  return text.replace(fullPattern, (match) => {
+    return match === "-->"
+      ? "\x1b[33m-->\x1b[0m"
+      : "\x1b[32m<--\x1b[0m"
+  })
 }
 
 function formatStructuredLogLine(
