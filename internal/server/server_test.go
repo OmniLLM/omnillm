@@ -38,7 +38,7 @@ func TestMain(m *testing.M) {
 
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	r := buildRouter()
+	r := buildRouter(0)
 	return httptest.NewServer(r)
 }
 

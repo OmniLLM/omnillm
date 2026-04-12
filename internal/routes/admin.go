@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -79,7 +80,7 @@ func formatSSEData(message string) string {
 	return builder.String()
 }
 
-func SetupAdminRoutes(router *gin.RouterGroup) {
+func SetupAdminRoutes(router *gin.RouterGroup, port int) {
 	// Provider management
 	router.GET("/providers", handleGetProviders)
 	router.POST("/providers/switch", handleSwitchProvider)
@@ -104,7 +105,7 @@ func SetupAdminRoutes(router *gin.RouterGroup) {
 	router.POST("/providers/add/:type", handleAddProviderInstance)
 
 	// System info and status
-	router.GET("/info", handleGetInfo)
+	router.GET("/info", makeGetInfoHandler(port))
 	router.GET("/status", handleGetStatus)
 	router.GET("/auth-status", handleGetAuthStatus)
 
@@ -947,23 +948,38 @@ func handleDeactivateProvider(c *gin.Context) {
 
 // ─── System info ───
 
-func handleGetInfo(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"version": "2.0.0-go",
-		"backend": "golang",
-		"uptime":  time.Since(serverStartTime).String(),
-		"build":   "dev",
-		"features": gin.H{
-			"cif_format":        true,
-			"model_routing":     true,
-			"rate_limiting":     true,
-			"manual_approval":   true,
-			"database":          true,
-			"chat_history":      true,
-			"provider_adapters": true,
-			"streaming":         true,
-		},
-	})
+func GetVersion() string {
+	// Try to read from VERSION file first (source of truth)
+	data, err := os.ReadFile("VERSION")
+	if err == nil {
+		version := strings.TrimSpace(string(data))
+		if version != "" {
+			return version
+		}
+	}
+	return "v0.0.1" // fallback
+}
+
+func makeGetInfoHandler(port int) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"version": GetVersion(),
+			"port":    port,
+			"backend": "golang",
+			"uptime":  time.Since(serverStartTime).String(),
+			"build":   "dev",
+			"features": gin.H{
+				"cif_format":        true,
+				"model_routing":     true,
+				"rate_limiting":     true,
+				"manual_approval":   true,
+				"database":          true,
+				"chat_history":      true,
+				"provider_adapters": true,
+				"streaming":         true,
+			},
+		})
+	}
 }
 
 func handleGetStatus(c *gin.Context) {

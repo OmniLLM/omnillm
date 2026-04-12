@@ -73,7 +73,7 @@ func RunServer(options StartOptions) error {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	r := buildRouter()
+	r := buildRouter(options.Port)
 
 	// Claude Code mode output
 	if options.ClaudeCode {
@@ -92,7 +92,7 @@ func RunServer(options StartOptions) error {
 	return r.Run(fmt.Sprintf(":%d", options.Port))
 }
 
-func buildRouter() *gin.Engine {
+func buildRouter(port int) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
 
@@ -144,7 +144,7 @@ func buildRouter() *gin.Engine {
 		c.JSON(200, gin.H{
 			"status":  "healthy",
 			"message": "OmniModel server is running",
-			"version": "2.0.0-go",
+			"version": routes.GetVersion(),
 		})
 	})
 
@@ -177,7 +177,7 @@ func buildRouter() *gin.Engine {
 
 	// Admin routes
 	adminAPI := r.Group("/api/admin")
-	routes.SetupAdminRoutes(adminAPI)
+	routes.SetupAdminRoutes(adminAPI, port)
 	routes.SetupVirtualModelRoutes(adminAPI)
 
 	// Admin static files redirect

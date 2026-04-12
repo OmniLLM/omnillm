@@ -315,6 +315,11 @@
   box-shadow: 0 0 0 3px var(--color-blue-fill);
 }
 
+.sys-select option {
+  background: var(--color-bg-elevated, #1c1c1e);
+  color: var(--color-text);
+}
+
 /* ─── Label ─────────────────────────────────────────────────────────────── */
 
 .sys-label {
