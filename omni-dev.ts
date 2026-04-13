@@ -413,11 +413,11 @@ function formatStructuredLogLine(
     : fallbackLevel
   const message =
     typeof payload.message === "string" && payload.message.trim() ?
-      payload.message.trim()
+      colorizeMessageArrows(payload.message.trim())
     : JSON.stringify(payload)
 
   const segments = [`[${timestamp}]`, source, level, message]
-  const seen = new Set<string>()
+  const seen = new Set<string>(["message"])
 
   for (const key of STRUCTURED_FIELD_ORDER) {
     const formatted = formatStructuredField(key, payload[key])
