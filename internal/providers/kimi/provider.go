@@ -1,0 +1,521 @@
+// Package kimi provides Kimi provider implementation.
+// This package contains auth, header, model, and adapter logic specific to Kimi.
+// The OAuth 2.0 device-code flow is implemented in auth.go (sibling file).
+package kimi
+
+import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
+	"time"
+
+	"omnimodel/internal/cif"
+	"omnimodel/internal/database"
+	"omnimodel/internal/providers/shared"
+	"omnimodel/internal/providers/types"
+
+	"github.com/rs/zerolog/log"
+)
+
+const UserAgent = "KimiClient/1.0"
+
+// Base URL for Kimi API
+const BaseURL = "https://api.moonshot.cn/v1"
+
+// Model catalog for Kimi.
+var Models = []types.Model{
+	{ID: "kimi-k2-thinking", Name: "Kimi K2 Thinking", MaxTokens: 131072, Provider: "kimi"},
+	{ID: "kimi-k2.5", Name: "Kimi K2.5", MaxTokens: 131072, Provider: "kimi"},
+	{ID: "moonshot-v1-8k", Name: "Moonshot v1 8K", MaxTokens: 8192, Provider: "kimi"},
+	{ID: "moonshot-v1-32k", Name: "Moonshot v1 32K", MaxTokens: 32768, Provider: "kimi"},
+	{ID: "moonshot-v1-128k", Name: "Moonshot v1 128K", MaxTokens: 131072, Provider: "kimi"},
+}
+
+// OAuthSupportedModels lists model IDs available to OAuth-authenticated users.
+var OAuthSupportedModels = map[string]bool{}
+
+// TokenData represents the token data structure for Kimi
+type TokenData struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+	TokenType    string `json:"token_type"`
+	ExpiresIn    int64  `json:"expires_in"`
+	CreatedAt    int64  `json:"created_at"`
+	AuthType     string `json:"auth_type"`
+	BaseURL      string `json:"base_url,omitempty"`
+	ResourceURL  string `json:"resource_url,omitempty"`
+}
+
+// IsExpiringSoon checks if the token expires within the next 5 minutes
+func IsExpiringSoon(td *TokenData) bool {
+	if td.CreatedAt == 0 || td.ExpiresIn == 0 {
+		return false
+	}
+	expirationTime := time.Unix(td.CreatedAt, 0).Add(time.Duration(td.ExpiresIn) * time.Second)
+	return time.Until(expirationTime) < 5*time.Minute
+}
+
+// SetupAPIKeyAuth handles the api-key auth method for Kimi.
+// It saves the token and config to the database and updates the in-memory fields.
+func SetupAPIKeyAuth(instanceID string, options *types.AuthOptions) (token, baseURL, name string, config map[string]interface{}, err error) {
+	if options.APIKey == "" {
+		return "", "", "", nil, fmt.Errorf("kimi: API key is required")
+	}
+	region := strings.TrimSpace(options.Region)
+	if region == "" {
+		region = "global"
+	}
+
+	tokenStore := database.NewTokenStore()
+	tokenData := map[string]interface{}{"access_token": options.APIKey}
+	if err := tokenStore.Save(instanceID, "kimi", tokenData); err != nil {
+		return "", "", "", nil, fmt.Errorf("failed to save kimi token: %w", err)
+	}
+
+	cfg := map[string]interface{}{
+		"auth_type": "api-key",
+		"region":    region,
+	}
+	if endpoint := strings.TrimSpace(options.Endpoint); endpoint != "" {
+		cfg["base_url"] = endpoint
+	}
+
+	configStore := database.NewProviderConfigStore()
+	if err := configStore.Save(instanceID, cfg); err != nil {
+		return "", "", "", nil, fmt.Errorf("failed to save kimi config: %w", err)
+	}
+
+	resolvedURL := NormalizeBaseURL(cfg)
+	resolvedName := APIKeyProviderName(cfg)
+
+	log.Info().
+		Str("provider", instanceID).
+		Str("region", region).
+		Msg("Kimi authenticated via API key")
+
+	return options.APIKey, resolvedURL, resolvedName, cfg, nil
+}
+
+// LoadTokenFromDB reads the persisted Kimi token from the database.
+// Returns the token string, base URL, config, and any error.
+func LoadTokenFromDB(instanceID string) (token, baseURL string, config map[string]interface{}, err error) {
+	tokenStore := database.NewTokenStore()
+	record, err := tokenStore.Get(instanceID)
+	if err != nil {
+		return "", "", nil, fmt.Errorf("kimi: failed to load token from DB: %w", err)
+	}
+	if record == nil {
+		return "", "", nil, nil
+	}
+
+	var td TokenData
+	if err := json.Unmarshal([]byte(record.TokenData), &td); err != nil {
+		return "", "", nil, fmt.Errorf("kimi: failed to parse token data: %w", err)
+	}
+
+	cfg := map[string]interface{}{
+		"auth_type":    td.AuthType,
+		"base_url":     td.BaseURL,
+		"resource_url": td.ResourceURL,
+	}
+	resolvedURL := NormalizeBaseURL(cfg)
+	return td.AccessToken, resolvedURL, cfg, nil
+}
+
+// SaveOAuthToken persists a completed OAuth token for the given provider instance.
+// It derives the canonical instance ID from the JWT email or token suffix and
+// returns it so the caller can rename the provider in the registry.
+func SaveOAuthToken(instanceID string, td *TokenData) (newInstanceID, name, baseURL string, err error) {
+	cfg := map[string]interface{}{
+		"auth_type":    td.AuthType,
+		"base_url":     td.BaseURL,
+		"resource_url": td.ResourceURL,
+	}
+	resolvedURL := NormalizeBaseURL(cfg)
+
+	// Determine region
+	region := "china"
+	if td.ResourceURL != "" && strings.Contains(strings.ToLower(td.ResourceURL), "intl") {
+		region = "global"
+	} else if resolvedURL != "" && strings.Contains(strings.ToLower(resolvedURL), "intl") {
+		region = "global"
+	}
+
+	// Derive display name and canonical instance ID
+	email := ExtractEmailFromJWT(td.AccessToken)
+	if email != "" {
+		safe := strings.ReplaceAll(email, "@", "-")
+		safe = strings.ReplaceAll(safe, ".", "-")
+		newInstanceID = "kimi-oauth-" + region + "-" + safe
+		name = "Kimi (" + email + ")"
+	} else {
+		suffix := ShortTokenSuffix(td.AccessToken)
+		newInstanceID = "kimi-oauth-" + region + "-" + suffix
+		name = "Kimi OAuth (" + suffix + ")"
+	}
+
+	tokenStore := database.NewTokenStore()
+	if err := tokenStore.Save(newInstanceID, "kimi", td); err != nil {
+		return "", "", "", fmt.Errorf("kimi: failed to save OAuth token: %w", err)
+	}
+
+	// Remove old temporary record (best-effort)
+	if instanceID != newInstanceID {
+		_ = tokenStore.Delete(instanceID)
+	}
+
+	log.Info().
+		Str("instanceID", newInstanceID).
+		Str("name", name).
+		Str("resource_url", td.ResourceURL).
+		Msg("Kimi OAuth token saved")
+
+	return newInstanceID, name, resolvedURL, nil
+}
+
+// EnsureFreshToken refreshes the OAuth token if it is about to expire.
+// Returns the current (possibly refreshed) access token.
+// Errors are logged but not propagated so callers always get a token to try.
+func EnsureFreshToken(instanceID, currentToken string) string {
+	tokenStore := database.NewTokenStore()
+	record, err := tokenStore.Get(instanceID)
+	if err != nil || record == nil {
+		return currentToken
+	}
+
+	var td TokenData
+	if err := json.Unmarshal([]byte(record.TokenData), &td); err != nil {
+		return currentToken
+	}
+
+	if !IsExpiringSoon(&td) {
+		return td.AccessToken
+	}
+
+	if td.RefreshToken == "" {
+		log.Warn().Str("provider", instanceID).Msg("Kimi OAuth token expiring but no refresh token available")
+		return currentToken
+	}
+
+	refreshed, err := RefreshToken(context.Background(), td.RefreshToken)
+	if err != nil {
+		log.Warn().Err(err).Str("provider", instanceID).Msg("Kimi OAuth token refresh failed")
+		return currentToken
+	}
+
+	// Persist refreshed token (best-effort)
+	_, _, _, saveErr := SaveOAuthToken(instanceID, refreshed)
+	if saveErr != nil {
+		log.Warn().Err(saveErr).Str("provider", instanceID).Msg("Failed to persist refreshed Kimi token")
+	}
+
+	return refreshed.AccessToken
+}
+
+// RefreshToken attempts to refresh an expired OAuth token.
+// This is a placeholder implementation - actual refresh mechanism may differ.
+func RefreshToken(ctx context.Context, refreshToken string) (*TokenData, error) {
+	// Placeholder for actual refresh implementation
+	return nil, fmt.Errorf("refresh not implemented for Kimi")
+}
+
+// Headers returns the HTTP headers required for Kimi API requests.
+// When stream is true, Accept is set to text/event-stream.
+// config must contain auth_type to determine OAuth vs API-key header sets.
+func Headers(token string, stream bool, config map[string]interface{}) map[string]string {
+	headers := map[string]string{
+		"Authorization": "Bearer " + token,
+		"Content-Type":  "application/json",
+		"Accept":        "application/json",
+	}
+	if stream {
+		headers["Accept"] = "text/event-stream"
+	}
+
+	if authType, _ := shared.FirstString(config, "auth_type", "authType"); authType == "oauth" {
+		headers["User-Agent"] = UserAgent
+	}
+	return headers
+}
+
+// ChatURL returns the chat completions URL for the given base URL.
+func ChatURL(baseURL string) string {
+	base := baseURL
+	if base == "" {
+	base = BaseURL
+	}
+	return base + "/chat/completions"
+}
+
+// ModelsURL returns the models list URL for the given base URL.
+func ModelsURL(baseURL string) string {
+	base := baseURL
+	if base == "" {
+	base = BaseURL
+	}
+	return base + "/models"
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+// GetModels returns the available models for this Kimi instance.
+// For OAuth providers it returns a filtered hardcoded list; for API-key it tries
+// live discovery then falls back to the hardcoded catalog.
+func GetModels(instanceID, token, baseURL string, config map[string]interface{}) (*types.ModelsResponse, error) {
+	if token == "" {
+		return nil, fmt.Errorf("kimi: not authenticated (set access_token via admin UI)")
+	}
+
+	authType, _ := shared.FirstString(config, "auth_type", "authType")
+	if authType == "oauth" {
+		return GetModelsHardcoded(instanceID, config), nil
+	}
+
+	resp, err := FetchModelsFromAPI(instanceID, token, baseURL)
+	if err == nil && len(resp.Data) > 0 {
+		return resp, nil
+	}
+
+	log.Warn().Err(err).Str("provider", instanceID).Msg("Failed to fetch models from API, using hardcoded list")
+	return GetModelsHardcoded(instanceID, config), nil
+}
+
+// GetModelsHardcoded returns the hardcoded model catalog for this Kimi instance.
+func GetModelsHardcoded(instanceID string, config map[string]interface{}) *types.ModelsResponse {
+	models := Models
+	authType, _ := shared.FirstString(config, "auth_type", "authType")
+	if authType == "oauth" {
+		filtered := make([]types.Model, 0, len(models))
+		for _, model := range models {
+			if OAuthSupportedModels[model.ID] {
+				filtered = append(filtered, model)
+			}
+		}
+		models = filtered
+	}
+	if models == nil {
+		models = []types.Model{}
+	}
+	result := make([]types.Model, len(models))
+	for i, m := range models {
+		result[i] = m
+		result[i].Provider = instanceID
+	}
+	return &types.ModelsResponse{Data: result, Object: "list"}
+}
+
+// FetchModelsFromAPI fetches available models from the Kimi API.
+func FetchModelsFromAPI(instanceID, token, baseURL string) (*types.ModelsResponse, error) {
+	url := ModelsURL(baseURL)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create kimi models request: %w", err)
+	}
+
+	for key, value := range Headers(token, false, map[string]interface{}{}) {
+		req.Header.Set(key, value)
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("kimi models request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("kimi models fetch failed (%d)", resp.StatusCode)
+	}
+
+	var payload struct {
+		Data []struct {
+			ID      string `json:"id"`
+			Name    string `json:"name"`
+			MaxTokens int  `json:"max_tokens,omitempty"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, fmt.Errorf("failed to decode kimi models response: %w", err)
+	}
+
+	models := make([]types.Model, 0, len(payload.Data))
+	for _, model := range payload.Data {
+		if model.ID == "" {
+			continue
+		}
+		if !IsChatCompletionsModel(model.ID) {
+			continue
+		}
+		result := types.Model{
+			ID:       model.ID,
+			Name:     model.Name,
+			Provider: instanceID,
+			MaxTokens: model.MaxTokens,
+		}
+		if metadata, ok := ModelMetadata(model.ID); ok {
+			if metadata.Name != "" {
+				result.Name = metadata.Name
+			}
+			result.Description = metadata.Description
+			result.Capabilities = metadata.Capabilities
+			result.MaxTokens = metadata.MaxTokens
+		}
+		models = append(models, result)
+	}
+	return &types.ModelsResponse{Data: models, Object: "list"}, nil
+}
+
+// IsChatCompletionsModel returns true if the model supports chat completions
+// (i.e., is not a realtime-only model).
+func IsChatCompletionsModel(modelID string) bool {
+	return !strings.Contains(strings.ToLower(modelID), "realtime")
+}
+
+// ModelMetadata returns the hardcoded metadata for the given model ID if known.
+func ModelMetadata(modelID string) (types.Model, bool) {
+	for _, m := range Models {
+		if m.ID == modelID {
+			return m, true
+		}
+	}
+	return types.Model{}, false
+}
+
+// ─── URL helpers ──────────────────────────────────────────────────────────────
+
+// NormalizeBaseURL derives the base URL from a provider config map.
+func NormalizeBaseURL(config map[string]interface{}) string {
+	if baseURL, ok := shared.FirstString(config, "base_url", "baseUrl"); ok {
+		return EnsureBaseURL(baseURL)
+	}
+	if resourceURL, ok := shared.FirstString(config, "resource_url", "resourceUrl"); ok {
+		return EnsureBaseURL(resourceURL)
+	}
+	return EnsureBaseURL(BaseURL)
+}
+
+// APIKeyProviderName returns the display name for an API-key authenticated Kimi provider.
+func APIKeyProviderName(config map[string]interface{}) string {
+	region, _ := shared.FirstString(config, "region")
+	if region == "" {
+		region = "global"
+	}
+	return "Kimi (" + region + ")"
+}
+
+// EnsureBaseURL normalizes a base URL to have https scheme and /v1 suffix.
+func EnsureBaseURL(raw string) string {
+	baseURL := strings.TrimSpace(raw)
+	if baseURL == "" {
+		baseURL = BaseURL
+	}
+	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+		baseURL = "https://" + baseURL
+	}
+	baseURL = strings.TrimRight(baseURL, "/")
+	if !strings.HasSuffix(baseURL, "/v1") {
+		baseURL += "/v1"
+	}
+	return baseURL
+}
+
+// ─── JWT / token helpers ──────────────────────────────────────────────────────
+
+// IsJWT checks if a token has the format of a JWT (xxx.yyy.zzz).
+func IsJWT(token string) bool {
+	parts := strings.Split(token, ".")
+	return len(parts) == 3 && len(parts[0]) > 0 && len(parts[1]) > 0 && len(parts[2]) > 0
+}
+
+// ShortTokenSuffix returns the last 5 characters of a token for display purposes.
+func ShortTokenSuffix(token string) string {
+	trimmed := strings.TrimSpace(token)
+	if len(trimmed) >= 5 {
+		return trimmed[len(trimmed)-5:]
+	}
+	if trimmed == "" {
+		return "oauth"
+	}
+	return trimmed
+}
+
+// ExtractEmailFromJWT decodes the payload of a JWT and extracts the email claim.
+func ExtractEmailFromJWT(token string) string {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return ""
+	}
+	payload := parts[1]
+	switch len(payload) % 4 {
+	case 2:
+		payload += "=="
+	case 3:
+		payload += "="
+	}
+	decoded, err := base64.URLEncoding.DecodeString(payload)
+	if err != nil {
+		return ""
+	}
+	var claims struct {
+		Email string `json:"email"`
+	}
+	if err := json.Unmarshal(decoded, &claims); err != nil {
+		return ""
+	}
+	return claims.Email
+}
+
+// ─── Payload helpers ──────────────────────────────────────────────────────────
+
+// BuildOpenAIPayload builds the OpenAI-compatible request payload for Kimi.
+func BuildOpenAIPayload(model string, messages []map[string]interface{}, request *cif.CanonicalRequest, isOAuth bool) map[string]interface{} {
+	payload := map[string]interface{}{
+		"model":    model,
+		"messages": messages,
+	}
+
+	if request.Temperature != nil {
+		payload["temperature"] = *request.Temperature
+	}
+	if request.TopP != nil {
+		payload["top_p"] = *request.TopP
+	}
+	if request.MaxTokens != nil {
+		payload["max_tokens"] = *request.MaxTokens
+	}
+	if len(request.Stop) > 0 {
+		payload["stop"] = request.Stop
+	}
+	if request.UserID != nil {
+		payload["user"] = *request.UserID
+	}
+
+	if len(request.Tools) > 0 {
+		tools := make([]map[string]interface{}, 0, len(request.Tools))
+		for _, tool := range request.Tools {
+			t := map[string]interface{}{
+				"type": "function",
+				"function": map[string]interface{}{
+					"name":       tool.Name,
+					"parameters": tool.ParametersSchema,
+				},
+			}
+			if tool.Description != nil {
+				t["function"].(map[string]interface{})["description"] = *tool.Description
+			}
+			tools = append(tools, t)
+		}
+		payload["tools"] = tools
+	}
+
+	if request.ToolChoice != nil {
+		if toolChoice := shared.ConvertCanonicalToolChoiceToOpenAI(request.ToolChoice); toolChoice != nil {
+			payload["tool_choice"] = toolChoice
+		}
+	}
+
+	return payload
+}

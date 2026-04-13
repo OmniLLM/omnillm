@@ -18,6 +18,7 @@ import (
 	antigravitypkg "omnimodel/internal/providers/antigravity"
 	azurepkg "omnimodel/internal/providers/azure"
 	googlepkg "omnimodel/internal/providers/google"
+	kimipkg "omnimodel/internal/providers/kimi"
 	"omnimodel/internal/providers/shared"
 	"omnimodel/internal/providers/types"
 
@@ -30,6 +31,7 @@ var providerModels = map[string][]types.Model{
 	"antigravity": antigravitypkg.Models,
 	"alibaba":     alibabapkg.Models,
 	"azure-openai": azurepkg.DefaultModels,
+	"kimi":        kimipkg.Models,
 	"google": {
 		{ID: "gemini-2.5-pro", Name: "Gemini 2.5 Pro", MaxTokens: 65536, Provider: "google"},
 		{ID: "gemini-2.5-flash", Name: "Gemini 2.5 Flash", MaxTokens: 65536, Provider: "google"},
@@ -48,6 +50,7 @@ var providerBaseURLs = map[string]string{
 	"antigravity":  "https://daily-cloudcode-pa.googleapis.com",
 	"alibaba":      "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
 	"azure-openai": "",
+	"kimi":         "https://api.moonshot.cn/v1",
 	"google":       "https://generativelanguage.googleapis.com",
 }
 
@@ -109,6 +112,8 @@ func (p *GenericProvider) SetupAuth(options *types.AuthOptions) error {
 		return p.setupAzureAuth(options)
 	case "google":
 		return p.setupGoogleAuth(options)
+	case "kimi":
+		return p.setupKimiAuth(options)
 	default:
 		return fmt.Errorf("use the admin UI to authenticate %s", p.id)
 	}
@@ -198,6 +203,63 @@ func (p *GenericProvider) setupGoogleAuth(options *types.AuthOptions) error {
 	return nil
 }
 
+func (p *GenericProvider) setupKimiAuth(options *types.AuthOptions) error {
+	switch options.Method {
+	case "", "api-key":
+		token, baseURL, name, config, err := kimipkg.SetupAPIKeyAuth(p.instanceID, options)
+		if err != nil {
+			return err
+		}
+		p.token = token
+		p.baseURL = baseURL
+		p.name = name
+		p.config = config
+		return nil
+
+	case "oauth":
+		return p.loadKimiTokenFromDB()
+
+	default:
+		return fmt.Errorf("kimi: unsupported auth method: %s", options.Method)
+	}
+}
+
+// loadKimiTokenFromDB reads the persisted Kimi token and applies it to the provider.
+func (p *GenericProvider) loadKimiTokenFromDB() error {
+	token, baseURL, config, err := kimipkg.LoadTokenFromDB(p.instanceID)
+	if err != nil {
+		return err
+	}
+	if token != "" {
+		p.token = token
+	}
+	if baseURL != "" {
+		p.baseURL = baseURL
+	}
+	if config != nil {
+		p.applyConfig(config)
+	}
+	return nil
+}
+
+// SaveKimiOAuthToken persists a completed OAuth token and returns the new canonical instance ID.
+func (p *GenericProvider) SaveKimiOAuthToken(td *kimipkg.TokenData) (newInstanceID string, err error) {
+	newID, name, baseURL, err := kimipkg.SaveOAuthToken(p.instanceID, td)
+	if err != nil {
+		return "", err
+	}
+	p.token = td.AccessToken
+	p.name = name
+	p.baseURL = baseURL
+	p.instanceID = newID
+	p.applyConfig(map[string]interface{}{
+		"auth_type":    td.AuthType,
+		"base_url":     td.BaseURL,
+		"resource_url": td.ResourceURL,
+	})
+	return newID, nil
+}
+
 // ─── Token management ─────────────────────────────────────────────────────────
 
 func (p *GenericProvider) GetToken() string { return p.token }
@@ -250,6 +312,8 @@ func (p *GenericProvider) applyConfig(config map[string]interface{}) {
 		if p.baseURL == "" {
 			p.baseURL = providerBaseURLs["google"]
 		}
+	case "kimi":
+		p.baseURL = kimipkg.NormalizeBaseURL(p.config)
 	}
 }
 
@@ -265,6 +329,8 @@ func (p *GenericProvider) GetHeaders(forVision bool) map[string]string {
 		return azurepkg.Headers(p.token)
 	case "google":
 		return googlepkg.Headers(p.token)
+	case "kimi":
+		return kimipkg.Headers(p.token, false, p.config)
 	}
 
 	return map[string]string{
@@ -292,6 +358,8 @@ func (p *GenericProvider) GetModels() (*types.ModelsResponse, error) {
 		return alibabapkg.GetModels(p.instanceID, p.token, p.baseURL, p.config)
 	case "google":
 		return googlepkg.FetchModels(p.instanceID, p.token, p.baseURL)
+	case "kimi":
+		return kimipkg.GetModels(p.instanceID, p.token, p.baseURL, p.config)
 	}
 
 	models := providerModels[p.id]
@@ -412,6 +480,8 @@ func (a *GenericAdapter) Execute(request *cif.CanonicalRequest) (*cif.CanonicalR
 		return a.executeOpenAI(url, a.azureHeaders(), request)
 	case "google":
 		return googlepkg.Execute(a.provider.token, a.provider.baseURL, request)
+	case "kimi":
+		return a.executeOpenAI(a.kimiURL(), a.kimiHeaders(false), request)
 	case "antigravity":
 		return a.collectStream(request)
 	default:
@@ -438,6 +508,8 @@ func (a *GenericAdapter) ExecuteStream(request *cif.CanonicalRequest) (<-chan ci
 		return a.streamOpenAI(url, a.azureHeaders(), request)
 	case "google":
 		return googlepkg.Stream(a.provider.token, a.provider.baseURL, request)
+	case "kimi":
+		return a.streamOpenAI(a.kimiURL(), a.kimiHeaders(true), request)
 	case "antigravity":
 		projectID, _ := firstString(a.provider.config, "project_id", "project")
 		return antigravitypkg.Stream(a.provider.token, a.provider.baseURL, projectID, request)
@@ -455,6 +527,14 @@ func (a *GenericAdapter) alibabaURL() string {
 func (a *GenericAdapter) alibabaHeaders(stream bool) map[string]string {
 	token := a.provider.ensureFreshAlibabaToken()
 	return alibabapkg.Headers(token, stream, a.provider.config)
+}
+
+func (a *GenericAdapter) kimiURL() string {
+	return kimipkg.ChatURL(a.provider.baseURL)
+}
+
+func (a *GenericAdapter) kimiHeaders(stream bool) map[string]string {
+	return kimipkg.Headers(a.provider.token, stream, a.provider.config)
 }
 
 func (a *GenericAdapter) azureURL(deployment string) (string, error) {

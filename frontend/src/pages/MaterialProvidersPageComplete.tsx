@@ -200,6 +200,7 @@ const PROVIDER_ICONS = {
   antigravity: "🌐",
   alibaba: "☁️",
   "azure-openai": "🔵",
+  kimi: "🌙",
 }
 
 const PROVIDER_COLORS = {
@@ -208,6 +209,7 @@ const PROVIDER_COLORS = {
   alibaba: "#ff9f0a",
   "azure-openai": "#0078d4",
   google: "#4285f4",
+  kimi: "#e040fb",
 }
 
 const PROVIDER_TYPES = [
@@ -235,6 +237,11 @@ const PROVIDER_TYPES = [
     id: "google",
     name: "Google Gemini",
     desc: "Google Gemini API with your API key",
+  },
+  {
+    id: "kimi",
+    name: "Kimi (Moonshot)",
+    desc: "Kimi models via API key",
   },
 ]
 
@@ -420,6 +427,66 @@ function MaterialAuthForm({
               helperText="Opens a Google OAuth browser flow once submitted."
             />
           </>
+        )
+      }
+
+      case "google": {
+        return (
+          <TextField
+            fullWidth
+            label="API Key"
+            type="password"
+            placeholder="Enter your Google Gemini API key"
+            value={values.apiKey || ""}
+            onChange={(e) => setValues({ ...values, apiKey: e.target.value })}
+            sx={{ mb: 2 }}
+            helperText={
+              <>
+                You can obtain an API key from{" "}
+                <a
+                  href="https://aistudio.google.com/apikey"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Google AI Studio
+                </a>
+                .
+              </>
+            }
+          />
+        )
+      }
+
+      case "kimi": {
+        return (
+          <TextField
+            fullWidth
+            label="API Key"
+            type="password"
+            placeholder="Enter your Kimi API key"
+            value={values.apiKey || ""}
+            onChange={(e) =>
+              setValues({
+                ...values,
+                method: "api-key",
+                apiKey: e.target.value,
+              })
+            }
+            sx={{ mb: 2 }}
+            helperText={
+              <>
+                You can obtain an API key from{" "}
+                <a
+                  href="https://platform.moonshot.cn/console/api-keys"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Moonshot AI Platform
+                </a>
+                .
+              </>
+            }
+          />
         )
       }
 

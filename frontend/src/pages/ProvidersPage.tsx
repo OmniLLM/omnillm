@@ -1565,6 +1565,7 @@ const PROVIDER_ACCENT: Record<string, string> = {
   alibaba: "#ff9f0a",
   "azure-openai": "#0078d4",
   google: "#4285f4",
+  kimi: "#e040fb",
 }
 
 const PROVIDER_ICONS: Record<string, React.ReactNode> = {
@@ -1616,6 +1617,11 @@ const PROVIDER_ICONS: Record<string, React.ReactNode> = {
         d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
         fill="#EA4335"
       />
+    </svg>
+  ),
+  kimi: (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
 }
@@ -2266,6 +2272,9 @@ function AddProviderFlow({
           {selectedType === "google" && (
             <AddFlowGoogleForm {...authFormProps} />
           )}
+          {selectedType === "kimi" && (
+            <AddFlowKimiForm {...authFormProps} />
+          )}
         </div>
       </div>
     )
@@ -2724,7 +2733,7 @@ function AddFlowGoogleForm({
 }: AddFlowFormProps) {
   const [apiKey, setApiKey] = useState("")
   const submit = async () => {
-    await onSubmit({ apiKey })
+    await onSubmit({ method: "api-key", apiKey })
   }
   return (
     <div>
@@ -2746,6 +2755,62 @@ function AddFlowGoogleForm({
           style={{ color: "var(--color-blue)" }}
         >
           Google AI Studio
+        </a>
+        .
+      </AddFlowHint>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={submit}
+          disabled={submitting}
+        >
+          {submitting ?
+            <>
+              <Spin size={13} /> Connecting…
+            </>
+          : "Add Provider"}
+        </button>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={onCancel}
+          disabled={submitting}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function AddFlowKimiForm({
+  onSubmit,
+  onCancel,
+  submitting,
+}: AddFlowFormProps) {
+  const [apiKey, setApiKey] = useState("")
+  const submit = async () => {
+    await onSubmit({ method: "api-key", apiKey })
+  }
+  return (
+    <div>
+      <FormRow label="API Key">
+        <input
+          type="password"
+          placeholder="Enter your Kimi API key"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          style={addFlowTextInputStyle}
+        />
+      </FormRow>
+      <AddFlowHint>
+        You can obtain an API key from{" "}
+        <a
+          href="https://platform.moonshot.cn/console/api-keys"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ color: "var(--color-blue)" }}
+        >
+          Moonshot AI Platform
         </a>
         .
       </AddFlowHint>
@@ -2800,6 +2865,11 @@ const PROVIDER_TYPES = [
     id: "google",
     name: "Google Gemini",
     desc: "Google Gemini API with your API key",
+  },
+  {
+    id: "kimi",
+    name: "Kimi (Moonshot)",
+    desc: "Kimi models via API key",
   },
 ]
 
@@ -3154,6 +3224,7 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
     "alibaba",
     "azure-openai",
     "google",
+    "kimi",
   ]
   const TYPE_NAMES: Record<string, string> = {
     "github-copilot": "GitHub Copilot",
@@ -3161,6 +3232,7 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
     alibaba: "Alibaba DashScope",
     "azure-openai": "Azure OpenAI",
     google: "Google Gemini",
+    kimi: "Kimi (Moonshot)",
   }
 
   const providerGroups = providers.reduce<Record<string, Array<Provider>>>(

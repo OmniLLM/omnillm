@@ -13,6 +13,7 @@ const (
 	ProviderAlibaba       ProviderID = "alibaba"
 	ProviderAzureOpenAI   ProviderID = "azure-openai"
 	ProviderGoogle        ProviderID = "google"
+	ProviderKimi          ProviderID = "kimi"
 )
 
 type AuthOptions struct {
