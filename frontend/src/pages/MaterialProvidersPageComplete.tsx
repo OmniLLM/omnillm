@@ -1,10 +1,7 @@
 import {
   Add as AddIcon,
-  Delete as DeleteIcon,
-  Settings as SettingsIcon,
   Link as LinkIcon,
   ExpandMore as ExpandMoreIcon,
-  DragIndicator as DragIndicatorIcon,
   Security as SecurityIcon,
   TrendingUp as TrendingUpIcon,
   ViewModule as ViewModuleIcon,
@@ -20,10 +17,8 @@ import {
   Typography,
   Button,
   Switch,
-  FormControlLabel,
   Alert,
   Chip,
-  IconButton,
   CircularProgress,
   Paper,
   Accordion,
@@ -48,13 +43,8 @@ import {
   Stack,
   Skeleton,
   Collapse,
-  Badge,
   Divider,
   Grid,
-  ToggleButton,
-  ToggleButtonGroup,
-  Tooltip,
-  Menu,
 } from "@mui/material"
 import { alpha } from "@mui/material/styles"
 import { useCallback, useEffect, useRef, useState } from "react"
@@ -73,8 +63,6 @@ import {
   getStatus,
   toggleProviderModel,
   getProviderPriorities,
-  setProviderPriorities,
-  updateProviderConfig,
   type AuthFlow,
   type Model,
   type Provider,
@@ -219,6 +207,7 @@ const PROVIDER_COLORS = {
   antigravity: "#30d158",
   alibaba: "#ff9f0a",
   "azure-openai": "#0078d4",
+  google: "#4285f4",
 }
 
 const PROVIDER_TYPES = [
@@ -241,6 +230,11 @@ const PROVIDER_TYPES = [
     id: "azure-openai",
     name: "Azure OpenAI",
     desc: "Azure OpenAI Service with your own deployments",
+  },
+  {
+    id: "google",
+    name: "Google Gemini",
+    desc: "Google Gemini API with your API key",
   },
 ]
 
@@ -269,14 +263,16 @@ function MaterialAuthForm({
 
   const renderForm = () => {
     switch (provider.type) {
-      case "github-copilot":
+      case "github-copilot": {
         return (
           <>
             <FormControl fullWidth sx={{ mb: 2 }}>
               <InputLabel>Auth Method</InputLabel>
               <Select
                 value={values.method || "oauth"}
-                onChange={(e) => setValues({ ...values, method: e.target.value })}
+                onChange={(e) =>
+                  setValues({ ...values, method: e.target.value })
+                }
                 label="Auth Method"
               >
                 <MenuItem value="oauth">OAuth device flow (browser)</MenuItem>
@@ -290,21 +286,26 @@ function MaterialAuthForm({
                 type="password"
                 placeholder="ghu_…"
                 value={values.token || ""}
-                onChange={(e) => setValues({ ...values, token: e.target.value })}
+                onChange={(e) =>
+                  setValues({ ...values, token: e.target.value })
+                }
                 sx={{ mb: 2 }}
               />
             )}
           </>
         )
+      }
 
-      case "alibaba":
+      case "alibaba": {
         return (
           <>
             <FormControl fullWidth sx={{ mb: 2 }}>
               <InputLabel>Auth Method</InputLabel>
               <Select
                 value={values.method || "api-key"}
-                onChange={(e) => setValues({ ...values, method: e.target.value })}
+                onChange={(e) =>
+                  setValues({ ...values, method: e.target.value })
+                }
                 label="Auth Method"
               >
                 <MenuItem value="api-key">API Key</MenuItem>
@@ -317,7 +318,9 @@ function MaterialAuthForm({
                   <InputLabel>API Mode</InputLabel>
                   <Select
                     value={values.plan || "standard"}
-                    onChange={(e) => setValues({ ...values, plan: e.target.value })}
+                    onChange={(e) =>
+                      setValues({ ...values, plan: e.target.value })
+                    }
                     label="API Mode"
                   >
                     <MenuItem value="standard">
@@ -330,7 +333,9 @@ function MaterialAuthForm({
                   <InputLabel>Region</InputLabel>
                   <Select
                     value={values.region || "global"}
-                    onChange={(e) => setValues({ ...values, region: e.target.value })}
+                    onChange={(e) =>
+                      setValues({ ...values, region: e.target.value })
+                    }
                     label="Region"
                   >
                     <MenuItem value="global">
@@ -344,28 +349,37 @@ function MaterialAuthForm({
                 <TextField
                   fullWidth
                   label="Base URL (optional)"
-                  placeholder={values.plan === "coding-plan"
-                    ? "https://coding-intl.dashscope.aliyuncs.com/v1"
-                    : "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"}
+                  placeholder={
+                    values.plan === "coding-plan" ?
+                      "https://coding-intl.dashscope.aliyuncs.com/v1"
+                    : "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+                  }
                   value={values.endpoint || ""}
-                  onChange={(e) => setValues({ ...values, endpoint: e.target.value })}
+                  onChange={(e) =>
+                    setValues({ ...values, endpoint: e.target.value })
+                  }
                   sx={{ mb: 2 }}
                 />
                 <TextField
                   fullWidth
                   label="DashScope API Key"
                   type="password"
-                  placeholder={values.plan === "coding-plan" ? "sk-sp-…" : "sk-…"}
+                  placeholder={
+                    values.plan === "coding-plan" ? "sk-sp-…" : "sk-…"
+                  }
                   value={values.apiKey || ""}
-                  onChange={(e) => setValues({ ...values, apiKey: e.target.value })}
+                  onChange={(e) =>
+                    setValues({ ...values, apiKey: e.target.value })
+                  }
                   sx={{ mb: 2 }}
                 />
               </>
             )}
           </>
         )
+      }
 
-      case "azure-openai":
+      case "azure-openai": {
         return (
           <TextField
             fullWidth
@@ -378,8 +392,9 @@ function MaterialAuthForm({
             helperText="Enter your Azure OpenAI API key. Configure endpoint and deployments after authentication."
           />
         )
+      }
 
-      case "antigravity":
+      case "antigravity": {
         return (
           <>
             <TextField
@@ -387,7 +402,9 @@ function MaterialAuthForm({
               label="OAuth Client ID"
               placeholder="…apps.googleusercontent.com"
               value={values.clientId || ""}
-              onChange={(e) => setValues({ ...values, clientId: e.target.value })}
+              onChange={(e) =>
+                setValues({ ...values, clientId: e.target.value })
+              }
               sx={{ mb: 2 }}
             />
             <TextField
@@ -396,15 +413,19 @@ function MaterialAuthForm({
               type="password"
               placeholder="GOCSPX-…"
               value={values.clientSecret || ""}
-              onChange={(e) => setValues({ ...values, clientSecret: e.target.value })}
+              onChange={(e) =>
+                setValues({ ...values, clientSecret: e.target.value })
+              }
               sx={{ mb: 2 }}
               helperText="Opens a Google OAuth browser flow once submitted."
             />
           </>
         )
+      }
 
-      default:
+      default: {
         return null
+      }
     }
   }
 
@@ -419,7 +440,9 @@ function MaterialAuthForm({
           variant="contained"
           onClick={handleSubmit}
           disabled={loading}
-          startIcon={loading ? <CircularProgress size={16} /> : <SecurityIcon />}
+          startIcon={
+            loading ? <CircularProgress size={16} /> : <SecurityIcon />
+          }
         >
           {loading ? "Submitting..." : "Submit"}
         </Button>
@@ -465,25 +488,31 @@ function MaterialModelsDialog({
     if (!models) return
     const newEnabled = !model.enabled
     // Optimistic update
-    setModels(prev =>
-      prev?.map(m => m.id === model.id ? { ...m, enabled: newEnabled } : m) || null
+    setModels(
+      (prev) =>
+        prev?.map((m) =>
+          m.id === model.id ? { ...m, enabled: newEnabled } : m,
+        ) || null,
     )
     try {
       await toggleProviderModel(provider.id, model.id, newEnabled)
       onModelsChanged?.()
-    } catch (error) {
+    } catch {
       // Revert on error
-      setModels(prev =>
-        prev?.map(m => m.id === model.id ? { ...m, enabled: model.enabled } : m) || null
+      setModels(
+        (prev) =>
+          prev?.map((m) =>
+            m.id === model.id ? { ...m, enabled: model.enabled } : m,
+          ) || null,
       )
     }
   }
 
-  const filteredModels = models?.filter(m =>
-    m.id.toLowerCase().includes(search.toLowerCase())
-  ) || []
+  const filteredModels =
+    models?.filter((m) => m.id.toLowerCase().includes(search.toLowerCase()))
+    || []
 
-  const enabledCount = models?.filter(m => m.enabled).length || 0
+  const enabledCount = models?.filter((m) => m.enabled).length || 0
 
   return (
     <>
@@ -505,9 +534,18 @@ function MaterialModelsDialog({
         Models
       </Button>
 
-      <Dialog open={open} onClose={() => setOpen(false)} maxWidth="md" fullWidth>
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
         <DialogTitle>
-          <Stack direction="row" justifyContent="space-between" alignItems="center">
+          <Stack
+            direction="row"
+            justifyContent="space-between"
+            alignItems="center"
+          >
             <Box>
               <Typography variant="h6">{provider.name} — Models</Typography>
               {models && (
@@ -548,7 +586,9 @@ function MaterialModelsDialog({
                           fontSize: 12,
                         }}
                       >
-                        {model.enabled ? <CheckIcon fontSize="small" /> : "M"}
+                        {model.enabled ?
+                          <CheckIcon fontSize="small" />
+                        : "M"}
                       </Avatar>
                     </ListItemIcon>
                     <ListItemText
@@ -557,7 +597,9 @@ function MaterialModelsDialog({
                           {model.id}
                         </Typography>
                       }
-                      secondary={model.name !== model.id ? model.name : undefined}
+                      secondary={
+                        model.name !== model.id ? model.name : undefined
+                      }
                     />
                     <ListItemSecondaryAction>
                       <Switch
@@ -614,7 +656,12 @@ function MaterialUsageDialog({ provider }: { provider: Provider }) {
         Usage
       </Button>
 
-      <Dialog open={open} onClose={() => setOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
         <DialogTitle>{provider.name} — Usage</DialogTitle>
         <DialogContent>
           {loading && (
@@ -625,42 +672,49 @@ function MaterialUsageDialog({ provider }: { provider: Provider }) {
           {data && !loading && (
             <Stack spacing={3}>
               {/* Quota snapshots */}
-              {data.quota_snapshots && Object.entries(data.quota_snapshots).map(([key, quota]) => (
-                <Paper
-                  key={key}
-                  elevation={0}
-                  sx={{
-                    p: 2,
-                    bgcolor: "background.default",
-                    border: 1,
-                    borderColor: "divider",
-                  }}
-                >
-                  <Typography variant="subtitle2" gutterBottom>
-                    {key.replace(/_/g, " ").toUpperCase()}
-                  </Typography>
-                  <Box sx={{ mb: 1 }}>
-                    <LinearProgress
-                      variant="determinate"
-                      value={quota.unlimited ? 100 : 100 - quota.percent_remaining}
-                      sx={{ height: 8, borderRadius: 1 }}
-                      color={
-                        quota.unlimited ? "info"
-                        : quota.percent_remaining < 25 ? "error"
-                        : quota.percent_remaining < 50 ? "warning"
-                        : "success"
+              {data.quota_snapshots
+                && Object.entries(data.quota_snapshots).map(([key, quota]) => (
+                  <Paper
+                    key={key}
+                    elevation={0}
+                    sx={{
+                      p: 2,
+                      bgcolor: "background.default",
+                      border: 1,
+                      borderColor: "divider",
+                    }}
+                  >
+                    <Typography variant="subtitle2" gutterBottom>
+                      {key.replaceAll("_", " ").toUpperCase()}
+                    </Typography>
+                    <Box sx={{ mb: 1 }}>
+                      <LinearProgress
+                        variant="determinate"
+                        value={
+                          quota.unlimited ? 100 : 100 - quota.percent_remaining
+                        }
+                        sx={{ height: 8, borderRadius: 1 }}
+                        color={
+                          quota.unlimited ? "info"
+                          : quota.percent_remaining < 25 ?
+                            "error"
+                          : quota.percent_remaining < 50 ?
+                            "warning"
+                          : "success"
+                        }
+                      />
+                    </Box>
+                    <Typography variant="caption" color="text.secondary">
+                      {quota.unlimited ?
+                        "Unlimited usage"
+                      : `${Math.round(100 - quota.percent_remaining)}% used · ${quota.remaining.toLocaleString()} remaining`
                       }
-                    />
-                  </Box>
-                  <Typography variant="caption" color="text.secondary">
-                    {quota.unlimited ?
-                      "Unlimited usage"
-                    : `${Math.round(100 - quota.percent_remaining)}% used · ${quota.remaining.toLocaleString()} remaining`}
-                  </Typography>
-                </Paper>
-              ))}
+                    </Typography>
+                  </Paper>
+                ))}
               {/* Raw data fallback */}
-              {(!data.quota_snapshots || Object.keys(data.quota_snapshots).length === 0) && (
+              {(!data.quota_snapshots
+                || Object.keys(data.quota_snapshots).length === 0) && (
                 <Paper
                   elevation={0}
                   sx={{
@@ -670,7 +724,11 @@ function MaterialUsageDialog({ provider }: { provider: Provider }) {
                     borderColor: "divider",
                   }}
                 >
-                  <Typography variant="caption" color="text.secondary" gutterBottom>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    gutterBottom
+                  >
                     Raw Data
                   </Typography>
                   <Typography
@@ -740,8 +798,9 @@ function MaterialProviderCard({
         position: "relative",
         border: provider.isActive ? 2 : 1,
         borderColor: provider.isActive ? "success.light" : "divider",
-        "&::before": provider.isActive
-          ? {
+        "&::before":
+          provider.isActive ?
+            {
               content: '""',
               position: "absolute",
               top: 0,
@@ -790,14 +849,15 @@ function MaterialProviderCard({
                       icon={<CheckIcon />}
                     />
                   )}
-                  {!provider.isActive && provider.authStatus === "authenticated" && (
-                    <Chip
-                      label="Ready"
-                      size="small"
-                      color="primary"
-                      variant="outlined"
-                    />
-                  )}
+                  {!provider.isActive
+                    && provider.authStatus === "authenticated" && (
+                      <Chip
+                        label="Ready"
+                        size="small"
+                        color="primary"
+                        variant="outlined"
+                      />
+                    )}
                   {provider.authStatus === "unauthenticated" && (
                     <Chip
                       label="Not authorized"
@@ -817,20 +877,31 @@ function MaterialProviderCard({
                   )}
                 </Stack>
                 {/* Model progress */}
-                {provider.authStatus === "authenticated" &&
-                  provider.totalModelCount != null &&
-                  provider.totalModelCount > 0 && (
+                {provider.authStatus === "authenticated"
+                  && provider.totalModelCount != null
+                  && provider.totalModelCount > 0 && (
                     <Box sx={{ mt: 1 }}>
-                      <Typography variant="caption" color="text.secondary" gutterBottom>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        gutterBottom
+                      >
                         Models enabled:{" "}
-                        <Box component="span" sx={{ color: "success.main", fontWeight: 600 }}>
+                        <Box
+                          component="span"
+                          sx={{ color: "success.main", fontWeight: 600 }}
+                        >
                           {provider.enabledModelCount}
                         </Box>{" "}
                         / {provider.totalModelCount}
                       </Typography>
                       <LinearProgress
                         variant="determinate"
-                        value={((provider.enabledModelCount || 0) / provider.totalModelCount) * 100}
+                        value={
+                          ((provider.enabledModelCount || 0)
+                            / provider.totalModelCount)
+                          * 100
+                        }
                         sx={{ height: 4, borderRadius: 1 }}
                         color="success"
                       />
@@ -844,7 +915,7 @@ function MaterialProviderCard({
           <Grid>
             <Stack spacing={1}>
               <Stack direction="row" spacing={1}>
-                {provider.isActive ? (
+                {provider.isActive ?
                   <Button
                     variant="outlined"
                     size="small"
@@ -856,24 +927,25 @@ function MaterialProviderCard({
                   >
                     {isActivating ? "Working…" : "Deactivate"}
                   </Button>
-                ) : (
-                  <Button
+                : <Button
                     variant="contained"
                     size="small"
                     color="success"
                     disabled={
-                      isFlowRunning ||
-                      isActivating ||
-                      provider.authStatus !== "authenticated"
+                      isFlowRunning
+                      || isActivating
+                      || provider.authStatus !== "authenticated"
                     }
                     onClick={() => onActivate(provider.id)}
                     startIcon={
-                      isActivating ? <CircularProgress size={16} /> : <CheckIcon />
+                      isActivating ?
+                        <CircularProgress size={16} />
+                      : <CheckIcon />
                     }
                   >
                     {isActivating ? "Working…" : "Activate"}
                   </Button>
-                )}
+                }
                 <Button
                   variant="text"
                   size="small"
@@ -933,11 +1005,17 @@ function MaterialAddProviderDialog({
         Add Provider
       </Button>
 
-      <Dialog open={open} onClose={() => setOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
         <DialogTitle>Add Provider</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary" gutterBottom>
-            Select a provider type. You can add multiple accounts of the same type.
+            Select a provider type. You can add multiple accounts of the same
+            type.
           </Typography>
           <Stack spacing={1} sx={{ mt: 2 }}>
             {PROVIDER_TYPES.map((pt) => {
@@ -1002,7 +1080,9 @@ export function MaterialProvidersPageComplete({
   const [loading, setLoading] = useState(true)
   const [activating, setActivating] = useState<string | null>(null)
   const [priorities, setPriorities] = useState<Record<string, number>>({})
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(
+    {},
+  )
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const load = useCallback(async () => {
@@ -1061,8 +1141,8 @@ export function MaterialProvidersPageComplete({
   useEffect(() => {
     const authFlow = status?.authFlow
     if (
-      authFlow &&
-      (authFlow.status === "pending" || authFlow.status === "awaiting_user")
+      authFlow
+      && (authFlow.status === "pending" || authFlow.status === "awaiting_user")
     ) {
       startPoll()
     }
@@ -1206,7 +1286,7 @@ export function MaterialProvidersPageComplete({
               Providers
             </Typography>
             <Typography variant="body1" color="text.secondary">
-              {activeProviders.length > 0 ? (
+              {activeProviders.length > 0 ?
                 <>
                   <Box
                     component="span"
@@ -1216,9 +1296,8 @@ export function MaterialProvidersPageComplete({
                   </Box>{" "}
                   · {providers.length} total instances
                 </>
-              ) : (
-                `${providers.length} instance${providers.length !== 1 ? "s" : ""} · none active`
-              )}
+              : `${providers.length} instance${providers.length !== 1 ? "s" : ""} · none active`
+              }
             </Typography>
           </Box>
           <MaterialAddProviderDialog
@@ -1227,7 +1306,10 @@ export function MaterialProvidersPageComplete({
           />
         </Box>
 
-        <MaterialAuthFlowBanner authFlow={status?.authFlow} providers={providers} />
+        <MaterialAuthFlowBanner
+          authFlow={status?.authFlow}
+          providers={providers}
+        />
       </Box>
 
       {/* Provider Groups */}
@@ -1281,7 +1363,7 @@ export function MaterialProvidersPageComplete({
                 </Stack>
               </AccordionSummary>
               <AccordionDetails>
-                {typeProviders.length > 0 ? (
+                {typeProviders.length > 0 ?
                   <Stack spacing={2}>
                     {typeProviders.map((provider) => (
                       <MaterialProviderCard
@@ -1301,8 +1383,7 @@ export function MaterialProvidersPageComplete({
                       />
                     ))}
                   </Stack>
-                ) : (
-                  <Paper
+                : <Paper
                     elevation={0}
                     sx={{
                       p: 4,
@@ -1326,7 +1407,11 @@ export function MaterialProvidersPageComplete({
                     >
                       {PROVIDER_ICONS[providerType.id] || "◌"}
                     </Avatar>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      gutterBottom
+                    >
                       No {providerType.name} accounts configured
                     </Typography>
                     <Button
@@ -1339,7 +1424,7 @@ export function MaterialProvidersPageComplete({
                       Add Account
                     </Button>
                   </Paper>
-                )}
+                }
               </AccordionDetails>
             </Accordion>
           )

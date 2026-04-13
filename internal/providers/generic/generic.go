@@ -53,12 +53,28 @@ var providerModels = map[string][]types.Model{
 		{ID: "gpt-4o", Name: "GPT-4o", MaxTokens: 128000, Provider: "azure-openai"},
 		{ID: "gpt-4o-mini", Name: "GPT-4o Mini", MaxTokens: 128000, Provider: "azure-openai"},
 	},
+	"google": {
+		// Gemini 2.5 series (latest stable + previews)
+		{ID: "gemini-2.5-pro", Name: "Gemini 2.5 Pro", MaxTokens: 65536, Provider: "google"},
+		{ID: "gemini-2.5-flash", Name: "Gemini 2.5 Flash", MaxTokens: 65536, Provider: "google"},
+		{ID: "gemini-2.5-flash-lite", Name: "Gemini 2.5 Flash Lite", MaxTokens: 65536, Provider: "google"},
+		{ID: "gemini-2.5-flash-preview-05-20", Name: "Gemini 2.5 Flash Preview 05-20", MaxTokens: 65536, Provider: "google"},
+		{ID: "gemini-2.5-pro-preview-06-05", Name: "Gemini 2.5 Pro Preview 06-05", MaxTokens: 65536, Provider: "google"},
+		// Gemini 2.0 series
+		{ID: "gemini-2.0-flash", Name: "Gemini 2.0 Flash", MaxTokens: 8192, Provider: "google"},
+		{ID: "gemini-2.0-flash-lite", Name: "Gemini 2.0 Flash Lite", MaxTokens: 8192, Provider: "google"},
+		// Gemini 1.5 series
+		{ID: "gemini-1.5-pro", Name: "Gemini 1.5 Pro", MaxTokens: 8192, Provider: "google"},
+		{ID: "gemini-1.5-flash", Name: "Gemini 1.5 Flash", MaxTokens: 8192, Provider: "google"},
+		{ID: "gemini-1.5-flash-8b", Name: "Gemini 1.5 Flash-8B", MaxTokens: 8192, Provider: "google"},
+	},
 }
 
 var providerBaseURLs = map[string]string{
 	"antigravity":  "https://daily-cloudcode-pa.googleapis.com",
 	"alibaba":      "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
 	"azure-openai": "",
+	"google":       "https://generativelanguage.googleapis.com",
 }
 
 const alibabaUserAgent = "QwenCode/0.13.2 (darwin; arm64)"
@@ -104,6 +120,8 @@ func (p *GenericProvider) SetupAuth(options *types.AuthOptions) error {
 		return p.setupAlibabaAuth(options)
 	case "azure-openai":
 		return p.setupAzureAuth(options)
+	case "google":
+		return p.setupGoogleAuth(options)
 	default:
 		return fmt.Errorf("use the admin UI to authenticate %s", p.id)
 	}
@@ -366,6 +384,27 @@ func (p *GenericProvider) setupAzureAuth(options *types.AuthOptions) error {
 	return nil
 }
 
+func (p *GenericProvider) setupGoogleAuth(options *types.AuthOptions) error {
+	if options.APIKey == "" {
+		return fmt.Errorf("google: API key is required")
+	}
+	tokenStore := database.NewTokenStore()
+	tokenData := map[string]interface{}{
+		"access_token": options.APIKey,
+	}
+	if err := tokenStore.Save(p.instanceID, p.id, tokenData); err != nil {
+		return fmt.Errorf("failed to save google token: %w", err)
+	}
+	p.token = options.APIKey
+	p.baseURL = providerBaseURLs["google"]
+
+	suffix := shortTokenSuffix(options.APIKey)
+	p.name = "Google Gemini (" + suffix + ")"
+
+	log.Info().Str("provider", p.instanceID).Msg("Google Gemini authenticated via API key")
+	return nil
+}
+
 func (p *GenericProvider) GetToken() string { return p.token }
 
 func (p *GenericProvider) RefreshToken() error { return nil }
@@ -385,6 +424,11 @@ func (p *GenericProvider) GetHeaders(forVision bool) map[string]string {
 		return map[string]string{
 			"api-key":      p.token,
 			"Content-Type": "application/json",
+		}
+	case "google":
+		return map[string]string{
+			"x-goog-api-key": p.token,
+			"Content-Type":   "application/json",
 		}
 	}
 
@@ -415,6 +459,10 @@ func (p *GenericProvider) GetModels() (*types.ModelsResponse, error) {
 
 	if p.id == "alibaba" {
 		return p.getAlibabaModels()
+	}
+
+	if p.id == "google" {
+		return p.fetchGoogleModels()
 	}
 
 	models := providerModels[p.id]
@@ -517,6 +565,13 @@ func (p *GenericProvider) LoadFromDB() error {
 		}
 	}
 
+	// For Google, restore the baseURL and name from the token
+	if p.id == "google" && p.token != "" {
+		p.baseURL = providerBaseURLs["google"]
+		suffix := shortTokenSuffix(p.token)
+		p.name = "Google Gemini (" + suffix + ")"
+	}
+
 	log.Debug().Str("provider", p.instanceID).Bool("has_token", p.token != "").Msg("Loaded generic provider token")
 	return nil
 }
@@ -566,6 +621,10 @@ func (p *GenericProvider) applyConfig(config map[string]interface{}) {
 		if endpoint, ok := firstString(config, "endpoint"); ok {
 			p.baseURL = strings.TrimRight(endpoint, "/")
 		}
+	case "google":
+		if p.baseURL == "" {
+			p.baseURL = providerBaseURLs["google"]
+		}
 	}
 }
 
@@ -603,6 +662,92 @@ func stringSliceFromConfig(config map[string]interface{}, key string) []string {
 	default:
 		return nil
 	}
+}
+
+// fetchGoogleModels calls the Google Gemini REST API (GET /v1beta/models)
+// and returns all models that support generateContent, which is required for chat.
+func (p *GenericProvider) fetchGoogleModels() (*types.ModelsResponse, error) {
+	if p.token == "" {
+		return nil, fmt.Errorf("google: not authenticated")
+	}
+
+	base := p.baseURL
+	if base == "" {
+		base = "https://generativelanguage.googleapis.com"
+	}
+
+	url := base + "/v1beta/models"
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("google: failed to build list-models request: %w", err)
+	}
+	req.Header.Set("x-goog-api-key", p.token)
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("google: list-models request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("google: list-models failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Google list-models response shape:
+	// { "models": [ { "name": "models/gemini-2.5-flash", "displayName": "Gemini 2.5 Flash",
+	//                 "outputTokenLimit": 65536, "supportedGenerationMethods": ["generateContent", ...] }, ... ] }
+	var raw struct {
+		Models []struct {
+			Name                       string   `json:"name"`
+			DisplayName                string   `json:"displayName"`
+			Description                string   `json:"description"`
+			OutputTokenLimit           int      `json:"outputTokenLimit"`
+			SupportedGenerationMethods []string `json:"supportedGenerationMethods"`
+		} `json:"models"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, fmt.Errorf("google: failed to parse list-models response: %w", err)
+	}
+
+	var models []types.Model
+	for _, m := range raw.Models {
+		// Only include models that support chat (generateContent)
+		supportsChat := false
+		for _, method := range m.SupportedGenerationMethods {
+			if method == "generateContent" {
+				supportsChat = true
+				break
+			}
+		}
+		if !supportsChat {
+			continue
+		}
+
+		// m.Name is "models/gemini-2.5-flash" — strip the "models/" prefix for the ID
+		modelID := strings.TrimPrefix(m.Name, "models/")
+		name := m.DisplayName
+		if name == "" {
+			name = modelID
+		}
+		maxTokens := m.OutputTokenLimit
+		if maxTokens == 0 {
+			maxTokens = 8192
+		}
+
+		models = append(models, types.Model{
+			ID:          modelID,
+			Name:        name,
+			Description: m.Description,
+			MaxTokens:   maxTokens,
+			Provider:    p.instanceID,
+		})
+	}
+
+	log.Info().Str("provider", p.instanceID).Int("count", len(models)).Msg("Fetched Google models from API")
+	return &types.ModelsResponse{Data: models, Object: "list"}, nil
 }
 
 func (p *GenericProvider) getAlibabaModels() (*types.ModelsResponse, error) {
@@ -895,6 +1040,8 @@ func (a *GenericAdapter) Execute(request *cif.CanonicalRequest) (*cif.CanonicalR
 			return nil, err
 		}
 		return a.executeOpenAI(url, a.azureHeaders(), request)
+	case "google":
+		return a.executeGoogle(request)
 	case "antigravity":
 		return a.collectStream(request)
 	default:
@@ -919,6 +1066,8 @@ func (a *GenericAdapter) ExecuteStream(request *cif.CanonicalRequest) (<-chan ci
 			return nil, err
 		}
 		return a.streamOpenAI(url, a.azureHeaders(), request)
+	case "google":
+		return a.streamGoogle(request)
 	case "antigravity":
 		return a.streamAntigravity(request)
 	default:
@@ -1567,6 +1716,347 @@ func (a *GenericAdapter) collectStream(request *cif.CanonicalRequest) (*cif.Cano
 		return nil, err
 	}
 
+	response := &cif.CanonicalResponse{StopReason: cif.StopReasonEndTurn}
+	var textBuf strings.Builder
+	toolCalls := make(map[int]*cif.CIFToolCallPart)
+	toolArgBufs := make(map[int]*strings.Builder)
+
+	for event := range ch {
+		switch e := event.(type) {
+		case cif.CIFStreamStart:
+			response.ID = e.ID
+			response.Model = e.Model
+		case cif.CIFContentDelta:
+			switch d := e.Delta.(type) {
+			case cif.TextDelta:
+				textBuf.WriteString(d.Text)
+			case cif.ToolArgumentsDelta:
+				if toolArgBufs[e.Index] == nil {
+					toolArgBufs[e.Index] = &strings.Builder{}
+				}
+				toolArgBufs[e.Index].WriteString(d.PartialJSON)
+				if e.ContentBlock != nil {
+					if tc, ok := e.ContentBlock.(cif.CIFToolCallPart); ok {
+						toolCalls[e.Index] = &tc
+					}
+				}
+			}
+		case cif.CIFStreamEnd:
+			response.StopReason = e.StopReason
+			response.Usage = e.Usage
+		case cif.CIFStreamError:
+			return nil, fmt.Errorf("stream error: %s", e.Error.Message)
+		}
+	}
+
+	if textBuf.Len() > 0 {
+		response.Content = append(response.Content, cif.CIFTextPart{Type: "text", Text: textBuf.String()})
+	}
+	for idx, tc := range toolCalls {
+		finalTC := *tc
+		if buf, ok := toolArgBufs[idx]; ok {
+			json.Unmarshal([]byte(buf.String()), &finalTC.ToolArguments)
+		}
+		response.Content = append(response.Content, finalTC)
+	}
+
+	return response, nil
+}
+
+// ─── Google Gemini API ─────────────────────────────────────────────────────
+
+func (a *GenericAdapter) buildGooglePayload(request *cif.CanonicalRequest) map[string]interface{} {
+	model := a.RemapModel(request.Model)
+	contents := cifMessagesToGemini(request.Messages)
+
+	payload := map[string]interface{}{
+		"model":    model,
+		"contents": contents,
+	}
+
+	if request.SystemPrompt != nil && *request.SystemPrompt != "" {
+		payload["systemInstruction"] = map[string]interface{}{
+			"parts": []map[string]interface{}{
+				{"text": *request.SystemPrompt},
+			},
+		}
+	}
+
+	if len(request.Tools) > 0 {
+		decls := make([]map[string]interface{}, 0, len(request.Tools))
+		for _, tool := range request.Tools {
+			decl := map[string]interface{}{
+				"name":       tool.Name,
+				"parameters": sanitizeGeminiSchema(tool.ParametersSchema),
+			}
+			if tool.Description != nil {
+				decl["description"] = *tool.Description
+			}
+			decls = append(decls, decl)
+		}
+		payload["tools"] = []map[string]interface{}{
+			{"functionDeclarations": decls},
+		}
+	}
+
+	genConfig := map[string]interface{}{}
+	if request.MaxTokens != nil {
+		genConfig["maxOutputTokens"] = *request.MaxTokens
+	}
+	if request.Temperature != nil {
+		genConfig["temperature"] = *request.Temperature
+	}
+	if request.TopP != nil {
+		genConfig["topP"] = *request.TopP
+	}
+	if request.Stop != nil {
+		genConfig["stopSequences"] = request.Stop
+	}
+	if len(genConfig) > 0 {
+		payload["generationConfig"] = genConfig
+	}
+
+	return payload
+}
+
+func (a *GenericAdapter) googleURL(model string) string {
+	base := a.provider.baseURL
+	if base == "" {
+		base = "https://generativelanguage.googleapis.com"
+	}
+	return base + "/v1beta/models/" + model + ":streamGenerateContent?alt=sse"
+}
+
+func (a *GenericAdapter) executeGoogle(request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+	ch, err := a.streamGoogle(request)
+	if err != nil {
+		return nil, err
+	}
+	return a.collectStreamFromChan(ch)
+}
+
+func (a *GenericAdapter) streamGoogle(request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
+	if a.provider.token == "" {
+		return nil, fmt.Errorf("google: not authenticated (set API key via admin UI)")
+	}
+
+	model := a.RemapModel(request.Model)
+
+	contents := cifMessagesToGemini(request.Messages)
+
+	geminiReq := map[string]interface{}{
+		"contents": contents,
+	}
+
+	if request.SystemPrompt != nil && *request.SystemPrompt != "" {
+		geminiReq["systemInstruction"] = map[string]interface{}{
+			"parts": []map[string]interface{}{
+				{"text": *request.SystemPrompt},
+			},
+		}
+	}
+
+	if len(request.Tools) > 0 {
+		decls := make([]map[string]interface{}, 0, len(request.Tools))
+		for _, tool := range request.Tools {
+			decl := map[string]interface{}{
+				"name":       tool.Name,
+				"parameters": sanitizeGeminiSchema(tool.ParametersSchema),
+			}
+			if tool.Description != nil {
+				decl["description"] = *tool.Description
+			}
+			decls = append(decls, decl)
+		}
+		geminiReq["tools"] = []map[string]interface{}{
+			{"functionDeclarations": decls},
+		}
+	}
+
+	genConfig := map[string]interface{}{}
+	if request.MaxTokens != nil {
+		genConfig["maxOutputTokens"] = *request.MaxTokens
+	}
+	if request.Temperature != nil {
+		genConfig["temperature"] = *request.Temperature
+	}
+	if request.TopP != nil {
+		genConfig["topP"] = *request.TopP
+	}
+	if request.Stop != nil {
+		genConfig["stopSequences"] = request.Stop
+	}
+	if len(genConfig) > 0 {
+		geminiReq["generationConfig"] = genConfig
+	}
+
+	payload, err := json.Marshal(geminiReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal google request: %w", err)
+	}
+
+	base := a.provider.baseURL
+	if base == "" {
+		base = "https://generativelanguage.googleapis.com"
+	}
+	// Use v1beta which supports the latest Gemini models
+	url := base + "/v1beta/models/" + model + ":streamGenerateContent?alt=sse"
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(payload))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	for k, v := range a.provider.GetHeaders(false) {
+		req.Header.Set(k, v)
+	}
+	req.Header.Set("Accept", "text/event-stream")
+
+	// Streaming requests must not use a fixed client timeout; stream length is model dependent.
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("google request failed: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return nil, fmt.Errorf("google API failed with status %d: %s", resp.StatusCode, string(b))
+	}
+
+	eventCh := make(chan cif.CIFStreamEvent, 64)
+	go parseGoogleGeminiSSE(resp.Body, eventCh)
+	return eventCh, nil
+}
+
+// parseGoogleGeminiSSE parses Google Gemini streaming responses (SSE format).
+// The response format is identical to the antigravity SSE format.
+func parseGoogleGeminiSSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
+	defer body.Close()
+	defer close(eventCh)
+
+	scanner := bufio.NewScanner(body)
+	scanner.Buffer(make([]byte, 0, 4*1024*1024), 4*1024*1024)
+
+	var streamStartSent bool
+	var textIndex int
+	toolCallIndex := 1000
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		data := strings.TrimPrefix(line, "data: ")
+		if data == "" || data == "[DONE]" {
+			continue
+		}
+
+		var envelope struct {
+			Candidates []struct {
+				Content struct {
+					Parts []map[string]interface{} `json:"parts"`
+					Role  string                   `json:"role"`
+				} `json:"content"`
+				FinishReason string `json:"finishReason"`
+			} `json:"candidates"`
+			UsageMetadata struct {
+				PromptTokenCount     int `json:"promptTokenCount"`
+				CandidatesTokenCount int `json:"candidatesTokenCount"`
+			} `json:"usageMetadata"`
+		}
+
+		if err := json.Unmarshal([]byte(data), &envelope); err != nil {
+			log.Warn().Err(err).Msg("Failed to parse Google Gemini SSE line")
+			continue
+		}
+
+		if len(envelope.Candidates) == 0 {
+			continue
+		}
+
+		if !streamStartSent {
+			eventCh <- cif.CIFStreamStart{Type: "stream_start", ID: randomID(), Model: "google"}
+			streamStartSent = true
+		}
+
+		candidate := envelope.Candidates[0]
+
+		for _, part := range candidate.Content.Parts {
+			if text, ok := part["text"].(string); ok && text != "" {
+				eventCh <- cif.CIFContentDelta{
+					Type:         "content_delta",
+					Index:        textIndex,
+					ContentBlock: cif.CIFTextPart{Type: "text", Text: ""},
+					Delta:        cif.TextDelta{Type: "text_delta", Text: text},
+				}
+			} else if fcMap, ok := part["functionCall"].(map[string]interface{}); ok {
+				name, _ := fcMap["name"].(string)
+				args := normalizeToolArguments(fcMap["args"])
+				argsJSON, _ := json.Marshal(args)
+				eventCh <- cif.CIFContentDelta{
+					Type:  "content_delta",
+					Index: toolCallIndex,
+					ContentBlock: cif.CIFToolCallPart{
+						Type:          "tool_call",
+						ToolCallID:    fmt.Sprintf("call_%s", randomID()),
+						ToolName:      name,
+						ToolArguments: args,
+					},
+					Delta: cif.ToolArgumentsDelta{
+						Type:        "tool_arguments_delta",
+						PartialJSON: string(argsJSON),
+					},
+				}
+				toolCallIndex++
+			}
+		}
+
+		if candidate.FinishReason != "" && candidate.FinishReason != "FINISH_REASON_UNSPECIFIED" {
+			usage := envelope.UsageMetadata
+			eventCh <- cif.CIFStreamEnd{
+				Type:       "stream_end",
+				StopReason: googleStopReason(candidate.FinishReason),
+				Usage: &cif.CIFUsage{
+					InputTokens:  usage.PromptTokenCount,
+					OutputTokens: usage.CandidatesTokenCount,
+				},
+			}
+			return
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		eventCh <- cif.CIFStreamError{
+			Type:  "stream_error",
+			Error: cif.ErrorInfo{Type: "stream_error", Message: err.Error()},
+		}
+		return
+	}
+
+	// End of stream without explicit finish reason
+	if streamStartSent {
+		eventCh <- cif.CIFStreamEnd{Type: "stream_end", StopReason: cif.StopReasonEndTurn}
+	}
+}
+
+func googleStopReason(reason string) cif.CIFStopReason {
+	switch reason {
+	case "STOP":
+		return cif.StopReasonEndTurn
+	case "MAX_TOKENS":
+		return cif.StopReasonMaxTokens
+	case "FUNCTION_CALL":
+		return cif.StopReasonToolUse
+	case "SAFETY", "RECITATION", "LANGUAGE":
+		return cif.StopReasonContentFilter
+	default:
+		return cif.StopReasonEndTurn
+	}
+}
+
+// collectStreamFromChan assembles a CanonicalResponse from a stream channel
+func (a *GenericAdapter) collectStreamFromChan(ch <-chan cif.CIFStreamEvent) (*cif.CanonicalResponse, error) {
 	response := &cif.CanonicalResponse{StopReason: cif.StopReasonEndTurn}
 	var textBuf strings.Builder
 	toolCalls := make(map[int]*cif.CIFToolCallPart)

@@ -24,7 +24,6 @@ import {
   type UsageData,
 } from "@/api"
 import { getDeviceAuthCopy } from "@/lib/device-auth"
-
 import { createLogger } from "@/lib/logger"
 
 const _log = createLogger("providers-page")
@@ -308,11 +307,13 @@ function AddFlowChoiceGroup({
             style={{
               minHeight: 44,
               borderRadius: "var(--radius-md)",
-              border: active
-                ? `1px solid ${accent}66`
+              border:
+                active ?
+                  `1px solid ${accent}66`
                 : "1px solid var(--color-separator)",
               background: active ? `${accent}18` : "rgba(255,255,255,0.03)",
-              color: active ? "var(--color-text)" : "var(--color-text-secondary)",
+              color:
+                active ? "var(--color-text)" : "var(--color-text-secondary)",
               fontSize: 13,
               fontWeight: active ? 600 : 500,
               cursor: "pointer",
@@ -336,8 +337,9 @@ function AddFlowHint({
   children: React.ReactNode
   tone?: "neutral" | "warning"
 }) {
-  const palette = tone === "warning"
-    ? {
+  const palette =
+    tone === "warning" ?
+      {
         background: "rgba(255,159,10,0.08)",
         border: "1px solid rgba(255,159,10,0.18)",
         color: "var(--color-text-secondary)",
@@ -1406,10 +1408,7 @@ function PriorityModal({
 
   return (
     <>
-      <button
-        className="btn btn-ghost btn-sm"
-        onClick={openModal}
-      >
+      <button className="btn btn-ghost btn-sm" onClick={openModal}>
         Priority
       </button>
       {open && (
@@ -1477,7 +1476,9 @@ function PriorityModal({
                     <span style={{ flex: 1, fontSize: 14, fontWeight: 500 }}>
                       {p.name}
                     </span>
-                    <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                    <div
+                      style={{ display: "flex", gap: 4, alignItems: "center" }}
+                    >
                       <button
                         onClick={() => handleMove(i, -1)}
                         disabled={i === 0}
@@ -1485,7 +1486,10 @@ function PriorityModal({
                           background: "transparent",
                           border: "1px solid var(--color-separator)",
                           borderRadius: 4,
-                          color: i === 0 ? "var(--color-text-tertiary)" : "var(--color-text)",
+                          color:
+                            i === 0 ?
+                              "var(--color-text-tertiary)"
+                            : "var(--color-text)",
                           cursor: i === 0 ? "not-allowed" : "pointer",
                           opacity: i === 0 ? 0.3 : 1,
                           padding: "2px 8px",
@@ -1504,13 +1508,20 @@ function PriorityModal({
                           background: "transparent",
                           border: "1px solid var(--color-separator)",
                           borderRadius: 4,
-                          color: i === ordered.length - 1 ? "var(--color-text-tertiary)" : "var(--color-text)",
-                          cursor: i === ordered.length - 1 ? "not-allowed" : "pointer",
+                          color:
+                            i === ordered.length - 1 ?
+                              "var(--color-text-tertiary)"
+                            : "var(--color-text)",
+                          cursor:
+                            i === ordered.length - 1 ?
+                              "not-allowed"
+                            : "pointer",
                           opacity: i === ordered.length - 1 ? 0.3 : 1,
                           padding: "2px 8px",
                           fontSize: 14,
                           lineHeight: 1,
-                          pointerEvents: i === ordered.length - 1 ? "none" : "auto",
+                          pointerEvents:
+                            i === ordered.length - 1 ? "none" : "auto",
                         }}
                         title="Move down"
                       >
@@ -1553,6 +1564,7 @@ const PROVIDER_ACCENT: Record<string, string> = {
   antigravity: "#30d158",
   alibaba: "#ff9f0a",
   "azure-openai": "#0078d4",
+  google: "#4285f4",
 }
 
 const PROVIDER_ICONS: Record<string, React.ReactNode> = {
@@ -1584,6 +1596,26 @@ const PROVIDER_ICONS: Record<string, React.ReactNode> = {
     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
       <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10c1.19 0 2.34-.21 3.41-.6.39-.14.65-.5.65-.93 0-.55-.45-1-1-1-.24 0-.46.08-.64.21-.82.3-1.7.45-2.59.45-3.86 0-7-3.14-7-7s3.14-7 7-7 7 3.14 7 7c0 .89-.15 1.77-.45 2.59-.13.18-.21.4-.21.64 0 .55.45 1 1 1 .43 0 .79-.26.93-.65.39-1.07.6-2.22.6-3.41C22 6.48 17.52 2 12 2z" />
       <circle cx="12" cy="12" r="3" />
+    </svg>
+  ),
+  google: (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+      <path
+        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+        fill="#4285F4"
+      />
+      <path
+        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+        fill="#34A853"
+      />
+      <path
+        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+        fill="#FBBC05"
+      />
+      <path
+        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+        fill="#EA4335"
+      />
     </svg>
   ),
 }
@@ -1931,7 +1963,10 @@ function AddProviderFlow({
           onDone()
         } else if (af?.status === "error") {
           stopPoll()
-          showToast("Authentication failed: " + (af.error ?? "unknown"), "error")
+          showToast(
+            "Authentication failed: " + (af.error ?? "unknown"),
+            "error",
+          )
           setStep("configure")
           setAuthFlow(null)
         }
@@ -1950,7 +1985,7 @@ function AddProviderFlow({
         // Use the pending_id returned by the server rather than constructing it
         // client-side, so any future backend changes don't silently break this.
         setAuthFlow({
-          providerId: result.pending_id ?? (selectedType + "-pending"),
+          providerId: result.pending_id ?? selectedType + "-pending",
           status: "awaiting_user",
           userCode: result.user_code,
           instructionURL: result.verification_uri,
@@ -1958,12 +1993,15 @@ function AddProviderFlow({
         setStep("authenticating")
         startPoll()
       } else if (result.success) {
-        showToast(`Provider "${result.provider?.name ?? selectedType}" added successfully!`)
+        showToast(
+          `Provider "${result.provider?.name ?? selectedType}" added successfully!`,
+        )
         onDone()
       } else {
         // Backend returned 200 with success:false for a non-OAuth path — surface the error.
         showToast(
-          result.message ?? "Authentication failed. Please check your credentials.",
+          result.message
+            ?? "Authentication failed. Please check your credentials.",
           "error",
         )
       }
@@ -2029,7 +2067,8 @@ function AddProviderFlow({
             marginTop: 0,
           }}
         >
-          Choose the provider type you want to add. You can add multiple accounts of the same type.
+          Choose the provider type you want to add. You can add multiple
+          accounts of the same type.
         </p>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {PROVIDER_TYPES.map((pt) => {
@@ -2056,12 +2095,16 @@ function AddProviderFlow({
                   color: "var(--color-text)",
                 }}
                 onMouseEnter={(e) => {
-                  ;(e.currentTarget as HTMLButtonElement).style.background = `${accent}10`
-                  ;(e.currentTarget as HTMLButtonElement).style.borderColor = `${accent}30`
+                  ;(e.currentTarget as HTMLButtonElement).style.background =
+                    `${accent}10`
+                  ;(e.currentTarget as HTMLButtonElement).style.borderColor =
+                    `${accent}30`
                 }}
                 onMouseLeave={(e) => {
-                  ;(e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.04)"
-                  ;(e.currentTarget as HTMLButtonElement).style.borderColor = "var(--color-separator)"
+                  ;(e.currentTarget as HTMLButtonElement).style.background =
+                    "rgba(255,255,255,0.04)"
+                  ;(e.currentTarget as HTMLButtonElement).style.borderColor =
+                    "var(--color-separator)"
                 }}
               >
                 <div
@@ -2078,17 +2121,37 @@ function AddProviderFlow({
                     flexShrink: 0,
                   }}
                 >
-                  {PROVIDER_ICONS[pt.id] ?? <span style={{ fontSize: 18 }}>◌</span>}
+                  {PROVIDER_ICONS[pt.id] ?? (
+                    <span style={{ fontSize: 18 }}>◌</span>
+                  )}
                 </div>
                 <div>
-                  <div style={{ fontWeight: 600, fontSize: 14, letterSpacing: "-0.01em" }}>
+                  <div
+                    style={{
+                      fontWeight: 600,
+                      fontSize: 14,
+                      letterSpacing: "-0.01em",
+                    }}
+                  >
                     {pt.name}
                   </div>
-                  <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "var(--color-text-secondary)",
+                      marginTop: 2,
+                    }}
+                  >
                     {pt.desc}
                   </div>
                 </div>
-                <span style={{ marginLeft: "auto", color: "var(--color-text-tertiary)", fontSize: 16 }}>
+                <span
+                  style={{
+                    marginLeft: "auto",
+                    color: "var(--color-text-tertiary)",
+                    fontSize: 16,
+                  }}
+                >
                   ›
                 </span>
               </button>
@@ -2101,7 +2164,8 @@ function AddProviderFlow({
 
   // ── Step 2: Configure / authenticate ─────────────────────────────────────────
   if (step === "configure" && selectedType) {
-    const typeName = PROVIDER_TYPES.find((pt) => pt.id === selectedType)?.name ?? selectedType
+    const typeName =
+      PROVIDER_TYPES.find((pt) => pt.id === selectedType)?.name ?? selectedType
     const accent = PROVIDER_ACCENT[selectedType] ?? "#0a84ff"
 
     const authFormProps = {
@@ -2113,7 +2177,14 @@ function AddProviderFlow({
     return (
       <div>
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            marginBottom: 24,
+          }}
+        >
           <button
             className="btn btn-ghost btn-sm"
             onClick={() => setStep("select")}
@@ -2136,7 +2207,9 @@ function AddProviderFlow({
                 flexShrink: 0,
               }}
             >
-              {PROVIDER_ICONS[selectedType] ?? <span style={{ fontSize: 18 }}>◌</span>}
+              {PROVIDER_ICONS[selectedType] ?? (
+                <span style={{ fontSize: 18 }}>◌</span>
+              )}
             </div>
             <div>
               <h2
@@ -2151,8 +2224,16 @@ function AddProviderFlow({
               >
                 {typeName}
               </h2>
-              <p style={{ fontSize: 12, color: "var(--color-text-secondary)", margin: "2px 0 0", marginTop: 2 }}>
-                {PROVIDER_TYPES.find((pt) => pt.id === selectedType)?.desc ?? ""}
+              <p
+                style={{
+                  fontSize: 12,
+                  color: "var(--color-text-secondary)",
+                  margin: "2px 0 0",
+                  marginTop: 2,
+                }}
+              >
+                {PROVIDER_TYPES.find((pt) => pt.id === selectedType)?.desc
+                  ?? ""}
               </p>
             </div>
           </div>
@@ -2182,6 +2263,9 @@ function AddProviderFlow({
           {selectedType === "azure-openai" && (
             <AddFlowAzureForm {...authFormProps} />
           )}
+          {selectedType === "google" && (
+            <AddFlowGoogleForm {...authFormProps} />
+          )}
         </div>
       </div>
     )
@@ -2191,7 +2275,14 @@ function AddProviderFlow({
   if (step === "authenticating") {
     return (
       <div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            marginBottom: 24,
+          }}
+        >
           <h2
             style={{
               fontFamily: "var(--font-display)",
@@ -2265,7 +2356,12 @@ function AddProviderFlow({
                   target="_blank"
                   rel="noopener noreferrer"
                   className="btn btn-sm"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none" }}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    textDecoration: "none",
+                  }}
                 >
                   Open Authorization Page ↗
                 </a>
@@ -2284,7 +2380,10 @@ function AddProviderFlow({
               Waiting for authorization…
             </div>
             <div>
-              <button className="btn btn-sm btn-ghost" onClick={handleCancelAuth}>
+              <button
+                className="btn btn-sm btn-ghost"
+                onClick={handleCancelAuth}
+              >
                 Cancel
               </button>
             </div>
@@ -2305,7 +2404,11 @@ interface AddFlowFormProps {
   submitting: boolean
 }
 
-function AddFlowAlibabaForm({ onSubmit, onCancel, submitting }: AddFlowFormProps) {
+function AddFlowAlibabaForm({
+  onSubmit,
+  onCancel,
+  submitting,
+}: AddFlowFormProps) {
   const [method, setMethod] = useState("api-key")
   const [plan, setPlan] = useState("standard")
   const [region, setRegion] = useState("global")
@@ -2356,14 +2459,20 @@ function AddFlowAlibabaForm({ onSubmit, onCancel, submitting }: AddFlowFormProps
               onChange={(e) => setRegion(e.target.value)}
               style={addFlowControlStyle}
             >
-              <option value="global">Global (dashscope-intl.aliyuncs.com)</option>
+              <option value="global">
+                Global (dashscope-intl.aliyuncs.com)
+              </option>
               <option value="china">China (dashscope.aliyuncs.com)</option>
             </select>
           </FormRow>
           <FormRow label="Base URL (optional)">
             <input
               type="text"
-              placeholder={plan === "coding-plan" ? "https://coding-intl.dashscope.aliyuncs.com/v1" : "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"}
+              placeholder={
+                plan === "coding-plan" ?
+                  "https://coding-intl.dashscope.aliyuncs.com/v1"
+                : "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+              }
               value={endpoint}
               onChange={(e) => setEndpoint(e.target.value)}
               style={addFlowTextInputStyle}
@@ -2379,20 +2488,37 @@ function AddFlowAlibabaForm({ onSubmit, onCancel, submitting }: AddFlowFormProps
             />
           </FormRow>
           <AddFlowHint>
-            Standard is the right default for `qwen3.6-plus`. Use Coding Plan only when you have a dedicated Coding Plan key and base URL.
+            Standard is the right default for `qwen3.6-plus`. Use Coding Plan
+            only when you have a dedicated Coding Plan key and base URL.
           </AddFlowHint>
         </>
       )}
       {method === "oauth" && (
         <AddFlowHint tone="warning">
-          OAuth connects to the Qwen portal flow. It does not behave like a standard DashScope API-key provider, and some newer models such as `qwen3.6-plus` may be unavailable there.
+          OAuth connects to the Qwen portal flow. It does not behave like a
+          standard DashScope API-key provider, and some newer models such as
+          `qwen3.6-plus` may be unavailable there.
         </AddFlowHint>
       )}
       <div style={{ display: "flex", gap: 8, paddingTop: 4 }}>
-        <button className="btn btn-primary btn-sm" onClick={submit} disabled={submitting}>
-          {submitting ? <><Spin size={13} /> Connecting…</> : method === "oauth" ? "Start OAuth →" : "Add Provider"}
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={submit}
+          disabled={submitting}
+        >
+          {submitting ?
+            <>
+              <Spin size={13} /> Connecting…
+            </>
+          : method === "oauth" ?
+            "Start OAuth →"
+          : "Add Provider"}
         </button>
-        <button className="btn btn-ghost btn-sm" onClick={onCancel} disabled={submitting}>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={onCancel}
+          disabled={submitting}
+        >
           Cancel
         </button>
       </div>
@@ -2400,7 +2526,11 @@ function AddFlowAlibabaForm({ onSubmit, onCancel, submitting }: AddFlowFormProps
   )
 }
 
-function AddFlowCopilotForm({ onSubmit, onCancel, submitting }: AddFlowFormProps) {
+function AddFlowCopilotForm({
+  onSubmit,
+  onCancel,
+  submitting,
+}: AddFlowFormProps) {
   const [method, setMethod] = useState("oauth")
   const [token, setToken] = useState("")
   const submit = async () => {
@@ -2436,14 +2566,29 @@ function AddFlowCopilotForm({ onSubmit, onCancel, submitting }: AddFlowFormProps
       )}
       {method === "oauth" && (
         <AddFlowHint>
-          Opens the GitHub device authorization page. Sign in with your GitHub Copilot account.
+          Opens the GitHub device authorization page. Sign in with your GitHub
+          Copilot account.
         </AddFlowHint>
       )}
       <div style={{ display: "flex", gap: 8 }}>
-        <button className="btn btn-primary btn-sm" onClick={submit} disabled={submitting}>
-          {submitting ? <><Spin size={13} /> Connecting…</> : method === "oauth" ? "Start OAuth →" : "Add Provider"}
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={submit}
+          disabled={submitting}
+        >
+          {submitting ?
+            <>
+              <Spin size={13} /> Connecting…
+            </>
+          : method === "oauth" ?
+            "Start OAuth →"
+          : "Add Provider"}
         </button>
-        <button className="btn btn-ghost btn-sm" onClick={onCancel} disabled={submitting}>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={onCancel}
+          disabled={submitting}
+        >
           Cancel
         </button>
       </div>
@@ -2451,12 +2596,20 @@ function AddFlowCopilotForm({ onSubmit, onCancel, submitting }: AddFlowFormProps
   )
 }
 
-function AddFlowAntigravityForm({ onSubmit, onCancel, submitting }: AddFlowFormProps) {
+function AddFlowAntigravityForm({
+  onSubmit,
+  onCancel,
+  submitting,
+}: AddFlowFormProps) {
   const [clientId, setClientId] = useState("")
   const [clientSecret, setClientSecret] = useState("")
   const submit = async () => {
     if (!clientId.trim() || !clientSecret.trim()) return
-    await onSubmit({ method: "oauth", clientId: clientId.trim(), clientSecret: clientSecret.trim() })
+    await onSubmit({
+      method: "oauth",
+      clientId: clientId.trim(),
+      clientSecret: clientSecret.trim(),
+    })
   }
   return (
     <div style={addFlowPanelStyle}>
@@ -2482,10 +2635,22 @@ function AddFlowAntigravityForm({ onSubmit, onCancel, submitting }: AddFlowFormP
         Opens a Google OAuth browser flow once submitted.
       </AddFlowHint>
       <div style={{ display: "flex", gap: 8 }}>
-        <button className="btn btn-primary btn-sm" onClick={submit} disabled={submitting}>
-          {submitting ? <><Spin size={13} /> Connecting…</> : "Start OAuth →"}
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={submit}
+          disabled={submitting}
+        >
+          {submitting ?
+            <>
+              <Spin size={13} /> Connecting…
+            </>
+          : "Start OAuth →"}
         </button>
-        <button className="btn btn-ghost btn-sm" onClick={onCancel} disabled={submitting}>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={onCancel}
+          disabled={submitting}
+        >
           Cancel
         </button>
       </div>
@@ -2493,7 +2658,11 @@ function AddFlowAntigravityForm({ onSubmit, onCancel, submitting }: AddFlowFormP
   )
 }
 
-function AddFlowAzureForm({ onSubmit, onCancel, submitting }: AddFlowFormProps) {
+function AddFlowAzureForm({
+  onSubmit,
+  onCancel,
+  submitting,
+}: AddFlowFormProps) {
   const [apiKey, setApiKey] = useState("")
   const [endpoint, setEndpoint] = useState("")
   const submit = async () => {
@@ -2521,13 +2690,82 @@ function AddFlowAzureForm({ onSubmit, onCancel, submitting }: AddFlowFormProps) 
         />
       </FormRow>
       <AddFlowHint>
-        Use your Azure endpoint and key here. Deployments can be configured after the provider is added.
+        Use your Azure endpoint and key here. Deployments can be configured
+        after the provider is added.
       </AddFlowHint>
       <div style={{ display: "flex", gap: 8 }}>
-        <button className="btn btn-primary btn-sm" onClick={submit} disabled={submitting}>
-          {submitting ? <><Spin size={13} /> Connecting…</> : "Add Provider"}
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={submit}
+          disabled={submitting}
+        >
+          {submitting ?
+            <>
+              <Spin size={13} /> Connecting…
+            </>
+          : "Add Provider"}
         </button>
-        <button className="btn btn-ghost btn-sm" onClick={onCancel} disabled={submitting}>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={onCancel}
+          disabled={submitting}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function AddFlowGoogleForm({
+  onSubmit,
+  onCancel,
+  submitting,
+}: AddFlowFormProps) {
+  const [apiKey, setApiKey] = useState("")
+  const submit = async () => {
+    await onSubmit({ apiKey })
+  }
+  return (
+    <div>
+      <FormRow label="API Key">
+        <input
+          type="password"
+          placeholder="Enter your Google Gemini API key"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          style={addFlowTextInputStyle}
+        />
+      </FormRow>
+      <AddFlowHint>
+        You can obtain an API key from{" "}
+        <a
+          href="https://aistudio.google.com/apikey"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ color: "var(--color-blue)" }}
+        >
+          Google AI Studio
+        </a>
+        .
+      </AddFlowHint>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={submit}
+          disabled={submitting}
+        >
+          {submitting ?
+            <>
+              <Spin size={13} /> Connecting…
+            </>
+          : "Add Provider"}
+        </button>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={onCancel}
+          disabled={submitting}
+        >
           Cancel
         </button>
       </div>
@@ -2557,6 +2795,11 @@ const PROVIDER_TYPES = [
     id: "azure-openai",
     name: "Azure OpenAI",
     desc: "Azure OpenAI Service with your own deployments",
+  },
+  {
+    id: "google",
+    name: "Google Gemini",
+    desc: "Google Gemini API with your API key",
   },
 ]
 
@@ -2905,12 +3148,19 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
     status?.authFlow?.status ?? "",
   )
 
-  const ALL_TYPES = ["github-copilot", "antigravity", "alibaba", "azure-openai"]
+  const ALL_TYPES = [
+    "github-copilot",
+    "antigravity",
+    "alibaba",
+    "azure-openai",
+    "google",
+  ]
   const TYPE_NAMES: Record<string, string> = {
     "github-copilot": "GitHub Copilot",
     antigravity: "Antigravity (Google)",
     alibaba: "Alibaba DashScope",
     "azure-openai": "Azure OpenAI",
+    google: "Google Gemini",
   }
 
   const providerGroups = providers.reduce<Record<string, Array<Provider>>>(
@@ -2981,7 +3231,11 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
 
   return (
     <div>
-      <AuthFlowBanner authFlow={status?.authFlow} providers={providers} onCancel={handleCancelAuth} />
+      <AuthFlowBanner
+        authFlow={status?.authFlow}
+        providers={providers}
+        onCancel={handleCancelAuth}
+      />
 
       {/* Page header */}
       <div
@@ -3061,151 +3315,157 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
             return 0
           })
           .map(([providerType, typeProviders]) => {
-          const isCollapsed = collapsedGroups[providerType] ?? false
-          const accent = PROVIDER_ACCENT[providerType] ?? "#0a84ff"
+            const isCollapsed = collapsedGroups[providerType] ?? false
+            const accent = PROVIDER_ACCENT[providerType] ?? "#0a84ff"
 
-          return (
-            <div key={providerType}>
-              {/* Group header */}
-              <div
-                onClick={
-                  typeProviders.length > 0 ?
-                    () =>
-                      setCollapsedGroups((prev) => ({
-                        ...prev,
-                        [providerType]: !prev[providerType],
-                      }))
-                  : undefined
-                }
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  marginBottom: 12,
-                  cursor: typeProviders.length > 0 ? "pointer" : "default",
-                  userSelect: "none",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            return (
+              <div key={providerType}>
+                {/* Group header */}
+                <div
+                  onClick={
+                    typeProviders.length > 0 ?
+                      () =>
+                        setCollapsedGroups((prev) => ({
+                          ...prev,
+                          [providerType]: !prev[providerType],
+                        }))
+                    : undefined
+                  }
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    marginBottom: 12,
+                    cursor: typeProviders.length > 0 ? "pointer" : "default",
+                    userSelect: "none",
+                  }}
+                >
                   <div
-                    style={{
-                      width: 28,
-                      height: 28,
-                      borderRadius: "var(--radius-sm)",
-                      background: `${accent}18`,
-                      border: `1px solid ${accent}28`,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: accent,
-                    }}
+                    style={{ display: "flex", alignItems: "center", gap: 10 }}
                   >
-                    {PROVIDER_ICONS[providerType] ?? (
-                      <span style={{ fontSize: 14 }}>◌</span>
-                    )}
-                  </div>
-                  <div>
-                    <span
+                    <div
                       style={{
-                        fontFamily: "var(--font-display)",
-                        fontWeight: 600,
-                        fontSize: 15,
-                        color: "var(--color-text)",
-                        letterSpacing: "-0.01em",
+                        width: 28,
+                        height: 28,
+                        borderRadius: "var(--radius-sm)",
+                        background: `${accent}18`,
+                        border: `1px solid ${accent}28`,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: accent,
                       }}
                     >
-                      {TYPE_NAMES[providerType] ?? providerType}
-                    </span>
-                    {typeProviders.length > 0 && (
+                      {PROVIDER_ICONS[providerType] ?? (
+                        <span style={{ fontSize: 14 }}>◌</span>
+                      )}
+                    </div>
+                    <div>
                       <span
                         style={{
-                          marginLeft: 8,
-                          fontSize: 12,
-                          color: "var(--color-text-tertiary)",
-                          fontWeight: 400,
+                          fontFamily: "var(--font-display)",
+                          fontWeight: 600,
+                          fontSize: 15,
+                          color: "var(--color-text)",
+                          letterSpacing: "-0.01em",
                         }}
                       >
-                        {typeProviders.length}{" "}
-                        {typeProviders.length === 1 ? "account" : "accounts"}
+                        {TYPE_NAMES[providerType] ?? providerType}
                       </span>
-                    )}
+                      {typeProviders.length > 0 && (
+                        <span
+                          style={{
+                            marginLeft: 8,
+                            fontSize: 12,
+                            color: "var(--color-text-tertiary)",
+                            fontWeight: 400,
+                          }}
+                        >
+                          {typeProviders.length}{" "}
+                          {typeProviders.length === 1 ? "account" : "accounts"}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {!isCollapsed && (
-                <div
-                  style={{ display: "flex", flexDirection: "column", gap: 10 }}
-                >
-                  {typeProviders.length > 0 ?
-                    typeProviders.map((p) => (
-                      <ProviderCard
-                        key={p.id}
-                        provider={p}
-                        isFlowRunning={isFlowRunning}
-                        isActivating={activating === p.id}
-                        onActivate={handleActivate}
-                        onDeactivate={handleDeactivate}
-                        onDelete={handleDelete}
-                        onAuthSubmit={handleAuthSubmit}
-                        onModelsChanged={load}
-                        priorityIndex={activeProviders.findIndex(
-                          (x) => x.id === p.id,
-                        )}
-                        multiProvider={activeProviders.length >= 2}
-                      />
-                    ))
-                  : <div
-                      style={{
-                        padding: "32px 24px",
-                        border: `1px dashed ${accent}28`,
-                        borderRadius: "var(--radius-lg)",
-                        textAlign: "center",
-                        background: `${accent}06`,
-                      }}
-                    >
-                      <div
+                {!isCollapsed && (
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 10,
+                    }}
+                  >
+                    {typeProviders.length > 0 ?
+                      typeProviders.map((p) => (
+                        <ProviderCard
+                          key={p.id}
+                          provider={p}
+                          isFlowRunning={isFlowRunning}
+                          isActivating={activating === p.id}
+                          onActivate={handleActivate}
+                          onDeactivate={handleDeactivate}
+                          onDelete={handleDelete}
+                          onAuthSubmit={handleAuthSubmit}
+                          onModelsChanged={load}
+                          priorityIndex={activeProviders.findIndex(
+                            (x) => x.id === p.id,
+                          )}
+                          multiProvider={activeProviders.length >= 2}
+                        />
+                      ))
+                    : <div
                         style={{
-                          width: 44,
-                          height: 44,
-                          borderRadius: "var(--radius-md)",
-                          background: `${accent}14`,
-                          border: `1px solid ${accent}22`,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          color: accent,
-                          margin: "0 auto 12px",
-                          opacity: 0.6,
+                          padding: "32px 24px",
+                          border: `1px dashed ${accent}28`,
+                          borderRadius: "var(--radius-lg)",
+                          textAlign: "center",
+                          background: `${accent}06`,
                         }}
                       >
-                        {PROVIDER_ICONS[providerType] ?? (
-                          <span style={{ fontSize: 20 }}>◌</span>
-                        )}
+                        <div
+                          style={{
+                            width: 44,
+                            height: 44,
+                            borderRadius: "var(--radius-md)",
+                            background: `${accent}14`,
+                            border: `1px solid ${accent}22`,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            color: accent,
+                            margin: "0 auto 12px",
+                            opacity: 0.6,
+                          }}
+                        >
+                          {PROVIDER_ICONS[providerType] ?? (
+                            <span style={{ fontSize: 20 }}>◌</span>
+                          )}
+                        </div>
+                        <p
+                          style={{
+                            fontSize: 13,
+                            color: "var(--color-text-secondary)",
+                            marginBottom: 14,
+                          }}
+                        >
+                          No {TYPE_NAMES[providerType]} accounts configured
+                        </p>
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => setAddingProvider(true)}
+                          disabled={isFlowRunning}
+                        >
+                          Add Account
+                        </button>
                       </div>
-                      <p
-                        style={{
-                          fontSize: 13,
-                          color: "var(--color-text-secondary)",
-                          marginBottom: 14,
-                        }}
-                      >
-                        No {TYPE_NAMES[providerType]} accounts configured
-                      </p>
-                      <button
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => setAddingProvider(true)}
-                        disabled={isFlowRunning}
-                      >
-                        Add Account
-                      </button>
-                    </div>
-                  }
-                </div>
-              )}
-            </div>
-          )
-        })}
+                    }
+                  </div>
+                )}
+              </div>
+            )
+          })}
       </div>
     </div>
   )

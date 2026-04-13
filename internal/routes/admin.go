@@ -434,7 +434,7 @@ func handleAddProviderInstance(c *gin.Context) {
 	switch providerType {
 	case "github-copilot":
 		provider = copilot.NewGitHubCopilotProvider(instanceID)
-	case "antigravity", "alibaba", "azure-openai":
+	case "antigravity", "alibaba", "azure-openai", "google":
 		provider = generic.NewGenericProvider(providerType, instanceID, "")
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -783,7 +783,7 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 		})
 
 	// ── Azure OpenAI / Antigravity (API-key / config based) ──────────────────
-	case "azure-openai", "antigravity":
+	case "azure-openai", "antigravity", "google":
 		instanceID := providerRegistry.NextInstanceID(providerType)
 		gen := generic.NewGenericProvider(providerType, instanceID, "")
 
