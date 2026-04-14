@@ -476,3 +476,68 @@
   border-color: rgba(255,69,58,0.25);
   color: var(--color-red);
 }
+
+/* ─── Focus-visible ─────────────────────────────────────────────────────── */
+
+/* Apply focus rings to all interactive elements that use CSS-in-JS styles.
+   These provide visible feedback for keyboard navigation. */
+
+:focus-visible {
+  outline: 2px solid var(--color-blue);
+  outline-offset: 2px;
+}
+
+/* Remove focus ring for mouse/tap users who click an element */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Ensure focus rings are visible on dark surfaces */
+.panel :focus-visible,
+header :focus-visible {
+  outline-color: var(--color-blue);
+  outline-width: 2px;
+}
+
+/* ─── Spinner (replaces emoji loading) ──────────────────────────────────── */
+
+@keyframes spinner-rotate {
+  to { transform: rotate(360deg); }
+}
+
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--color-separator);
+  border-top-color: var(--color-text-secondary);
+  border-radius: 50%;
+  animation: spinner-rotate 0.6s linear infinite;
+  vertical-align: middle;
+}
+
+/* ─── Scrollable focusable list ─────────────────────────────────────────── */
+
+.scrollable-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.list-item-interactive {
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.list-item-interactive:hover {
+  background: var(--color-surface-3);
+}
+
+.list-item-interactive:focus-visible {
+  outline: 2px solid var(--color-blue);
+  outline-offset: -2px;
+}

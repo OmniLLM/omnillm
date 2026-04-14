@@ -4,14 +4,14 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 
 const badgeVariants = cva(
-  "inline-flex items-center px-2 py-0.5 text-xs font-semibold",
+  "inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full",
   {
     variants: {
       variant: {
-        green: "bg-gruvbox-green/20 text-gruvbox-green-accent",
-        red: "bg-gruvbox-red/20 text-gruvbox-red-accent",
-        yellow: "bg-gruvbox-yellow/20 text-gruvbox-yellow-accent",
-        blue: "bg-gruvbox-blue/20 text-gruvbox-blue-accent",
+        green: "bg-[var(--color-green-fill)] text-[var(--color-green)]",
+        red: "bg-[var(--color-red-fill)] text-[var(--color-red)]",
+        yellow: "bg-[var(--color-orange-fill)] text-[var(--color-orange)]",
+        blue: "bg-[var(--color-blue-fill)] text-[var(--color-blue)]",
       },
     },
     defaultVariants: { variant: "blue" },

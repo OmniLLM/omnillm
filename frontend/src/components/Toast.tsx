@@ -1,50 +1,41 @@
-import { useCallback, useState } from "react"
+import { useCallback } from "react"
+import { toast, Toaster } from "sonner"
 
 import { createLogger } from "@/lib/logger"
 
 const log = createLogger("toast")
 
-export interface Toast {
-  id: number
-  message: string
-  type: "success" | "error"
-}
-
-let _id = 0
 
 export function useToast() {
-  const [toasts, setToasts] = useState<Array<Toast>>([])
-
   const showToast = useCallback(
-    (message: string, type: Toast["type"] = "success") => {
+    (message: string, type: "success" | "error" = "success") => {
       log.info(message, { type })
-      const id = ++_id
-      setToasts((prev) => [...prev, { id, message, type }])
-      setTimeout(
-        () => setToasts((prev) => prev.filter((t) => t.id !== id)),
-        3500,
-      )
+      if (type === "error") {
+        toast.error(message)
+      } else {
+        toast.success(message)
+      }
     },
     [],
   )
 
-  return { toasts, showToast }
+  return { showToast }
 }
 
-export function ToastContainer({ toasts }: { toasts: Array<Toast> }) {
+export function ToastContainer() {
   return (
-    <div className="toast-container">
-      {toasts.map((t) => (
-        <div
-          key={t.id}
-          className={`toast ${t.type === "success" ? "toast-success" : "toast-error"}`}
-        >
-          <span style={{ opacity: 0.6, marginRight: 6 }}>
-            {t.type === "success" ? "▶" : "✕"}
-          </span>
-          {t.message}
-        </div>
-      ))}
-    </div>
+    <Toaster
+      position="bottom-right"
+      richColors
+      closeButton
+      expand={false}
+      duration={3500}
+      toastOptions={{
+        style: {
+          fontFamily: "var(--font-text)",
+          fontSize: "13px",
+        },
+      }}
+    />
   )
 }

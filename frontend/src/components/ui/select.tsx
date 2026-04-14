@@ -9,9 +9,10 @@ const Select = React.forwardRef<
   <select
     ref={ref}
     className={cn(
-      "w-full bg-gruvbox-bg-darkest border border-gruvbox-bg-light-3 text-gruvbox-fg-medium px-2.5 py-1.5 text-sm",
-      "focus:outline-none focus:border-gruvbox-blue",
-      "[&>option]:bg-gruvbox-bg",
+      "w-full bg-[var(--color-surface-2)] border border-[var(--color-separator)] px-3 py-2 text-sm rounded-[var(--radius-md)]",
+      "text-[var(--color-text)] [&>option]:bg-[var(--color-bg-elevated)] [&>option]:text-[var(--color-text)]",
+      "focus:outline-none focus:border-[var(--color-blue)] focus:ring-2 focus:ring-[var(--color-blue-fill)]",
+      "transition-colors cursor-pointer",
       className,
     )}
     {...props}

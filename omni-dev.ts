@@ -673,7 +673,7 @@ async function startServices() {
   const frontendProc = createLoggedProcess("frontend", {
     color: "32",
     cmd: bunExe,
-    args: ["node_modules/.bin/vite", "--config", "frontend/vite.config.ts", "--port", frontendPort],
+    args: ["node_modules/vite/bin/vite.js", "--config", "frontend/vite.config.ts", "--port", frontendPort],
   })
 
   // Save PIDs
