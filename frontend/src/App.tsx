@@ -38,7 +38,7 @@ const NAV_ITEMS = [
   { id: "chat" as const, label: "Chat", icon: MessageSquare },
   { id: "logging" as const, label: "Logging", icon: BarChart3 },
   { id: "vmodel" as const, label: "Virtual Models", icon: Layers },
-  { id: "about" as const, label: "Settings", icon: Settings },
+  { id: "about" as const, label: "About", icon: Settings },
 ]
 
 const SIDEBAR_WIDTH = 260
