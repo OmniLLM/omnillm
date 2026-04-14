@@ -6,8 +6,6 @@ import {
   Database,
   Settings,
   Layers,
-  PanelLeftOpen,
-  PanelLeftClose,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 
@@ -389,11 +387,11 @@ export default function AppComponent() {
         style={{
           position: "fixed",
           top: "50%",
-          left: sidebarCollapsed ? 0 : SIDEBAR_WIDTH - 16,
+          left: sidebarCollapsed ? 0 : SIDEBAR_WIDTH - 12,
           transform: "translateY(-50%)",
-          width: 32,
-          height: 48,
-          borderRadius: "0 var(--radius-md) var(--radius-md) 0",
+          width: 24,
+          height: 40,
+          borderRadius: "0 4px 4px 0",
           border: "1px solid var(--color-separator)",
           borderLeft: "none",
           background: "var(--color-surface)",
@@ -402,13 +400,13 @@ export default function AppComponent() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
+          fontSize: 14,
+          fontWeight: 600,
           transition: "left 0.2s ease",
           zIndex: 41,
         }}
       >
-        {sidebarCollapsed ?
-          <PanelLeftOpen size={16} />
-        : <PanelLeftClose size={16} />}
+        {sidebarCollapsed ? ">" : "<"}
       </button>
 
       <div
