@@ -6,19 +6,20 @@ import {
   Database,
   Settings,
   Layers,
+  PanelLeftOpen,
+  PanelLeftClose,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 
 import { getInfo, type ServerInfo } from "@/api"
 import { MuiThemeWrapper } from "@/components/MuiThemeWrapper"
 import { useToast, ToastContainer } from "@/components/Toast"
+import { createLogger } from "@/lib/logger"
 import { ChatPage } from "@/pages/ChatPage"
 import { LoggingPage } from "@/pages/LoggingPage"
 import { ProvidersPage } from "@/pages/ProvidersPage"
 import { AboutPage } from "@/pages/SettingsPage"
 import { VmodelPage } from "@/pages/VmodelPage"
-
-import { createLogger } from "@/lib/logger"
 
 const log = createLogger("app")
 
@@ -82,6 +83,14 @@ function saveTab(tab: Tab) {
   }
 }
 
+function loadSidebarCollapsed(): boolean {
+  try {
+    return localStorage.getItem("olp-sidebar-collapsed") === "true"
+  } catch {
+    return false
+  }
+}
+
 function applyTheme(theme: Theme) {
   if (theme === "light") document.documentElement.dataset.theme = "light"
   else delete document.documentElement.dataset.theme
@@ -89,21 +98,25 @@ function applyTheme(theme: Theme) {
 
 applyTheme(loadTheme())
 
-// eslint-disable-next-line max-lines-per-function
+// eslint-disable-next-line max-lines-per-function, complexity
 export default function AppComponent() {
   const [tab, setTab] = useState<Tab>(loadTab())
   const { showToast } = useToast()
   const [info, setInfo] = useState<ServerInfo | null>(null)
   const [theme, setTheme] = useState<Theme>(loadTheme())
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(loadSidebarCollapsed)
 
   useEffect(() => {
-    log.info("initializing", { hostname: globalThis.location.hostname, port: globalThis.location.port })
+    log.info("initializing", {
+      hostname: globalThis.location.hostname,
+      port: globalThis.location.port,
+    })
     getInfo()
       .then((result) => {
         setInfo(result)
         log.debug("server info loaded", result)
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         log.error("failed to load server info", err)
       })
   }, [])
@@ -134,6 +147,16 @@ export default function AppComponent() {
     }
   }
 
+  const toggleSidebar = () => {
+    const next = !sidebarCollapsed
+    setSidebarCollapsed(next)
+    try {
+      localStorage.setItem("olp-sidebar-collapsed", String(next))
+    } catch {
+      /* ignore */
+    }
+  }
+
   const currentNavItem = NAV_ITEMS.find((n) => n.id === tab) ?? NAV_ITEMS[0]
   const Icon = currentNavItem.icon
 
@@ -149,10 +172,12 @@ export default function AppComponent() {
       <aside
         className="app-sidebar"
         style={{
-          width: SIDEBAR_WIDTH,
+          width: sidebarCollapsed ? 0 : SIDEBAR_WIDTH,
+          minWidth: sidebarCollapsed ? 0 : SIDEBAR_WIDTH,
           flexShrink: 0,
-          background: "var(--color-surface)",
-          borderRight: "1px solid var(--color-separator)",
+          background: sidebarCollapsed ? "transparent" : "var(--color-surface)",
+          borderRight:
+            sidebarCollapsed ? "none" : "1px solid var(--color-separator)",
           display: "flex",
           flexDirection: "column",
           position: "fixed",
@@ -160,188 +185,212 @@ export default function AppComponent() {
           left: 0,
           bottom: 0,
           zIndex: 40,
+          overflow: "hidden",
+          transition: "width 0.2s ease, min-width 0.2s ease",
         }}
       >
-        <div
-          style={{
-            padding: "20px 20px 16px",
-            borderBottom: "1px solid var(--color-separator)",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        {!sidebarCollapsed && (
+          <>
             <div
               style={{
-                width: 32,
-                height: 32,
-                borderRadius: "var(--radius-md)",
-                background: "var(--color-blue)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-                boxShadow: "0 2px 8px rgba(56,189,248,0.3)",
+                padding: "20px 20px 16px",
+                borderBottom: "1px solid var(--color-separator)",
               }}
             >
-              <svg width="16" height="16" viewBox="0 0 14 14" fill="none">
-                <path
-                  d="M7 1L12.196 4V10L7 13L1.804 10V4L7 1Z"
-                  stroke="white"
-                  strokeWidth="1.5"
-                  fill="none"
-                  opacity="0.9"
-                />
-                <circle cx="7" cy="7" r="2.5" fill="white" />
-              </svg>
-            </div>
-            <div>
-              <div
-                style={{
-                  fontFamily: "var(--font-display)",
-                  fontWeight: 700,
-                  fontSize: 16,
-                  color: "var(--color-text)",
-                  letterSpacing: "-0.02em",
-                  lineHeight: 1,
-                }}
-              >
-                OmniModel
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: "var(--radius-md)",
+                    background: "var(--color-blue)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                    boxShadow: "0 2px 8px rgba(56,189,248,0.3)",
+                  }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 14 14" fill="none">
+                    <path
+                      d="M7 1L12.196 4V10L7 13L1.804 10V4L7 1Z"
+                      stroke="white"
+                      strokeWidth="1.5"
+                      fill="none"
+                      opacity="0.9"
+                    />
+                    <circle cx="7" cy="7" r="2.5" fill="white" />
+                  </svg>
+                </div>
+                <div>
+                  <div
+                    style={{
+                      fontFamily: "var(--font-display)",
+                      fontWeight: 700,
+                      fontSize: 16,
+                      color: "var(--color-text)",
+                      letterSpacing: "-0.02em",
+                      lineHeight: 1,
+                    }}
+                  >
+                    OmniModel
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: "var(--color-text-tertiary)",
+                      marginTop: 2,
+                      fontFamily: "var(--font-text)",
+                      letterSpacing: "-0.01em",
+                    }}
+                  >
+                    Intelligent LLM Router
+                  </div>
+                </div>
               </div>
-              <div
-                style={{
-                  fontSize: 11,
-                  color: "var(--color-text-tertiary)",
-                  marginTop: 2,
-                  fontFamily: "var(--font-text)",
-                  letterSpacing: "-0.01em",
-                }}
-              >
-                Intelligent LLM Router
-              </div>
             </div>
-          </div>
-        </div>
 
-        <nav aria-label="Main navigation" style={{ flex: 1, padding: "12px 10px" }}>
-          <div
-            style={{
-              fontSize: 10,
-              fontWeight: 600,
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
-              color: "var(--color-text-tertiary)",
-              padding: "8px 12px 6px",
-            }}
-          >
-            Navigation
-          </div>
-          {NAV_ITEMS.map((item) => {
-            const isActive = item.id === tab
-            const ItemIcon = item.icon
-            return (
-              <button
-                key={item.id}
-                onClick={() => handleTabChange(item.id)}
-                aria-current={isActive ? "page" : undefined}
+            <nav
+              aria-label="Main navigation"
+              style={{ flex: 1, padding: "12px 10px" }}
+            >
+              <div
+                style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
+                  color: "var(--color-text-tertiary)",
+                  padding: "8px 12px 6px",
+                }}
+              >
+                Navigation
+              </div>
+              {NAV_ITEMS.map((item) => {
+                const isActive = item.id === tab
+                const ItemIcon = item.icon
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => handleTabChange(item.id)}
+                    aria-current={isActive ? "page" : undefined}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      width: "100%",
+                      background:
+                        isActive ? "var(--color-blue-fill)" : "transparent",
+                      border: "none",
+                      color:
+                        isActive ? "var(--color-blue)" : (
+                          "var(--color-text-secondary)"
+                        ),
+                      fontFamily: "var(--font-text)",
+                      fontSize: 13,
+                      fontWeight: isActive ? 600 : 400,
+                      letterSpacing: "-0.01em",
+                      padding: "8px 12px",
+                      borderRadius: "var(--radius-md)",
+                      cursor: "pointer",
+                      transition: "all 0.15s var(--ease)",
+                      textAlign: "left",
+                    }}
+                  >
+                    <ItemIcon size={16} style={{ flexShrink: 0 }} />
+                    {item.label}
+                  </button>
+                )
+              })}
+            </nav>
+
+            <div
+              style={{
+                padding: "16px 16px",
+                borderTop: "1px solid var(--color-separator)",
+              }}
+            >
+              <div
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 10,
-                  width: "100%",
-                  background: isActive ? "var(--color-blue-fill)" : "transparent",
-                  border: "none",
-                  color: isActive ? "var(--color-blue)" : "var(--color-text-secondary)",
-                  fontFamily: "var(--font-text)",
-                  fontSize: 13,
-                  fontWeight: isActive ? 600 : 400,
-                  letterSpacing: "-0.01em",
-                  padding: "8px 12px",
-                  borderRadius: "var(--radius-md)",
-                  cursor: "pointer",
-                  transition: "all 0.15s var(--ease)",
-                  textAlign: "left",
+                  justifyContent: "space-between",
+                  marginBottom: 12,
                 }}
               >
-                <ItemIcon size={16} style={{ flexShrink: 0 }} />
-                {item.label}
-              </button>
-            )
-          })}
-        </nav>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div className="status-dot status-dot-active" />
+                  <span
+                    style={{
+                      color: "var(--color-green)",
+                      fontSize: 12,
+                      fontWeight: 500,
+                    }}
+                  >
+                    Online
+                  </span>
+                </div>
+                {info && (
+                  <span
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 10,
+                      color: "var(--color-text-tertiary)",
+                    }}
+                  >
+                    v{info.version} · :{info.port}
+                  </span>
+                )}
+              </div>
 
-        <div
-          style={{
-            padding: "16px 16px",
-            borderTop: "1px solid var(--color-separator)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              marginBottom: 12,
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div className="status-dot status-dot-active" />
-              <span
+              <button
+                onClick={toggleTheme}
+                title={
+                  theme === "dark" ?
+                    "Switch to light theme"
+                  : "Switch to dark theme"
+                }
+                aria-label={
+                  theme === "dark" ?
+                    "Switch to light theme"
+                  : "Switch to dark theme"
+                }
                 style={{
-                  color: "var(--color-green)",
+                  width: "100%",
+                  height: 36,
+                  borderRadius: "var(--radius-md)",
+                  border: "1px solid var(--color-separator)",
+                  background: "var(--color-surface-2)",
+                  color: "var(--color-text-secondary)",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 8,
                   fontSize: 12,
                   fontWeight: 500,
+                  transition: "all 0.15s var(--ease)",
                 }}
               >
-                Online
-              </span>
+                {theme === "dark" ?
+                  <Sun size={14} />
+                : <Moon size={14} />}
+                Switch to {theme === "dark" ? "light" : "dark"}
+              </button>
             </div>
-            {info && (
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 10,
-                  color: "var(--color-text-tertiary)",
-                }}
-              >
-                v{info.version} · :{info.port}
-              </span>
-            )}
-          </div>
-
-          <button
-            onClick={toggleTheme}
-            title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-            aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-            style={{
-              width: "100%",
-              height: 36,
-              borderRadius: "var(--radius-md)",
-              border: "1px solid var(--color-separator)",
-              background: "var(--color-surface-2)",
-              color: "var(--color-text-secondary)",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 8,
-              fontSize: 12,
-              fontWeight: 500,
-              transition: "all 0.15s var(--ease)",
-            }}
-          >
-            {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
-            Switch to {theme === "dark" ? "light" : "dark"}
-          </button>
-        </div>
+          </>
+        )}
       </aside>
 
       <div
         className="app-main"
         style={{
           flex: 1,
-          marginLeft: SIDEBAR_WIDTH,
+          marginLeft: sidebarCollapsed ? 0 : SIDEBAR_WIDTH,
           display: "flex",
           flexDirection: "column",
           minHeight: "100vh",
+          transition: "margin-left 0.2s ease",
         }}
       >
         <header
@@ -362,7 +411,32 @@ export default function AppComponent() {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <Icon size={18} style={{ color: "var(--color-blue)", flexShrink: 0 }} />
+            <button
+              onClick={toggleSidebar}
+              title={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
+              aria-label={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: "var(--radius-md)",
+                border: "none",
+                background: "transparent",
+                color: "var(--color-text-secondary)",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                transition: "all 0.15s var(--ease)",
+              }}
+            >
+              {sidebarCollapsed ?
+                <PanelLeftOpen size={18} />
+              : <PanelLeftClose size={18} />}
+            </button>
+            <Icon
+              size={18}
+              style={{ color: "var(--color-blue)", flexShrink: 0 }}
+            />
             <h1
               style={{
                 fontSize: 15,
