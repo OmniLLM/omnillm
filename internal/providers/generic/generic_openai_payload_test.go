@@ -285,3 +285,197 @@ func TestAlibabaGlobalNonReasoningModelNoEnableThinking(t *testing.T) {
 		t.Errorf("expected enable_thinking to be absent for non-reasoning model, got %v", val)
 	}
 }
+
+// ─── Qwen3.6-Plus Tool Use Tests ──────────────────────────────────────────────
+
+// TestQwen36PlusToolUseWithRealTools verifies that qwen3.6-plus correctly includes
+// user-provided tools in the payload without forcing tool_choice to "none".
+func TestQwen36PlusToolUseWithRealTools(t *testing.T) {
+	provider := NewGenericProvider("alibaba", "qwen36-test", "Qwen 3.6 Plus")
+	provider.baseURL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+	adapter := &GenericAdapter{provider: provider}
+
+	desc := "Get the current weather for a location"
+	payload := adapter.buildOpenAIPayload(&cif.CanonicalRequest{
+		Model: "qwen3.6-plus",
+		Messages: []cif.CIFMessage{
+			cif.CIFUserMessage{
+				Role: "user",
+				Content: []cif.CIFContentPart{
+					cif.CIFTextPart{Type: "text", Text: "What's the weather in New York?"},
+				},
+			},
+		},
+		Tools: []cif.CIFTool{
+			{
+				Name:        "get_weather",
+				Description: &desc,
+				ParametersSchema: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"location": map[string]interface{}{"type": "string"},
+					},
+					"required": []string{"location"},
+				},
+			},
+		},
+	})
+
+	// Verify the tool is present
+	tools, ok := payload["tools"].([]map[string]interface{})
+	if !ok || len(tools) == 0 {
+		t.Fatal("expected tools in payload")
+	}
+	if len(tools) != 1 {
+		t.Errorf("expected 1 tool, got %d", len(tools))
+	}
+
+	tool := tools[0]
+	if tool["type"] != "function" {
+		t.Errorf("expected tool type 'function', got %v", tool["type"])
+	}
+
+	fn, ok := tool["function"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected tool.function to be map, got %T", tool["function"])
+	}
+	if fn["name"] != "get_weather" {
+		t.Errorf("expected tool name 'get_weather', got %v", fn["name"])
+	}
+	if fn["description"] != desc {
+		t.Errorf("expected tool description %q, got %v", desc, fn["description"])
+	}
+
+	// Verify tool_choice is NOT forced to "none" when real tools are present
+	if toolChoice, ok := payload["tool_choice"]; ok && toolChoice == "none" {
+		t.Errorf("tool_choice should not be 'none' when real tools are provided, got %v", toolChoice)
+	}
+}
+
+// TestQwen36PlusToolUseNoDummyToolWhenRealToolsProvided verifies that qwen3.6-plus
+// does NOT inject a dummy tool when real tools are provided.
+func TestQwen36PlusToolUseNoDummyToolWhenRealToolsProvided(t *testing.T) {
+	provider := NewGenericProvider("alibaba", "qwen36-test", "Qwen 3.6 Plus")
+	provider.baseURL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+	adapter := &GenericAdapter{provider: provider}
+
+	desc := "Execute a Python code block"
+	payload := adapter.buildOpenAIPayload(&cif.CanonicalRequest{
+		Model: "qwen3.6-plus",
+		Messages: []cif.CIFMessage{
+			cif.CIFUserMessage{
+				Role: "user",
+				Content: []cif.CIFContentPart{
+					cif.CIFTextPart{Type: "text", Text: "Calculate 2+2"},
+				},
+			},
+		},
+		Tools: []cif.CIFTool{
+			{
+				Name:        "run_code",
+				Description: &desc,
+				ParametersSchema: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"code": map[string]interface{}{"type": "string"},
+					},
+				},
+			},
+		},
+	})
+
+	// Verify only the real tool is present
+	tools, ok := payload["tools"].([]map[string]interface{})
+	if !ok || len(tools) == 0 {
+		t.Fatal("expected tools in payload")
+	}
+	if len(tools) != 1 {
+		t.Errorf("expected exactly 1 tool (no dummy injection), got %d", len(tools))
+	}
+
+	tool := tools[0]
+	fn := tool["function"].(map[string]interface{})
+	if fn["name"] == "do_not_call_me" {
+		t.Error("unexpected dummy tool found when real tools were provided")
+	}
+}
+
+// TestQwen36PlusToolUseWithToolChoice verifies that qwen3.6-plus respects explicit
+// tool_choice settings like "required" or "auto".
+func TestQwen36PlusToolUseWithToolChoice(t *testing.T) {
+	provider := NewGenericProvider("alibaba", "qwen36-test", "Qwen 3.6 Plus")
+	provider.baseURL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+	adapter := &GenericAdapter{provider: provider}
+
+	desc := "Make an API call"
+	toolChoice := "required"
+	payload := adapter.buildOpenAIPayload(&cif.CanonicalRequest{
+		Model: "qwen3.6-plus",
+		Messages: []cif.CIFMessage{
+			cif.CIFUserMessage{
+				Role: "user",
+				Content: []cif.CIFContentPart{
+					cif.CIFTextPart{Type: "text", Text: "Call the API"},
+				},
+			},
+		},
+		Tools: []cif.CIFTool{
+			{
+				Name:        "api_call",
+				Description: &desc,
+				ParametersSchema: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"endpoint": map[string]interface{}{"type": "string"},
+					},
+				},
+			},
+		},
+		ToolChoice: toolChoice,
+	})
+
+	// Verify tool_choice is set to the requested value
+	if tc, ok := payload["tool_choice"]; !ok || tc != toolChoice {
+		t.Errorf("expected tool_choice=%q, got %v (ok=%v)", toolChoice, tc, ok)
+	}
+}
+
+// TestQwen36PlusNoToolsInjectsToolAndForcesNone verifies the legacy behavior:
+// when qwen3.6-plus receives a request with NO tools, it injects a dummy tool
+// and sets tool_choice to "none" to prevent the model from calling it.
+func TestQwen36PlusNoToolsInjectsToolAndForcesNone(t *testing.T) {
+	provider := NewGenericProvider("alibaba", "qwen36-test", "Qwen 3.6 Plus")
+	provider.baseURL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+	adapter := &GenericAdapter{provider: provider}
+
+	payload := adapter.buildOpenAIPayload(&cif.CanonicalRequest{
+		Model: "qwen3.6-plus",
+		Messages: []cif.CIFMessage{
+			cif.CIFUserMessage{
+				Role: "user",
+				Content: []cif.CIFContentPart{
+					cif.CIFTextPart{Type: "text", Text: "Hello"},
+				},
+			},
+		},
+		// No Tools provided
+	})
+
+	// Verify dummy tool is injected
+	tools, ok := payload["tools"].([]map[string]interface{})
+	if !ok || len(tools) == 0 {
+		t.Fatal("expected tools in payload (dummy injection)")
+	}
+
+	tool := tools[0]
+	fn := tool["function"].(map[string]interface{})
+	if fn["name"] != "do_not_call_me" {
+		t.Errorf("expected dummy tool name 'do_not_call_me', got %v", fn["name"])
+	}
+
+	// Verify tool_choice is forced to "none"
+	tc, ok := payload["tool_choice"]
+	if !ok || tc != "none" {
+		t.Errorf("expected tool_choice='none', got %v (ok=%v)", tc, ok)
+	}
+}

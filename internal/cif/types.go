@@ -123,6 +123,9 @@ type CanonicalRequest struct {
 	// Pass-through metadata (forwarded to provider if understood)
 	UserID *string `json:"userId,omitempty"`
 
+	// Incoming request headers for trace logging (not serialized to JSON)
+	IncomingHeaders map[string]string `json:"-"`
+
 	// Extended / provider-specific hints (type-safe escape hatch)
 	Extensions *Extensions `json:"extensions,omitempty"`
 }

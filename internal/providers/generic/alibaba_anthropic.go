@@ -57,13 +57,13 @@ type anthropicStreamBlockState struct {
 func (a *GenericAdapter) executeAnthropic(request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
 	payload := a.buildAnthropicPayload(request)
 	payload["stream"] = false
-	return executeAnthropicWithPayload(alibabapkg.AnthropicMessagesURL(a.provider.baseURL), a.anthropicHeaders(false), payload)
+	return executeAnthropicWithPayload(alibabapkg.AnthropicMessagesURL(a.provider.baseURL), a.anthropicHeaders(false), payload, request.IncomingHeaders)
 }
 
 func (a *GenericAdapter) streamAnthropic(request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
 	payload := a.buildAnthropicPayload(request)
 	payload["stream"] = true
-	return streamAnthropicWithPayload(alibabapkg.AnthropicMessagesURL(a.provider.baseURL), a.anthropicHeaders(true), payload)
+	return streamAnthropicWithPayload(alibabapkg.AnthropicMessagesURL(a.provider.baseURL), a.anthropicHeaders(true), payload, request.IncomingHeaders)
 }
 
 func (a *GenericAdapter) anthropicHeaders(stream bool) map[string]string {
@@ -313,13 +313,13 @@ func convertCanonicalToolChoiceToAnthropic(toolChoice interface{}) interface{} {
 	}
 }
 
-func executeAnthropicWithPayload(url string, headers map[string]string, payload map[string]interface{}) (*cif.CanonicalResponse, error) {
+func executeAnthropicWithPayload(url string, headers map[string]string, payload map[string]interface{}, incomingHeaders map[string]string) (*cif.CanonicalResponse, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal anthropic request: %w", err)
 	}
 
-	log.Trace().Str("url", url).RawJSON("payload", body).Msg("outbound anthropic proxy request payload")
+	log.Trace().Str("url", url).RawJSON("payload", body).RawJSON("incoming_headers", convertHeadersToJSON(incomingHeaders)).Msg("outbound anthropic proxy request payload")
 
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
@@ -418,13 +418,21 @@ func anthropicStopReason(reason string) cif.CIFStopReason {
 	}
 }
 
-func streamAnthropicWithPayload(url string, headers map[string]string, payload map[string]interface{}) (<-chan cif.CIFStreamEvent, error) {
+func convertHeadersToJSON(headers map[string]string) []byte {
+	if len(headers) == 0 {
+		return []byte("{}")
+	}
+	data, _ := json.Marshal(headers)
+	return data
+}
+
+func streamAnthropicWithPayload(url string, headers map[string]string, payload map[string]interface{}, incomingHeaders map[string]string) (<-chan cif.CIFStreamEvent, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal anthropic request: %w", err)
 	}
 
-	log.Trace().Str("url", url).RawJSON("payload", body).Msg("outbound anthropic proxy request payload")
+	log.Trace().Str("url", url).RawJSON("payload", body).RawJSON("incoming_headers", convertHeadersToJSON(incomingHeaders)).Msg("outbound anthropic proxy request payload")
 
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {

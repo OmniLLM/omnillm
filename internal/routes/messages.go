@@ -60,6 +60,14 @@ func handleMessages(c *gin.Context) {
 		return
 	}
 
+	// Capture incoming request headers for trace logging
+	canonicalRequest.IncomingHeaders = make(map[string]string)
+	for k, v := range c.Request.Header {
+		if len(v) > 0 {
+			canonicalRequest.IncomingHeaders[k] = v[0]
+		}
+	}
+
 	originalModel := canonicalRequest.Model
 
 	// Log REQUEST
