@@ -1,7 +1,6 @@
 package routes
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,7 +19,7 @@ import (
 )
 
 var (
-	modelCache     = make(modelrouting.ModelCache)
+	modelCache     = modelrouting.NewModelCache()
 	rateLimiter    *ratelimit.RateLimiter
 	manualApproval bool
 )
@@ -248,12 +247,30 @@ func handleStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, cano
 	c.Header("Connection", "keep-alive")
 	c.Header("Transfer-Encoding", "chunked")
 
+	// Wrap upstream channel so it exits when client disconnects.
+	ctx := c.Request.Context()
+	wrappedCh := make(chan cif.CIFStreamEvent, cap(eventCh))
+	go func() {
+		defer close(wrappedCh)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case evt, ok := <-eventCh:
+				if !ok {
+					return
+				}
+				wrappedCh <- evt
+			}
+		}
+	}()
+
 	state := serialization.CreateOpenAIStreamState()
 	flusher, _ := c.Writer.(http.Flusher)
 	modelUsed := canonicalRequest.Model
 
 	c.Stream(func(w io.Writer) bool {
-		event, ok := <-eventCh
+		event, ok := <-wrappedCh
 		if !ok {
 			return false
 		}
@@ -303,14 +320,4 @@ func handleStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, cano
 	})
 
 	return nil
-}
-
-// writeSSE writes a single SSE event to the response writer
-func writeSSE(c *gin.Context, data interface{}) error {
-	jsonBytes, err := json.Marshal(data)
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintf(c.Writer, "data: %s\n\n", string(jsonBytes))
-	return err
 }

@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"omnimodel/internal/cif"
 	"omnimodel/internal/database"
@@ -305,7 +304,7 @@ func FetchModelsFromAPI(instanceID, token, baseURL string) (*types.ModelsRespons
 		req.Header.Set(key, value)
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := alibabaHTTPClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("alibaba models request failed: %w", err)

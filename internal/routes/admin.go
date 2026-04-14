@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -33,7 +34,7 @@ type logSubscriber struct {
 var (
 	logSubscribersMu sync.RWMutex
 	logSubscribers   = make(map[*logSubscriber]struct{})
-	currentLogLevel  = zerolog.InfoLevel
+	currentLogLevel  atomic.Int32 // stores zerolog.Level (int32)
 	serverStartTime  = time.Now()
 
 	// Active OAuth device code flow state
@@ -1683,8 +1684,9 @@ func handleCancelAuth(c *gin.Context) {
 }
 
 func handleGetLogLevel(c *gin.Context) {
+	level := zerolog.Level(currentLogLevel.Load())
 	c.JSON(http.StatusOK, gin.H{
-		"level":  currentLogLevel.String(),
+		"level":  level.String(),
 		"levels": []string{"fatal", "error", "warn", "info", "debug", "trace"},
 	})
 }
@@ -1704,7 +1706,7 @@ func handleSetLogLevel(c *gin.Context) {
 		return
 	}
 
-	currentLogLevel = level
+	currentLogLevel.Store(int32(level))
 	zerolog.SetGlobalLevel(level)
 
 	log.Info().Str("level", req.Level).Msg("Log level changed")
@@ -1730,7 +1732,11 @@ func handleTestLog(c *gin.Context) {
 
 func handleDebugLog(c *gin.Context) {
 	var body interface{}
-	c.ShouldBindJSON(&body)
+	if err := c.ShouldBindJSON(&body); err != nil {
+		log.Debug().Err(err).Msg("Debug log entry with invalid payload")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON body"})
+		return
+	}
 	log.Debug().Interface("payload", body).Msg("Debug log entry")
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
@@ -1983,7 +1989,10 @@ func handleLogsStream(c *gin.Context) {
 		close(sub.done)
 	}()
 
-	flusher := c.Writer.(http.Flusher)
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		return
+	}
 	heartbeat := time.NewTicker(5 * time.Second)
 	defer heartbeat.Stop()
 

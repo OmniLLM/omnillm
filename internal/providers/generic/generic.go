@@ -62,12 +62,13 @@ const alibabaUserAgent = alibabapkg.UserAgent
 // The struct fields are kept identical to the original to preserve backward compatibility
 // for callers that use *GenericProvider type assertions (e.g., admin.go).
 type GenericProvider struct {
-	id         string
-	instanceID string
-	name       string
-	token      string
-	baseURL    string
-	config     map[string]interface{}
+	id           string
+	instanceID   string
+	name         string
+	token        string
+	baseURL      string
+	config       map[string]interface{}
+	configLoaded bool
 }
 
 // GenericAdapter wraps GenericProvider for the ProviderAdapter interface.
@@ -274,9 +275,13 @@ func (p *GenericProvider) GetBaseURL() string {
 }
 
 func (p *GenericProvider) loadConfigFromDB() {
+	if p.configLoaded {
+		return
+	}
 	configStore := database.NewProviderConfigStore()
 	record, err := configStore.Get(p.instanceID)
 	if err != nil || record == nil {
+		p.configLoaded = true
 		return
 	}
 
@@ -287,6 +292,7 @@ func (p *GenericProvider) loadConfigFromDB() {
 	}
 
 	p.applyConfig(config)
+	p.configLoaded = true
 }
 
 func (p *GenericProvider) applyConfig(config map[string]interface{}) {
@@ -677,11 +683,6 @@ func (a *GenericAdapter) collectStream(request *cif.CanonicalRequest) (*cif.Cano
 	return shared.CollectStream(ch)
 }
 
-// collectStreamFromChan assembles a CanonicalResponse from a stream channel.
-func (a *GenericAdapter) collectStreamFromChan(ch <-chan cif.CIFStreamEvent) (*cif.CanonicalResponse, error) {
-	return shared.CollectStream(ch)
-}
-
 // ─── Google payload builder (kept for white-box test access) ──────────────────
 
 func (a *GenericAdapter) buildGooglePayload(request *cif.CanonicalRequest) map[string]interface{} {
@@ -919,6 +920,11 @@ func convertCanonicalToolChoiceToOpenAI(toolChoice interface{}) interface{} {
 
 // ─── HTTP execution helpers ───────────────────────────────────────────────────
 
+var (
+	genericHTTPClient   = &http.Client{Timeout: 120 * time.Second}
+	genericStreamClient = &http.Client{}
+)
+
 // executeOpenAIWithPayload performs a non-streaming OpenAI-compatible HTTP request.
 func executeOpenAIWithPayload(url string, headers map[string]string, payload map[string]interface{}, originalModel string) (*cif.CanonicalResponse, error) {
 	body, err := json.Marshal(payload)
@@ -934,7 +940,7 @@ func executeOpenAIWithPayload(url string, headers map[string]string, payload map
 		req.Header.Set(k, v)
 	}
 
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := genericHTTPClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
@@ -970,7 +976,7 @@ func streamOpenAIWithPayload(url string, headers map[string]string, payload map[
 	}
 	req.Header.Set("Accept", "text/event-stream")
 
-	client := &http.Client{}
+	client := genericStreamClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("streaming request failed: %w", err)

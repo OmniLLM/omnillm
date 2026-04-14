@@ -27,6 +27,12 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// Shared HTTP clients: one for normal requests with timeout, one for streaming.
+var (
+	copilotHTTPClient    = &http.Client{Timeout: 120 * time.Second}
+	copilotStreamClient  = &http.Client{} // no timeout for streaming
+)
+
 type GitHubCopilotProvider struct {
 	id           string
 	instanceID   string
@@ -378,7 +384,7 @@ func (p *GitHubCopilotProvider) GetModels() (*types.ModelsResponse, error) {
 			req.Header.Set(k, v)
 		}
 
-		client := &http.Client{Timeout: 30 * time.Second}
+			client := copilotHTTPClient
 		resp, err := client.Do(req)
 		if err == nil {
 			defer resp.Body.Close()
@@ -626,8 +632,7 @@ func (p *GitHubCopilotProvider) CreateEmbeddings(payload map[string]interface{})
 		req.Header.Set(k, v)
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := copilotHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("embeddings request failed: %w", err)
 	}
@@ -763,8 +768,7 @@ func (a *CopilotAdapter) executeOpenAIWithRetry(request *cif.CanonicalRequest, a
 		req.Header.Set(k, v)
 	}
 
-	client := &http.Client{Timeout: 120 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := copilotHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -813,8 +817,7 @@ func (a *CopilotAdapter) executeOpenAIStreamWithRetry(request *cif.CanonicalRequ
 	req.Header.Set("Accept", "text/event-stream")
 
 	// Streaming requests must not use a fixed client timeout; stream length is model dependent.
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := copilotStreamClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("streaming request failed: %w", err)
 	}
@@ -858,8 +861,7 @@ func (a *CopilotAdapter) executeResponsesWithRetry(request *cif.CanonicalRequest
 		req.Header.Set(k, v)
 	}
 
-	client := &http.Client{Timeout: 120 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := copilotHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("responses request failed: %w", err)
 	}
@@ -908,8 +910,7 @@ func (a *CopilotAdapter) executeResponsesStreamWithRetry(request *cif.CanonicalR
 	req.Header.Set("Accept", "text/event-stream")
 
 	// Streaming requests must not use a fixed client timeout; stream length is model dependent.
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := copilotStreamClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("responses streaming request failed: %w", err)
 	}
@@ -1951,15 +1952,15 @@ func (a *CopilotAdapter) convertCIFMessagesToOpenAI(messages []cif.CIFMessage, t
 				"role": "assistant",
 			}
 
-			var textContent string
+			var textBuf strings.Builder
 			var toolCalls []map[string]interface{}
 
 			for _, part := range m.Content {
 				switch p := part.(type) {
 				case cif.CIFTextPart:
-					textContent += p.Text
+					textBuf.WriteString(p.Text)
 				case cif.CIFThinkingPart:
-					textContent += p.Thinking
+					textBuf.WriteString(p.Thinking)
 				case cif.CIFToolCallPart:
 					args, _ := json.Marshal(p.ToolArguments)
 					toolCall := map[string]interface{}{
@@ -1974,8 +1975,8 @@ func (a *CopilotAdapter) convertCIFMessagesToOpenAI(messages []cif.CIFMessage, t
 				}
 			}
 
-			if textContent != "" {
-				openaiMsg["content"] = textContent
+			if textBuf.Len() > 0 {
+				openaiMsg["content"] = textBuf.String()
 			}
 			if len(toolCalls) > 0 {
 				openaiMsg["tool_calls"] = toolCalls

@@ -25,6 +25,12 @@ const UserAgent = "KimiClient/1.0"
 // Base URL for Kimi API
 const BaseURL = "https://api.moonshot.cn/v1"
 
+// Shared HTTP clients.
+var (
+	kimiHTTPClient   = &http.Client{Timeout: 120 * time.Second}
+	kimiStreamClient = &http.Client{}
+)
+
 // Model catalog for Kimi.
 var Models = []types.Model{
 	{ID: "kimi-k2-thinking", Name: "Kimi K2 Thinking", MaxTokens: 131072, Provider: "kimi"},
@@ -319,7 +325,7 @@ func FetchModelsFromAPI(instanceID, token, baseURL string) (*types.ModelsRespons
 		req.Header.Set(key, value)
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := kimiHTTPClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("kimi models request failed: %w", err)

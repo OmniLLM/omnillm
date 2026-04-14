@@ -165,9 +165,11 @@ func InitializeDatabase(configDir string) error {
 	return nil
 }
 
+// GetDatabase returns the global database instance.
+// Panics if InitializeDatabase was not called first.
 func GetDatabase() *Database {
 	if globalDB == nil {
-		panic("Database not initialized. Call InitializeDatabase() first.")
+		panic("database not initialized; call InitializeDatabase first")
 	}
 	return globalDB
 }

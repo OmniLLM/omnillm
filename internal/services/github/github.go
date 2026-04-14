@@ -12,6 +12,9 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// Shared HTTP client with default timeout for non-streaming requests.
+var httpClient = &http.Client{Timeout: 15 * time.Second}
+
 const (
 	GitHubBaseURL    = "https://github.com"
 	GitHubAPIBaseURL = "https://api.github.com"
@@ -62,7 +65,7 @@ func GetDeviceCode() (*DeviceCodeResponse, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := httpClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("device code request failed: %w", err)
@@ -101,7 +104,7 @@ func PollAccessToken(deviceCode *DeviceCodeResponse) (string, error) {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "application/json")
 
-		client := &http.Client{Timeout: 15 * time.Second}
+		client := httpClient
 		resp, err := client.Do(req)
 		if err != nil {
 			log.Warn().Err(err).Msg("Token poll request failed, retrying...")
@@ -153,7 +156,7 @@ func GetCopilotToken(githubToken string) (*CopilotTokenResponse, error) {
 	req.Header.Set("User-Agent", UserAgent)
 	req.Header.Set("X-Github-Api-Version", APIVersion)
 
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := httpClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("copilot token request failed: %w", err)
@@ -184,7 +187,7 @@ func GetUser(githubToken string) (map[string]interface{}, error) {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", UserAgent)
 
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := httpClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("user info request failed: %w", err)
@@ -218,7 +221,7 @@ func GetCopilotUsage(githubToken string) (map[string]interface{}, error) {
 	req.Header.Set("Editor-Plugin-Version", PluginVersion)
 	req.Header.Set("User-Agent", UserAgent)
 
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := httpClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("usage request failed: %w", err)

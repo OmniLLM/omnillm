@@ -13,6 +13,9 @@ import (
 	"omnimodel/internal/cif"
 )
 
+// Shared HTTP client with default timeout for Responses API requests.
+var responsesHTTPClient = &http.Client{Timeout: 120 * time.Second}
+
 // ─── Tool call ID normalization ───────────────────────────────────────────────
 
 // ToolCallID ensures a tool call ID starts with "fc" as required by Azure.
@@ -265,7 +268,7 @@ func ExecuteResponses(responsesURL, apiKey string, request *cif.CanonicalRequest
 		req.Header.Set(k, v)
 	}
 
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := responsesHTTPClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)

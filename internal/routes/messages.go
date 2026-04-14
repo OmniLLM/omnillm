@@ -217,12 +217,30 @@ func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
 
+	// Wrap upstream channel so it exits when client disconnects.
+	ctx := c.Request.Context()
+	wrappedCh := make(chan cif.CIFStreamEvent, cap(eventCh))
+	go func() {
+		defer close(wrappedCh)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case evt, ok := <-eventCh:
+				if !ok {
+					return
+				}
+				wrappedCh <- evt
+			}
+		}
+	}()
+
 	state := serialization.CreateAnthropicStreamState()
 	flusher, _ := c.Writer.(http.Flusher)
 	modelUsed := canonicalRequest.Model
 
 	c.Stream(func(w io.Writer) bool {
-		event, ok := <-eventCh
+		event, ok := <-wrappedCh
 		if !ok {
 			return false
 		}

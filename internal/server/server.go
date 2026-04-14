@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -120,7 +121,7 @@ func buildRouter(port int) *gin.Engine {
 
 	// Configure CORS
 	corsConfig := cors.DefaultConfig()
-	corsConfig.AllowAllOrigins = true
+	corsConfig.AllowOrigins = []string{"*"}
 	corsConfig.AllowMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
 	corsConfig.AllowHeaders = []string{"*"}
 	r.Use(cors.New(corsConfig))
@@ -141,7 +142,7 @@ func buildRouter(port int) *gin.Engine {
 
 	// Health check endpoints
 	r.GET("/", func(c *gin.Context) {
-		c.JSON(200, gin.H{
+		c.JSON(http.StatusOK, gin.H{
 			"status":  "healthy",
 			"message": "OmniModel server is running",
 			"version": routes.GetVersion(),
@@ -149,14 +150,14 @@ func buildRouter(port int) *gin.Engine {
 	})
 
 	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{
+		c.JSON(http.StatusOK, gin.H{
 			"status":    "healthy",
 			"timestamp": time.Now().Format(time.RFC3339),
 		})
 	})
 
 	r.GET("/healthz", func(c *gin.Context) {
-		c.String(200, "OK")
+		c.String(http.StatusOK, "OK")
 	})
 
 	// API routes
@@ -182,7 +183,7 @@ func buildRouter(port int) *gin.Engine {
 
 	// Admin static files redirect
 	r.GET("/admin", func(c *gin.Context) {
-		c.Redirect(301, "/admin/")
+		c.Redirect(http.StatusMovedPermanently, "/admin/")
 	})
 
 	return r
@@ -191,7 +192,10 @@ func buildRouter(port int) *gin.Engine {
 // generateRequestID creates a random request ID for correlation
 func generateRequestID() string {
 	b := make([]byte, 8)
-	rand.Read(b)
+	if _, err := io.ReadFull(rand.Reader, b); err != nil {
+		// Fallback to timestamp-based ID if RNG fails (should never happen on a properly functioning OS)
+		return fmt.Sprintf("%x", time.Now().UnixNano())
+	}
 	return fmt.Sprintf("%x", b)
 }
 

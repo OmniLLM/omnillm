@@ -41,3 +41,23 @@ func TestFormatBroadcastLogLine_FallsBackForPlainText(t *testing.T) {
 		t.Fatalf("unexpected fallback line: %q", line)
 	}
 }
+
+func TestFormatBroadcastLogLine_SuppressesRedundantModelUsed(t *testing.T) {
+	line := formatBroadcastLogLine("backend", `{"level":"info","model_requested":"qwen3.6-plus","model_used":"qwen3.6-plus","message":"<-- RESPONSE"}`)
+
+	if strings.Contains(line, "used=") {
+		t.Fatalf("expected used= to be suppressed when equal to requested=, got: %q", line)
+	}
+
+	if !strings.Contains(line, "requested=qwen3.6-plus") {
+		t.Fatalf("expected requested= to still be present, got: %q", line)
+	}
+}
+
+func TestFormatBroadcastLogLine_SuppressesZeroTokens(t *testing.T) {
+	line := formatBroadcastLogLine("backend", `{"level":"info","model_requested":"qwen3.6-plus","input_tokens":0,"output_tokens":0,"message":"<-- RESPONSE"}`)
+
+	if strings.Contains(line, "input=") || strings.Contains(line, "output=") {
+		t.Fatalf("expected zero token fields to be suppressed, got: %q", line)
+	}
+}

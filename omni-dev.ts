@@ -55,7 +55,7 @@ const STRUCTURED_FIELD_ORDER = [
   "verbose",
 ] as const
 const SOURCE_COLORS: Record<string, string> = {
-  backend: "31",
+  backend: "36",
   frontend: "32",
 }
 const LEVEL_COLORS: Record<string, string> = {
@@ -308,6 +308,15 @@ function normalizeSourceLabel(label: string): string {
   return label
 }
 
+function numericValue(value: unknown): number {
+  if (typeof value === "number") return value
+  if (typeof value === "string") {
+    const n = Number(value)
+    return Number.isFinite(n) ? n : 0
+  }
+  return 0
+}
+
 function stringifyLogValue(value: unknown): string {
   if (typeof value === "string") {
     return value.trim()
@@ -328,7 +337,7 @@ function stringifyLogValue(value: unknown): string {
   }
 }
 
-function formatStructuredField(key: string, value: unknown): string | null {
+function formatStructuredField(key: string, value: unknown, requestedModel?: string): string | null {
   const formattedValue = stringifyLogValue(value)
   if (!formattedValue) {
     return null
@@ -346,15 +355,26 @@ function formatStructuredField(key: string, value: unknown): string | null {
       return `requested=${formattedValue}`
     }
     case "model_used": {
+      // Omit when model_used equals model_requested (no routing occurred).
+      if (formattedValue === requestedModel) {
+        return null
+      }
       return `used=${formattedValue}`
     }
     case "latency_ms": {
       return `latency=${formattedValue}ms`
     }
     case "input_tokens": {
+      // Suppress zero token counts — they add no information.
+      if (numericValue(value) === 0) {
+        return null
+      }
       return `input=${formattedValue}`
     }
     case "output_tokens": {
+      if (numericValue(value) === 0) {
+        return null
+      }
       return `output=${formattedValue}`
     }
     case "message": {
@@ -419,8 +439,10 @@ function formatStructuredLogLine(
   const segments = [`[${timestamp}]`, source, level, message]
   const seen = new Set<string>(["message"])
 
+  const requestedModel = typeof payload.model_requested === "string" ? payload.model_requested : undefined
+
   for (const key of STRUCTURED_FIELD_ORDER) {
-    const formatted = formatStructuredField(key, payload[key])
+    const formatted = formatStructuredField(key, payload[key], requestedModel)
     if (formatted) {
       segments.push(formatted)
       seen.add(key)
@@ -433,7 +455,7 @@ function formatStructuredLogLine(
       continue
     }
 
-    const formatted = formatStructuredField(key, value)
+    const formatted = formatStructuredField(key, value, requestedModel)
     if (formatted) {
       remaining.push(formatted)
     }

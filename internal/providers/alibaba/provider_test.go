@@ -128,7 +128,7 @@ func TestShortTokenSuffix(t *testing.T) {
 		{"sk-1234567890abcdef", "bcdef"},
 		{"abc", "abc"},
 		{"", "oauth"},
-		{"  sk-xyz  ", "  xyz"},
+		{"  sk-xyz  ", "k-xyz"},
 	}
 	for _, tc := range cases {
 		got := ShortTokenSuffix(tc.token)

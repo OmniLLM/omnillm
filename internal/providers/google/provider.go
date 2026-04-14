@@ -21,6 +21,12 @@ import (
 
 const defaultBaseURL = "https://generativelanguage.googleapis.com"
 
+// Shared HTTP clients: one for normal requests with timeout, one for streaming.
+var (
+	googleHTTPClient   = &http.Client{Timeout: 120 * time.Second}
+	googleStreamClient = &http.Client{}
+)
+
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
 // SetupAuth handles API-key authentication for Google Gemini.
@@ -75,7 +81,7 @@ func FetchModels(instanceID, token, baseURL string) (*types.ModelsResponse, erro
 	}
 	req.Header.Set("x-goog-api-key", token)
 
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := googleHTTPClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("google: list-models request failed: %w", err)
@@ -276,7 +282,7 @@ func Stream(token, baseURL string, request *cif.CanonicalRequest) (<-chan cif.CI
 	}
 	req.Header.Set("Accept", "text/event-stream")
 
-	client := &http.Client{}
+	client := googleStreamClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("google request failed: %w", err)

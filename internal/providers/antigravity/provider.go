@@ -16,6 +16,9 @@ import (
 
 const defaultBaseURL = "https://daily-cloudcode-pa.googleapis.com"
 
+// Shared HTTP client for Antigravity (only used for streaming).
+var antigravityStreamClient = &http.Client{}
+
 // Models is the Antigravity model catalog.
 var Models = []types.Model{
 	{ID: "claude-opus-4-6-thinking", Name: "Claude Opus 4.6 (Thinking)", MaxTokens: 64000, Provider: "antigravity"},
@@ -136,7 +139,7 @@ func Stream(token, baseURL, projectID string, request *cif.CanonicalRequest) (<-
 	req.Header.Set("X-Goog-Api-Client", "google-cloud-sdk vscode_cloudshelleditor/0.1")
 	req.Header.Set("Client-Metadata", `{"ideType":"IDE_UNSPECIFIED","platform":"PLATFORM_UNSPECIFIED","pluginType":"GEMINI"}`)
 
-	client := &http.Client{}
+	client := antigravityStreamClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("antigravity request failed: %w", err)

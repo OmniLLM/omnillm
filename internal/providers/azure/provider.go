@@ -18,6 +18,12 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// Shared HTTP clients: one for normal requests with timeout, one for streaming.
+var (
+	azureHTTPClient   = &http.Client{Timeout: 120 * time.Second}
+	azureStreamClient = &http.Client{} // no timeout for streaming
+)
+
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
 // SetupAuth handles API-key authentication for Azure OpenAI.
@@ -248,7 +254,7 @@ func ExecuteOpenAI(url string, headers map[string]string, request *cif.Canonical
 		req.Header.Set(k, v)
 	}
 
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := azureHTTPClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
@@ -297,7 +303,7 @@ func StreamOpenAI(url string, headers map[string]string, request *cif.CanonicalR
 	}
 	req.Header.Set("Accept", "text/event-stream")
 
-	client := &http.Client{}
+	client := azureStreamClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("streaming request failed: %w", err)

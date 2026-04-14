@@ -90,8 +90,11 @@ func collectFormattedFields(event map[string]interface{}) []string {
 	fields := make([]string, 0, len(event))
 	seen := make(map[string]struct{}, len(event))
 
+	// Pre-read values needed for suppression logic.
+	requestedModel := stringValue(event["model_requested"])
+
 	for _, key := range preferredLogFieldOrder {
-		formatted, ok := formatStructuredField(key, event[key])
+		formatted, ok := formatStructuredField(key, event[key], requestedModel)
 		if ok {
 			fields = append(fields, formatted)
 			seen[key] = struct{}{}
@@ -104,7 +107,7 @@ func collectFormattedFields(event map[string]interface{}) []string {
 			continue
 		}
 
-		formatted, ok := formatStructuredField(key, value)
+		formatted, ok := formatStructuredField(key, value, requestedModel)
 		if ok {
 			remaining = append(remaining, formatted)
 		}
@@ -114,7 +117,7 @@ func collectFormattedFields(event map[string]interface{}) []string {
 	return append(fields, remaining...)
 }
 
-func formatStructuredField(key string, value interface{}) (string, bool) {
+func formatStructuredField(key string, value interface{}, requestedModel string) (string, bool) {
 	switch key {
 	case "", "level", "message", "time", "method", "path", "status":
 		return "", false
@@ -133,6 +136,10 @@ func formatStructuredField(key string, value interface{}) (string, bool) {
 	case "model_requested":
 		return "requested=" + formattedValue, true
 	case "model_used":
+		// Omit when model_used equals model_requested (no routing occurred).
+		if formattedValue == requestedModel {
+			return "", false
+		}
 		return "used=" + formattedValue, true
 	case "latency_ms":
 		if !strings.HasSuffix(formattedValue, "ms") {
@@ -140,8 +147,15 @@ func formatStructuredField(key string, value interface{}) (string, bool) {
 		}
 		return "latency=" + formattedValue, true
 	case "input_tokens":
+		// Suppress zero token counts — they add no information.
+		if numericValue(value) == 0 {
+			return "", false
+		}
 		return "input=" + formattedValue, true
 	case "output_tokens":
+		if numericValue(value) == 0 {
+			return "", false
+		}
 		return "output=" + formattedValue, true
 	default:
 		return key + "=" + formattedValue, true
@@ -169,5 +183,19 @@ func stringValue(value interface{}) string {
 			return fmt.Sprintf("%v", typed)
 		}
 		return string(encoded)
+	}
+}
+
+func numericValue(value interface{}) int64 {
+	switch typed := value.(type) {
+	case nil:
+		return 0
+	case float64:
+		return int64(typed)
+	case json.Number:
+		v, _ := typed.Int64()
+		return v
+	default:
+		return 0
 	}
 }

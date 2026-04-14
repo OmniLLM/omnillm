@@ -64,12 +64,12 @@ func CIFMessagesToOpenAI(messages []cif.CIFMessage) []map[string]interface{} {
 			}
 		case cif.CIFAssistantMessage:
 			openaiMsg := map[string]interface{}{"role": "assistant"}
-			var textContent string
+			var textBuf strings.Builder
 			var toolCalls []map[string]interface{}
 			for _, part := range m.Content {
 				switch p := part.(type) {
 				case cif.CIFTextPart:
-					textContent += p.Text
+					textBuf.WriteString(p.Text)
 				case cif.CIFToolCallPart:
 					args, _ := json.Marshal(p.ToolArguments)
 					toolCalls = append(toolCalls, map[string]interface{}{
@@ -82,8 +82,8 @@ func CIFMessagesToOpenAI(messages []cif.CIFMessage) []map[string]interface{} {
 					})
 				}
 			}
-			if textContent != "" {
-				openaiMsg["content"] = textContent
+			if textBuf.Len() > 0 {
+				openaiMsg["content"] = textBuf.String()
 			}
 			if len(toolCalls) > 0 {
 				openaiMsg["tool_calls"] = toolCalls

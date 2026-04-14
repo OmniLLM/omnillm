@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	"omnimodel/internal/database"
 	"omnimodel/internal/providers/types"
@@ -19,13 +20,23 @@ type ResolvedModelRoute struct {
 	AvailableModels    []types.Model    `json:"availableModels"`
 }
 
-type ModelCache map[string]*types.ModelsResponse
+type ModelCache struct {
+	mu    sync.RWMutex
+	models map[string]*types.ModelsResponse
+}
 
-func GetCachedOrFetchModels(provider types.Provider, cache ModelCache) (*types.ModelsResponse, error) {
+func NewModelCache() *ModelCache {
+	return &ModelCache{models: make(map[string]*types.ModelsResponse)}
+}
+
+func GetCachedOrFetchModels(provider types.Provider, cache *ModelCache) (*types.ModelsResponse, error) {
 	instanceID := provider.GetInstanceID()
 
-	// Check cache first
-	if cached, exists := cache[instanceID]; exists {
+	// Check cache first (read lock)
+	cache.mu.RLock()
+	cached, exists := cache.models[instanceID]
+	cache.mu.RUnlock()
+	if exists {
 		return cached, nil
 	}
 
@@ -39,12 +50,14 @@ func GetCachedOrFetchModels(provider types.Provider, cache ModelCache) (*types.M
 		return nil, err
 	}
 
-	// Cache the result
-	cache[instanceID] = models
+	// Cache the result (write lock)
+	cache.mu.Lock()
+	cache.models[instanceID] = models
+	cache.mu.Unlock()
 	return models, nil
 }
 
-func GetEnabledModelsByProvider(providers []types.Provider, cache ModelCache) (map[string][]types.Model, error) {
+func GetEnabledModelsByProvider(providers []types.Provider, cache *ModelCache) (map[string][]types.Model, error) {
 	modelsByProvider := make(map[string][]types.Model)
 	modelStateStore := database.NewModelStateStore()
 
@@ -106,9 +119,9 @@ func SortProvidersByPriority(providers []types.Provider) []types.Provider {
 	return sorted
 }
 
-func ResolveProvidersForModel(requestedModel string, normalizedModel string, cache ModelCache) (*ResolvedModelRoute, error) {
-	registry := registry.GetProviderRegistry()
-	activeProviders := registry.GetActiveProviders()
+func ResolveProvidersForModel(requestedModel string, normalizedModel string, cache *ModelCache) (*ResolvedModelRoute, error) {
+	reg := registry.GetProviderRegistry()
+	activeProviders := reg.GetActiveProviders()
 
 	if len(activeProviders) == 0 {
 		return nil, fmt.Errorf("no active providers available")

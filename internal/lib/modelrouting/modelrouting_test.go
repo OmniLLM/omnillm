@@ -136,7 +136,7 @@ func TestGetCachedOrFetchModels_CacheMiss(t *testing.T) {
 			Data: []types.Model{{ID: "model-a"}, {ID: "model-b"}},
 		},
 	}
-	cache := make(ModelCache)
+	cache := NewModelCache()
 
 	result, err := GetCachedOrFetchModels(provider, cache)
 	if err != nil {
@@ -158,7 +158,7 @@ func TestGetCachedOrFetchModels_CacheHit(t *testing.T) {
 			Data: []types.Model{{ID: "model-x"}},
 		},
 	}
-	cache := make(ModelCache)
+	cache := NewModelCache()
 
 	// First call to populate cache
 	_, _ = GetCachedOrFetchModels(provider, cache)
@@ -182,7 +182,7 @@ func TestGetCachedOrFetchModels_FetchError(t *testing.T) {
 		name:       "MockErr",
 		fetchErr:   os.ErrNotExist,
 	}
-	cache := make(ModelCache)
+	cache := NewModelCache()
 
 	_, err := GetCachedOrFetchModels(provider, cache)
 	if err == nil {
@@ -247,7 +247,7 @@ func TestGetEnabledModelsByProvider_ReturnsAllModels(t *testing.T) {
 		},
 	}
 
-	cache := make(ModelCache)
+	cache := NewModelCache()
 	modelsByProvider, err := GetEnabledModelsByProvider([]types.Provider{provider}, cache)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -272,7 +272,7 @@ func TestGetEnabledModelsByProvider_SkipsErroredProviders(t *testing.T) {
 		fetchErr:   os.ErrPermission,
 	}
 
-	cache := make(ModelCache)
+	cache := NewModelCache()
 	result, err := GetEnabledModelsByProvider([]types.Provider{good, bad}, cache)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

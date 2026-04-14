@@ -17,6 +17,11 @@ import (
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
+var (
+	alibabaHTTPClient    = &http.Client{Timeout: 120 * time.Second}
+	alibabaStreamClient  = &http.Client{}
+)
+
 const (
 	OAuthDeviceCodeEndpoint = "https://chat.qwen.ai/api/v1/oauth2/device/code"
 	OAuthTokenEndpoint      = "https://chat.qwen.ai/api/v1/oauth2/token"
