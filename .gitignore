@@ -29,3 +29,4 @@ omnimodel.exe
 # local tool artifacts
 .playwright-mcp/
 .tmp-gocache/
+.tmp-gomodcache/
