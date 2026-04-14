@@ -2399,16 +2399,24 @@ function AddFlowAlibabaForm({
   const [region, setRegion] = useState("global")
   const [endpoint, setEndpoint] = useState("")
   const [apiKey, setApiKey] = useState("")
+  const isAnthropicMode = plan === "anthropic"
   const submit = async () => {
     const body: Record<string, string> = { method }
     if (method === "api-key") {
       if (!apiKey.trim()) return
-      body.plan = plan
-      body.apiKey = apiKey.trim()
-      body.region = region
-      if (endpoint.trim()) {
-        body.endpoint = endpoint.trim()
+      if (isAnthropicMode) {
+        body.apiFormat = "anthropic"
+        if (endpoint.trim()) {
+          body.endpoint = endpoint.trim()
+        }
+      } else {
+        body.plan = plan
+        body.region = region
+        if (endpoint.trim()) {
+          body.endpoint = endpoint.trim()
+        }
       }
+      body.apiKey = apiKey.trim()
     }
     await onSubmit(body)
   }
@@ -2435,26 +2443,31 @@ function AddFlowAlibabaForm({
               options={[
                 { value: "standard", label: "Standard" },
                 { value: "coding-plan", label: "Coding Plan" },
+                { value: "anthropic", label: "Anthropic API" },
               ]}
             />
           </FormRow>
-          <FormRow label="Region">
-            <select
-              value={region}
-              onChange={(e) => setRegion(e.target.value)}
-              style={addFlowControlStyle}
-            >
-              <option value="global">
-                Global (dashscope-intl.aliyuncs.com)
-              </option>
-              <option value="china">China (dashscope.aliyuncs.com)</option>
-            </select>
-          </FormRow>
+          {!isAnthropicMode && (
+            <FormRow label="Region">
+              <select
+                value={region}
+                onChange={(e) => setRegion(e.target.value)}
+                style={addFlowControlStyle}
+              >
+                <option value="global">
+                  Global (dashscope-intl.aliyuncs.com)
+                </option>
+                <option value="china">China (dashscope.aliyuncs.com)</option>
+              </select>
+            </FormRow>
+          )}
           <FormRow label="Base URL (optional)">
             <input
               type="text"
               placeholder={
-                plan === "coding-plan" ?
+                isAnthropicMode ?
+                  "https://dashscope.aliyuncs.com/apps/anthropic/v1"
+                : plan === "coding-plan" ?
                   "https://coding-intl.dashscope.aliyuncs.com/v1"
                 : "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
               }
@@ -2463,19 +2476,33 @@ function AddFlowAlibabaForm({
               style={addFlowTextInputStyle}
             />
           </FormRow>
-          <FormRow label="DashScope API Key">
+          <FormRow label={isAnthropicMode ? "API Key" : "DashScope API Key"}>
             <input
               type="password"
-              placeholder={plan === "coding-plan" ? "sk-sp-…" : "sk-…"}
+              placeholder={
+                isAnthropicMode ? "sk-…"
+                : plan === "coding-plan" ? "sk-sp-…"
+                : "sk-…"
+              }
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               style={addFlowTextInputStyle}
             />
           </FormRow>
-          <AddFlowHint>
-            Standard is the right default for `qwen3.6-plus`. Use Coding Plan
-            only when you have a dedicated Coding Plan key and base URL.
-          </AddFlowHint>
+          {isAnthropicMode && (
+            <AddFlowHint>
+              Uses the Alibaba Anthropic-compatible endpoint
+              (dashscope.aliyuncs.com/apps/anthropic). Claude-style model
+              aliases like claude-sonnet-4-5 are accepted and routed to
+              supported Alibaba upstream models.
+            </AddFlowHint>
+          )}
+          {!isAnthropicMode && (
+            <AddFlowHint>
+              Standard is the right default for `qwen3.6-plus`. Use Coding Plan
+              only when you have a dedicated Coding Plan key and base URL.
+            </AddFlowHint>
+          )}
         </>
       )}
       {method === "oauth" && (

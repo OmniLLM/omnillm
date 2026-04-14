@@ -28,10 +28,10 @@ import (
 // ─── Model catalogs (kept for white-box test access) ─────────────────────────
 
 var providerModels = map[string][]types.Model{
-	"antigravity": antigravitypkg.Models,
-	"alibaba":     alibabapkg.Models,
+	"antigravity":  antigravitypkg.Models,
+	"alibaba":      alibabapkg.Models,
 	"azure-openai": azurepkg.DefaultModels,
-	"kimi":        kimipkg.Models,
+	"kimi":         kimipkg.Models,
 	"google": {
 		{ID: "gemini-2.5-pro", Name: "Gemini 2.5 Pro", MaxTokens: 65536, Provider: "google"},
 		{ID: "gemini-2.5-flash", Name: "Gemini 2.5 Flash", MaxTokens: 65536, Provider: "google"},
@@ -267,6 +267,13 @@ func (p *GenericProvider) GetToken() string { return p.token }
 
 func (p *GenericProvider) RefreshToken() error { return nil }
 
+// GetConfig returns the provider's config map.
+// The config is lazily loaded from the database on first access.
+func (p *GenericProvider) GetConfig() map[string]interface{} {
+	p.loadConfigFromDB()
+	return p.config
+}
+
 // ─── Config management ────────────────────────────────────────────────────────
 
 func (p *GenericProvider) GetBaseURL() string {
@@ -464,6 +471,9 @@ func (a *GenericAdapter) RemapModel(model string) string {
 	if a.provider.id == "antigravity" {
 		return antigravitypkg.RemapModel(model)
 	}
+	if a.provider.id == "alibaba" {
+		return alibabapkg.RemapModel(model)
+	}
 	return model
 }
 
@@ -471,6 +481,9 @@ func (a *GenericAdapter) Execute(request *cif.CanonicalRequest) (*cif.CanonicalR
 	a.provider.loadConfigFromDB()
 	switch a.provider.id {
 	case "alibaba":
+		if alibabapkg.IsAnthropicMode(a.provider.config) {
+			return a.executeAnthropic(request)
+		}
 		if !alibabapkg.IsChatCompletionsModel(a.RemapModel(request.Model)) {
 			return nil, fmt.Errorf("alibaba model %s is realtime-only and is not supported by /v1/chat/completions", request.Model)
 		}
@@ -499,6 +512,9 @@ func (a *GenericAdapter) ExecuteStream(request *cif.CanonicalRequest) (<-chan ci
 	a.provider.loadConfigFromDB()
 	switch a.provider.id {
 	case "alibaba":
+		if alibabapkg.IsAnthropicMode(a.provider.config) {
+			return a.streamAnthropic(request)
+		}
 		if !alibabapkg.IsChatCompletionsModel(a.RemapModel(request.Model)) {
 			return nil, fmt.Errorf("alibaba model %s is realtime-only and is not supported by /v1/chat/completions", request.Model)
 		}
@@ -578,8 +594,6 @@ func (a *GenericAdapter) streamAzureResponses(request *cif.CanonicalRequest) (<-
 	model := a.RemapModel(request.Model)
 	return azurepkg.StreamResponses(url, a.provider.token, request, model)
 }
-
-// ─── OpenAI-compatible execution ─────────────────────────────────────────────
 
 func (a *GenericAdapter) buildOpenAIPayload(request *cif.CanonicalRequest) map[string]interface{} {
 	model := a.RemapModel(request.Model)
@@ -762,17 +776,26 @@ func antigravityStopReason(reason string) cif.CIFStopReason {
 }
 
 // parseOpenAISSE parses an OpenAI SSE stream.
-func parseOpenAISSE(body interface{ Read([]byte) (int, error); Close() error }, eventCh chan cif.CIFStreamEvent) {
+func parseOpenAISSE(body interface {
+	Read([]byte) (int, error)
+	Close() error
+}, eventCh chan cif.CIFStreamEvent) {
 	shared.ParseOpenAISSE(body, eventCh)
 }
 
 // parseGoogleGeminiSSE parses a Google Gemini SSE stream.
-func parseGoogleGeminiSSE(body interface{ Read([]byte) (int, error); Close() error }, eventCh chan cif.CIFStreamEvent) {
+func parseGoogleGeminiSSE(body interface {
+	Read([]byte) (int, error)
+	Close() error
+}, eventCh chan cif.CIFStreamEvent) {
 	googlepkg.ParseGeminiSSE(body, eventCh)
 }
 
 // parseAntigravitySSE parses an Antigravity SSE stream.
-func parseAntigravitySSE(body interface{ Read([]byte) (int, error); Close() error }, eventCh chan cif.CIFStreamEvent) {
+func parseAntigravitySSE(body interface {
+	Read([]byte) (int, error)
+	Close() error
+}, eventCh chan cif.CIFStreamEvent) {
 	antigravitypkg.ParseAntigravitySSE(body, eventCh)
 }
 
@@ -938,6 +961,8 @@ func executeOpenAIWithPayload(url string, headers map[string]string, payload map
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
+	log.Trace().Str("url", url).RawJSON("payload", body).Msg("outbound proxy request payload")
+
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -972,6 +997,8 @@ func streamOpenAIWithPayload(url string, headers map[string]string, payload map[
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
+
+	log.Trace().Str("url", url).RawJSON("payload", body).Msg("outbound proxy request payload")
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
 	if err != nil {

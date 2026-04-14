@@ -759,6 +759,7 @@ func (a *CopilotAdapter) executeOpenAIWithRetry(request *cif.CanonicalRequest, a
 	}
 
 	url := fmt.Sprintf("%s/chat/completions", a.provider.GetBaseURL())
+	log.Trace().Str("url", url).RawJSON("payload", reqBody).Msg("outbound proxy request payload")
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -806,6 +807,7 @@ func (a *CopilotAdapter) executeOpenAIStreamWithRetry(request *cif.CanonicalRequ
 	}
 
 	url := fmt.Sprintf("%s/chat/completions", a.provider.GetBaseURL())
+	log.Trace().Str("url", url).RawJSON("payload", reqBody).Msg("outbound proxy request payload")
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -852,6 +854,7 @@ func (a *CopilotAdapter) executeResponsesWithRetry(request *cif.CanonicalRequest
 	}
 
 	url := fmt.Sprintf("%s/v1/responses", a.provider.GetBaseURL())
+	log.Trace().Str("url", url).RawJSON("payload", reqBody).Msg("outbound proxy request payload")
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create responses request: %w", err)
@@ -899,6 +902,7 @@ func (a *CopilotAdapter) executeResponsesStreamWithRetry(request *cif.CanonicalR
 	}
 
 	url := fmt.Sprintf("%s/v1/responses", a.provider.GetBaseURL())
+	log.Trace().Str("url", url).RawJSON("payload", reqBody).Msg("outbound proxy request payload")
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create responses request: %w", err)

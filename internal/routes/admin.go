@@ -191,6 +191,9 @@ func normalizeProviderConfigForFrontend(providerType string, config map[string]i
 		if plan, ok := firstStringValue(config, "plan"); ok {
 			normalized["plan"] = plan
 		}
+		if apiFormat, ok := firstStringValue(config, "apiFormat", "api_format"); ok {
+			normalized["apiFormat"] = apiFormat
+		}
 		if len(normalized) == 0 {
 			return nil
 		}
@@ -222,6 +225,7 @@ func normalizeProviderConfigForStorage(providerType string, config map[string]in
 		baseURL, _ := firstStringValue(config, "baseUrl", "base_url")
 		region, _ := firstStringValue(config, "region")
 		plan, _ := firstStringValue(config, "plan")
+		apiFormat, _ := firstStringValue(config, "apiFormat", "api_format")
 
 		normalized := map[string]interface{}{}
 		if baseURL != "" {
@@ -232,6 +236,9 @@ func normalizeProviderConfigForStorage(providerType string, config map[string]in
 		}
 		if plan != "" {
 			normalized["plan"] = plan
+		}
+		if apiFormat != "" {
+			normalized["api_format"] = apiFormat
 		}
 		return normalized
 	default:
@@ -610,21 +617,28 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 		if len(suffix) > 6 {
 			suffix = suffix[len(suffix)-6:]
 		}
-		plan := strings.ToLower(strings.TrimSpace(req.Plan))
-		switch plan {
-		case "", "standard":
-			plan = "standard"
-		case "coding", "coding_plan", "coding-plan":
-			plan = "coding-plan"
-		default:
-			plan = "standard"
+
+		var canonicalID string
+		if strings.EqualFold(strings.TrimSpace(req.APIFormat), "anthropic") {
+			// Anthropic-mode: use a distinct ID slug so it never collides with DashScope providers.
+			canonicalID = "alibaba-anthropic-" + suffix
+		} else {
+			plan := strings.ToLower(strings.TrimSpace(req.Plan))
+			switch plan {
+			case "", "standard":
+				plan = "standard"
+			case "coding", "coding_plan", "coding-plan":
+				plan = "coding-plan"
+			default:
+				plan = "standard"
+			}
+			region := req.Region
+			if region == "" {
+				region = "global"
+			}
+			planSlug := strings.ReplaceAll(plan, "-plan", "")
+			canonicalID = "alibaba-" + planSlug + "-" + region + "-" + suffix
 		}
-		region := req.Region
-		if region == "" {
-			region = "global"
-		}
-		planSlug := strings.ReplaceAll(plan, "-plan", "")
-		canonicalID := "alibaba-" + planSlug + "-" + region + "-" + suffix
 		gen := generic.NewGenericProvider("alibaba", canonicalID, "")
 
 		if err := gen.SetupAuth(&req); err != nil {

@@ -618,3 +618,143 @@ func TestBuildOpenAIPayloadCallerTemperatureRespected(t *testing.T) {
 		t.Errorf("expected caller top_p 0.9, got %v", got)
 	}
 }
+
+// ─── IsAnthropicMode ─────────────────────────────────────────────────────────
+
+func TestIsAnthropicMode(t *testing.T) {
+	cases := []struct {
+		name   string
+		config map[string]interface{}
+		want   bool
+	}{
+		{"empty config", map[string]interface{}{}, false},
+		{"api_format anthropic", map[string]interface{}{"api_format": "anthropic"}, true},
+		{"apiFormat anthropic", map[string]interface{}{"apiFormat": "anthropic"}, true},
+		{"case insensitive", map[string]interface{}{"api_format": "ANTHROPIC"}, true},
+		{"mixed case", map[string]interface{}{"api_format": "Anthropic"}, true},
+		{"other format", map[string]interface{}{"api_format": "openai"}, false},
+		{"nil config", nil, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := IsAnthropicMode(tc.config)
+			if got != tc.want {
+				t.Errorf("IsAnthropicMode(%v) = %v, want %v", tc.config, got, tc.want)
+			}
+		})
+	}
+}
+
+// ─── AnthropicMessagesURL ────────────────────────────────────────────────────
+
+func TestAnthropicMessagesURL(t *testing.T) {
+	cases := []struct {
+		baseURL string
+		want    string
+	}{
+		{"", AnthropicBaseURL + "/messages"},
+		{"https://dashscope.aliyuncs.com/apps/anthropic/v1", "https://dashscope.aliyuncs.com/apps/anthropic/v1/messages"},
+		{"https://dashscope.aliyuncs.com/apps/anthropic/v1/", "https://dashscope.aliyuncs.com/apps/anthropic/v1/messages"},
+		{"  https://example.com/v1  ", "https://example.com/v1/messages"},
+	}
+	for _, tc := range cases {
+		got := AnthropicMessagesURL(tc.baseURL)
+		if got != tc.want {
+			t.Errorf("AnthropicMessagesURL(%q) = %q, want %q", tc.baseURL, got, tc.want)
+		}
+	}
+}
+
+// ─── GetModelsAnthropicMode ──────────────────────────────────────────────────
+
+func TestGetModelsAnthropicMode(t *testing.T) {
+	resp := GetModelsAnthropicMode("alibaba-anthropic-1")
+	if len(resp.Data) != len(AnthropicModels) {
+		t.Errorf("got %d models, want %d", len(resp.Data), len(AnthropicModels))
+	}
+	for _, m := range resp.Data {
+		if m.Provider != "alibaba-anthropic-1" {
+			t.Errorf("model %q has provider %q, want alibaba-anthropic-1", m.ID, m.Provider)
+		}
+	}
+	// Verify claude-sonnet-4.5 is present.
+	found := false
+	for _, m := range resp.Data {
+		if m.ID == "claude-sonnet-4.5" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected claude-sonnet-4.5 in AnthropicMode model list")
+	}
+}
+
+func TestRemapModel(t *testing.T) {
+	cases := []struct {
+		modelID string
+		want    string
+	}{
+		{"claude-opus-4.5", "qwen3-max"},
+		{"claude-sonnet-4.5", "qwen3.6-plus"},
+		{"claude-sonnet-4-5-20250929", "qwen3.6-plus"},
+		{"claude-haiku-4.5", "qwen3-coder-flash"},
+		{"claude-haiku-4-5-20251001", "qwen3-coder-flash"},
+		{"qwen3.6-plus", "qwen3.6-plus"},
+	}
+
+	for _, tc := range cases {
+		got := RemapModel(tc.modelID)
+		if got != tc.want {
+			t.Errorf("RemapModel(%q) = %q, want %q", tc.modelID, got, tc.want)
+		}
+	}
+}
+
+// ─── NormalizeBaseURL: anthropic mode ────────────────────────────────────────
+
+func TestNormalizeBaseURLAnthropicMode(t *testing.T) {
+	t.Run("anthropic mode returns AnthropicBaseURL", func(t *testing.T) {
+		cfg := map[string]interface{}{"auth_type": "api-key", "api_format": "anthropic"}
+		got := NormalizeBaseURL(cfg)
+		if got != AnthropicBaseURL {
+			t.Errorf("got %q, want %q", got, AnthropicBaseURL)
+		}
+	})
+
+	t.Run("anthropic mode with explicit base_url", func(t *testing.T) {
+		cfg := map[string]interface{}{
+			"auth_type":  "api-key",
+			"api_format": "anthropic",
+			"base_url":   "https://custom.example.com/v1",
+		}
+		got := NormalizeBaseURL(cfg)
+		if got != "https://custom.example.com/v1" {
+			t.Errorf("got %q, want https://custom.example.com/v1", got)
+		}
+	})
+}
+
+// ─── GetModels: anthropic mode short-circuit ─────────────────────────────────
+
+func TestGetModelsAnthropicModeShortCircuit(t *testing.T) {
+	cfg := map[string]interface{}{"auth_type": "api-key", "api_format": "anthropic"}
+	resp, err := GetModels("alibaba-ant-1", "sk-test", "https://dashscope.aliyuncs.com/apps/anthropic/v1", cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resp.Data) != len(AnthropicModels) {
+		t.Errorf("got %d models, want %d (AnthropicModels)", len(resp.Data), len(AnthropicModels))
+	}
+}
+
+// ─── APIKeyProviderName: anthropic mode ──────────────────────────────────────
+
+func TestAPIKeyProviderNameAnthropicMode(t *testing.T) {
+	cfg := map[string]interface{}{"auth_type": "api-key", "api_format": "anthropic"}
+	got := APIKeyProviderName(cfg)
+	want := "Alibaba Anthropic API"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}

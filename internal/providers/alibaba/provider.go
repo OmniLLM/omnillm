@@ -51,6 +51,31 @@ func SetupAPIKeyAuth(instanceID string, options *types.AuthOptions) (token, base
 	if options.APIKey == "" {
 		return "", "", "", nil, fmt.Errorf("alibaba: API key is required")
 	}
+
+	// Anthropic-compatible API mode — store api_format, skip plan/region.
+	if strings.EqualFold(strings.TrimSpace(options.APIFormat), "anthropic") {
+		tokenStore := database.NewTokenStore()
+		tokenData := map[string]interface{}{"access_token": options.APIKey}
+		if err := tokenStore.Save(instanceID, "alibaba", tokenData); err != nil {
+			return "", "", "", nil, fmt.Errorf("failed to save alibaba token: %w", err)
+		}
+		cfg := map[string]interface{}{
+			"auth_type":  "api-key",
+			"api_format": "anthropic",
+		}
+		if endpoint := strings.TrimSpace(options.Endpoint); endpoint != "" {
+			cfg["base_url"] = endpoint
+		}
+		configStore := database.NewProviderConfigStore()
+		if err := configStore.Save(instanceID, cfg); err != nil {
+			return "", "", "", nil, fmt.Errorf("failed to save alibaba config: %w", err)
+		}
+		resolvedURL := NormalizeBaseURL(cfg)
+		resolvedName := APIKeyProviderName(cfg)
+		log.Info().Str("provider", instanceID).Str("api_format", "anthropic").Msg("Alibaba authenticated via API key (Anthropic mode)")
+		return options.APIKey, resolvedURL, resolvedName, cfg, nil
+	}
+
 	region := strings.TrimSpace(options.Region)
 	if region == "" {
 		region = "global"
@@ -245,7 +270,101 @@ func ChatURL(baseURL string) string {
 	return base + "/chat/completions"
 }
 
+// IsAnthropicMode reports whether the provider config selects the Anthropic-compatible API.
+// This is enabled by setting api_format = "anthropic" in the provider config.
+func IsAnthropicMode(config map[string]interface{}) bool {
+	apiFormat, _ := shared.FirstString(config, "api_format", "apiFormat")
+	return strings.EqualFold(strings.TrimSpace(apiFormat), "anthropic")
+}
+
+// AnthropicMessagesURL returns the messages endpoint for the Alibaba Anthropic-compatible API.
+func AnthropicMessagesURL(baseURL string) string {
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if base == "" {
+		base = AnthropicBaseURL
+	}
+	return base + "/messages"
+}
+
 // ─── Models ───────────────────────────────────────────────────────────────────
+
+// AnthropicModels lists the Claude models available via the Alibaba Anthropic-compatible API
+// (https://dashscope.aliyuncs.com/apps/anthropic). Used when api_format=anthropic.
+var AnthropicModels = []types.Model{
+	{ID: "claude-opus-4.5", Name: "Claude Opus 4.5", MaxTokens: 32000, Provider: "alibaba"},
+	{ID: "claude-sonnet-4.5", Name: "Claude Sonnet 4.5", MaxTokens: 64000, Provider: "alibaba"},
+	{ID: "claude-haiku-4.5", Name: "Claude Haiku 4.5", MaxTokens: 32000, Provider: "alibaba"},
+}
+
+var anthropicAliasTargets = map[string][]string{
+	"opus": {
+		"qwen3-max",
+		"qwen3-max-preview",
+		"qwen3.6-plus",
+	},
+	"sonnet": {
+		"qwen3.6-plus",
+		"qwen3-coder-plus",
+		"qwen3-coder-next",
+		"qwen-plus",
+	},
+	"haiku": {
+		"qwen3-coder-flash",
+		"qwen3.6-plus",
+		"qwen3-coder-next",
+		"qwen-turbo",
+	},
+}
+
+// GetModelsAnthropicMode returns the hardcoded Claude model list for Anthropic-mode providers.
+func GetModelsAnthropicMode(instanceID string) *types.ModelsResponse {
+	result := make([]types.Model, len(AnthropicModels))
+	for i, m := range AnthropicModels {
+		result[i] = m
+		result[i].Provider = instanceID
+	}
+	return &types.ModelsResponse{Data: result, Object: "list"}
+}
+
+// RemapModel translates Anthropic Claude aliases to supported Alibaba upstream
+// models. Non-Claude model IDs are returned unchanged.
+func RemapModel(modelID string) string {
+	trimmed := strings.TrimSpace(modelID)
+	if trimmed == "" {
+		return modelID
+	}
+
+	normalized := strings.ToLower(trimmed)
+	if !strings.HasPrefix(normalized, "claude-") {
+		return trimmed
+	}
+
+	switch {
+	case strings.Contains(normalized, "opus"):
+		if mapped, ok := firstAvailableModel(anthropicAliasTargets["opus"]); ok {
+			return mapped
+		}
+	case strings.Contains(normalized, "sonnet"):
+		if mapped, ok := firstAvailableModel(anthropicAliasTargets["sonnet"]); ok {
+			return mapped
+		}
+	case strings.Contains(normalized, "haiku"):
+		if mapped, ok := firstAvailableModel(anthropicAliasTargets["haiku"]); ok {
+			return mapped
+		}
+	}
+
+	return trimmed
+}
+
+func firstAvailableModel(candidates []string) (string, bool) {
+	for _, candidate := range candidates {
+		if _, ok := ModelMetadata(candidate); ok {
+			return candidate, true
+		}
+	}
+	return "", false
+}
 
 // GetModels returns the available models for this Alibaba instance.
 // For OAuth providers it returns a filtered hardcoded list; for API-key it tries
@@ -253,6 +372,11 @@ func ChatURL(baseURL string) string {
 func GetModels(instanceID, token, baseURL string, config map[string]interface{}) (*types.ModelsResponse, error) {
 	if token == "" {
 		return nil, fmt.Errorf("alibaba: not authenticated (set access_token via admin UI)")
+	}
+
+	// Anthropic-compatible mode: return Claude model catalog directly.
+	if IsAnthropicMode(config) {
+		return GetModelsAnthropicMode(instanceID), nil
 	}
 
 	authType, _ := shared.FirstString(config, "auth_type", "authType")
@@ -387,6 +511,13 @@ func NormalizeBaseURL(config map[string]interface{}) string {
 
 	switch authType {
 	case "api-key":
+		// Anthropic-compatible mode: use the Anthropic base URL.
+		if IsAnthropicMode(config) {
+			if baseURL, ok := shared.FirstString(config, "base_url", "baseUrl"); ok && baseURL != "" {
+				return EnsureBaseURL(baseURL, false)
+			}
+			return AnthropicBaseURL
+		}
 		if baseURL, ok := shared.FirstString(config, "base_url", "baseUrl"); ok {
 			return EnsureBaseURL(baseURL, false)
 		}
@@ -437,6 +568,9 @@ func DefaultAPIBaseURL(plan, region string) string {
 
 // APIKeyProviderName returns the display name for an API-key authenticated Alibaba provider.
 func APIKeyProviderName(config map[string]interface{}) string {
+	if IsAnthropicMode(config) {
+		return "Alibaba Anthropic API"
+	}
 	region, _ := shared.FirstString(config, "region")
 	if region == "" {
 		region = "global"

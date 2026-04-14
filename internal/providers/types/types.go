@@ -27,6 +27,7 @@ type AuthOptions struct {
 	Region       string `json:"region,omitempty"`
 	Plan         string `json:"plan,omitempty"`
 	Endpoint     string `json:"endpoint,omitempty"`
+	APIFormat    string `json:"apiFormat,omitempty"` // e.g. "anthropic" for Alibaba Anthropic-compatible endpoint
 }
 
 type Model struct {

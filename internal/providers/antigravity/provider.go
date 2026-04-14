@@ -12,6 +12,8 @@ import (
 	"omnimodel/internal/cif"
 	"omnimodel/internal/providers/shared"
 	"omnimodel/internal/providers/types"
+
+	"github.com/rs/zerolog/log"
 )
 
 const defaultBaseURL = "https://daily-cloudcode-pa.googleapis.com"
@@ -128,6 +130,8 @@ func Stream(token, baseURL, projectID string, request *cif.CanonicalRequest) (<-
 		base = defaultBaseURL
 	}
 	url := base + "/v1internal:streamGenerateContent?alt=sse"
+
+	log.Trace().Str("url", url).RawJSON("payload", body).Msg("outbound proxy request payload")
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
 	if err != nil {

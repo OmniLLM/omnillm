@@ -621,6 +621,46 @@ func TestAnthropicMessagesRouteRoutesVirtualModelsBeforeProviderExecution(t *tes
 	}
 }
 
+func TestAnthropicMessagesRouteRewritesAlibabaAnthropicAliasBeforeProxy(t *testing.T) {
+	var capturedModel string
+
+	registerStubProviderWithType(
+		t,
+		"alibaba",
+		"claude-haiku-4.5",
+		func(req *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+			capturedModel = req.Model
+			return &cif.CanonicalResponse{
+				ID:    "resp_alibaba_alias",
+				Model: req.Model,
+				Content: []cif.CIFContentPart{
+					cif.CIFTextPart{Type: "text", Text: "pong"},
+				},
+				StopReason: cif.StopReasonEndTurn,
+			}, nil
+		},
+		nil,
+	)
+
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	resp := postJSON(
+		t,
+		srv.URL+"/v1/messages",
+		`{"model":"claude-haiku-4-5","max_tokens":20,"messages":[{"role":"user","content":"ping"}]}`,
+		map[string]string{"anthropic-version": "2023-06-01"},
+	)
+	body := readBody(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
+	}
+
+	if capturedModel != "claude-haiku-4.5" {
+		t.Fatalf("expected provider to receive model %q, got %q", "claude-haiku-4.5", capturedModel)
+	}
+}
+
 func TestStreamingEndpointsExposeExpectedEventShapes(t *testing.T) {
 	modelID := "stream-model"
 	registerStubProvider(

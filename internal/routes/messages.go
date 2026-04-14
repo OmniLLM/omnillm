@@ -226,11 +226,15 @@ func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 			select {
 			case <-ctx.Done():
 				return
-			case evt, ok := <-eventCh:
+			case ev, ok := <-eventCh:
 				if !ok {
 					return
 				}
-				wrappedCh <- evt
+				select {
+				case wrappedCh <- ev:
+				case <-ctx.Done():
+					return
+				}
 			}
 		}
 	}()
@@ -245,19 +249,20 @@ func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 			return false
 		}
 
-		anthropicEvents, err := serialization.ConvertCIFEventToAnthropicSSE(event, state)
+		sseEvents, err := serialization.ConvertCIFEventToAnthropicSSE(event, state)
 		if err != nil {
 			log.Error().Err(err).Str("request_id", requestID).Msg("Failed to convert CIF event to Anthropic SSE")
 			return false
 		}
 
-		for _, evt := range anthropicEvents {
-			eventType, _ := evt["type"].(string)
-			sseData, err := serialization.FormatAnthropicSSEData(eventType, evt)
+		for _, sseEvent := range sseEvents {
+			eventType, _ := sseEvent["type"].(string)
+			formatted, err := serialization.FormatAnthropicSSEData(eventType, sseEvent)
 			if err != nil {
-				continue
+				log.Error().Err(err).Str("request_id", requestID).Msg("Failed to format Anthropic SSE event")
+				return false
 			}
-			fmt.Fprint(w, sseData)
+			fmt.Fprint(w, formatted)
 		}
 
 		if flusher != nil {
@@ -287,7 +292,18 @@ func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 			return false
 		}
 
-		if _, isErr := event.(cif.CIFStreamError); isErr {
+		if errEvt, isErr := event.(cif.CIFStreamError); isErr {
+			log.Warn().
+				Str("request_id", requestID).
+				Str("api_shape", "anthropic").
+				Str("model_requested", originalModel).
+				Str("model_used", modelUsed).
+				Str("provider", providerID).
+				Str("error_type", errEvt.Error.Type).
+				Str("error_message", errEvt.Error.Message).
+				Bool("stream", true).
+				Int64("latency_ms", time.Since(startTime).Milliseconds()).
+				Msg("Anthropic stream ended with error")
 			return false
 		}
 
@@ -309,7 +325,6 @@ func handleCountTokens(c *gin.Context) {
 		return
 	}
 
-	// Parse the Anthropic request to count tokens
 	canonicalRequest, err := ingestion.ParseAnthropicMessages(payload)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -321,28 +336,41 @@ func handleCountTokens(c *gin.Context) {
 		return
 	}
 
-	// Estimate token count from messages
 	totalTokens := 0
+	if canonicalRequest.SystemPrompt != nil {
+		totalTokens += estimateStringTokens(*canonicalRequest.SystemPrompt)
+	}
 	for _, msg := range canonicalRequest.Messages {
 		switch m := msg.(type) {
 		case cif.CIFSystemMessage:
 			totalTokens += estimateStringTokens(m.Content)
 		case cif.CIFUserMessage:
 			for _, part := range m.Content {
-				if tp, ok := part.(cif.CIFTextPart); ok {
-					totalTokens += estimateStringTokens(tp.Text)
+				switch p := part.(type) {
+				case cif.CIFTextPart:
+					totalTokens += estimateStringTokens(p.Text)
+				case cif.CIFToolResultPart:
+					totalTokens += estimateStringTokens(p.Content)
 				}
 			}
 		case cif.CIFAssistantMessage:
 			for _, part := range m.Content {
-				if tp, ok := part.(cif.CIFTextPart); ok {
-					totalTokens += estimateStringTokens(tp.Text)
+				switch p := part.(type) {
+				case cif.CIFTextPart:
+					totalTokens += estimateStringTokens(p.Text)
+				case cif.CIFThinkingPart:
+					totalTokens += estimateStringTokens(p.Thinking)
+				case cif.CIFToolCallPart:
+					totalTokens += estimateStringTokens(p.ToolName)
+					if len(p.ToolArguments) > 0 {
+						argsBytes, _ := json.Marshal(p.ToolArguments)
+						totalTokens += estimateStringTokens(string(argsBytes))
+					}
 				}
 			}
 		}
 	}
 
-	// Add tool tokens if present
 	for _, tool := range canonicalRequest.Tools {
 		totalTokens += estimateStringTokens(tool.Name)
 		if tool.Description != nil {
@@ -359,9 +387,7 @@ func handleCountTokens(c *gin.Context) {
 	})
 }
 
-// estimateStringTokens provides a rough character-based token estimate
 func estimateStringTokens(s string) int {
-	// ~4 characters per token is a reasonable average for English
 	tokens := len(s) / 4
 	if tokens == 0 && len(s) > 0 {
 		tokens = 1

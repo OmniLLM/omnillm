@@ -44,6 +44,10 @@ const (
 	// CodingPlanBaseURLGlobal is the Coding Plan endpoint for the international region.
 	CodingPlanBaseURLGlobal = "https://coding-intl.dashscope.aliyuncs.com/v1"
 
+	// AnthropicBaseURL is the Alibaba Anthropic-compatible API base URL.
+	// Use this when api_format is set to "anthropic" in the provider config.
+	AnthropicBaseURL = "https://dashscope.aliyuncs.com/apps/anthropic/v1"
+
 	// RefreshSkew is how early we proactively refresh a token before it expires.
 	RefreshSkew = 5 * time.Minute
 )
