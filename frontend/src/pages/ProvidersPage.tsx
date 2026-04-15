@@ -4031,6 +4031,7 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
   const [collapsedGroups, setCollapsedGroups] = useState<
     Record<string, boolean>
   >({})
+  const [showActiveOnly, setShowActiveOnly] = useState(false)
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const load = useCallback(async () => {
@@ -4347,6 +4348,12 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
+          <button
+            className={showActiveOnly ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm"}
+            onClick={() => setShowActiveOnly((v) => !v)}
+          >
+            {showActiveOnly ? "All" : "Active only"}
+          </button>
           <PriorityModal
             providers={providers}
             priorities={priorities}
@@ -4368,7 +4375,15 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
       {/* Provider groups */}
       <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
         {Object.entries(completeGroups)
-          .sort(([, a], [, b]) => {
+          .map(([providerType, typeProviders]) => {
+            const visibleProviders = showActiveOnly
+              ? typeProviders.filter((p) => p.isActive)
+              : typeProviders
+            if (showActiveOnly && visibleProviders.length === 0) return null
+            return [providerType, visibleProviders] as [string, Provider[]]
+          })
+          .filter(Boolean)
+          .sort(([, a]: any, [, b]: any) => {
             if (a.length > 0 && b.length === 0) return -1
             if (a.length === 0 && b.length > 0) return 1
             return 0
