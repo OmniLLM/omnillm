@@ -10,6 +10,7 @@ import (
 )
 
 const toolLoopLogValueLimit = 400
+const anthropicAgentToolName = "Agent"
 
 type toolLoopResultLogEntry struct {
 	MessageIndex  int
@@ -25,6 +26,13 @@ type toolLoopCallLogEntry struct {
 	ToolCallID       string
 	ToolName         string
 	ArgumentsPreview string
+}
+
+type agentToolTranscriptGap struct {
+	AssistantMessageIndex int
+	NextMessageIndex      int
+	NextMessageRole       string
+	ToolCallID            string
 }
 
 type toolLoopCallTracker struct {
@@ -164,6 +172,117 @@ func extractToolCallLogEntriesFromResponse(response *cif.CanonicalResponse) []to
 	return entries
 }
 
+func hasToolNamed(request *cif.CanonicalRequest, toolName string) bool {
+	if request == nil {
+		return false
+	}
+
+	for _, tool := range request.Tools {
+		if tool.Name == toolName {
+			return true
+		}
+	}
+
+	return false
+}
+
+func filterToolResultEntriesByName(entries []toolLoopResultLogEntry, toolName string) []toolLoopResultLogEntry {
+	filtered := make([]toolLoopResultLogEntry, 0, len(entries))
+	for _, entry := range entries {
+		if entry.ToolName == toolName {
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered
+}
+
+func filterToolCallEntriesByName(entries []toolLoopCallLogEntry, toolName string) []toolLoopCallLogEntry {
+	filtered := make([]toolLoopCallLogEntry, 0, len(entries))
+	for _, entry := range entries {
+		if entry.ToolName == toolName {
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered
+}
+
+func extractAgentToolTranscriptGaps(request *cif.CanonicalRequest) []agentToolTranscriptGap {
+	if request == nil {
+		return nil
+	}
+
+	var gaps []agentToolTranscriptGap
+	for messageIndex, message := range request.Messages {
+		assistantMessage, ok := message.(cif.CIFAssistantMessage)
+		if !ok {
+			continue
+		}
+
+		agentCallIDs := make(map[string]struct{})
+		for _, part := range assistantMessage.Content {
+			toolCall, ok := part.(cif.CIFToolCallPart)
+			if !ok || toolCall.ToolName != anthropicAgentToolName {
+				continue
+			}
+			agentCallIDs[toolCall.ToolCallID] = struct{}{}
+		}
+		if len(agentCallIDs) == 0 {
+			continue
+		}
+
+		nextMessageIndex := messageIndex + 1
+		if nextMessageIndex >= len(request.Messages) {
+			for toolCallID := range agentCallIDs {
+				gaps = append(gaps, agentToolTranscriptGap{
+					AssistantMessageIndex: messageIndex,
+					NextMessageIndex:      -1,
+					ToolCallID:            toolCallID,
+				})
+			}
+			continue
+		}
+
+		nextMessage := request.Messages[nextMessageIndex]
+		userMessage, ok := nextMessage.(cif.CIFUserMessage)
+		if !ok {
+			for toolCallID := range agentCallIDs {
+				gaps = append(gaps, agentToolTranscriptGap{
+					AssistantMessageIndex: messageIndex,
+					NextMessageIndex:      nextMessageIndex,
+					NextMessageRole:       nextMessage.GetRole(),
+					ToolCallID:            toolCallID,
+				})
+			}
+			continue
+		}
+
+		matchedCallIDs := make(map[string]struct{})
+		for _, part := range userMessage.Content {
+			toolResult, ok := part.(cif.CIFToolResultPart)
+			if !ok {
+				continue
+			}
+			if _, exists := agentCallIDs[toolResult.ToolCallID]; exists {
+				matchedCallIDs[toolResult.ToolCallID] = struct{}{}
+			}
+		}
+
+		for toolCallID := range agentCallIDs {
+			if _, matched := matchedCallIDs[toolCallID]; matched {
+				continue
+			}
+			gaps = append(gaps, agentToolTranscriptGap{
+				AssistantMessageIndex: messageIndex,
+				NextMessageIndex:      nextMessageIndex,
+				NextMessageRole:       userMessage.GetRole(),
+				ToolCallID:            toolCallID,
+			})
+		}
+	}
+
+	return gaps
+}
+
 func logAnthropicToolLoopRequest(requestID string, request *cif.CanonicalRequest) {
 	for _, entry := range extractLatestToolResultLogEntries(request) {
 		event := log.Info().
@@ -180,6 +299,8 @@ func logAnthropicToolLoopRequest(requestID string, request *cif.CanonicalRequest
 		}
 		event.Msg("TOOL LOOP inbound tool_result")
 	}
+
+	logAnthropicAgentGuardrailRequest(requestID, request)
 }
 
 func logAnthropicToolLoopResponse(requestID string, originalModel string, modelUsed string, providerID string, stream bool, entries []toolLoopCallLogEntry) {
@@ -196,6 +317,65 @@ func logAnthropicToolLoopResponse(requestID string, originalModel string, modelU
 			Str("tool_name", entry.ToolName).
 			Str("tool_arguments", entry.ArgumentsPreview).
 			Msg("TOOL LOOP outbound tool_call")
+	}
+
+	logAnthropicAgentGuardrailResponse(requestID, originalModel, modelUsed, providerID, stream, entries)
+}
+
+func logAnthropicAgentGuardrailRequest(requestID string, request *cif.CanonicalRequest) {
+	if request == nil {
+		return
+	}
+
+	hasAgentTool := hasToolNamed(request, anthropicAgentToolName)
+	agentResults := filterToolResultEntriesByName(extractLatestToolResultLogEntries(request), anthropicAgentToolName)
+	agentGaps := extractAgentToolTranscriptGaps(request)
+	if !hasAgentTool && len(agentResults) == 0 && len(agentGaps) == 0 {
+		return
+	}
+
+	log.Info().
+		Str("request_id", requestID).
+		Str("api_shape", "anthropic").
+		Str("model_requested", request.Model).
+		Bool("agent_tool_available", hasAgentTool).
+		Int("latest_agent_tool_results", len(agentResults)).
+		Int("agent_tool_pairing_gaps", len(agentGaps)).
+		Msg("AGENT TOOL inbound guardrail")
+
+	for _, gap := range agentGaps {
+		event := log.Warn().
+			Str("request_id", requestID).
+			Str("api_shape", "anthropic").
+			Str("model_requested", request.Model).
+			Int("assistant_message_index", gap.AssistantMessageIndex).
+			Str("tool_call_id", gap.ToolCallID).
+			Bool("likely_client_tool_result_drop", true)
+		if gap.NextMessageIndex >= 0 {
+			event = event.
+				Int("next_message_index", gap.NextMessageIndex).
+				Str("next_message_role", gap.NextMessageRole)
+		} else {
+			event = event.Str("next_message_role", "missing")
+		}
+		event.Msg("AGENT TOOL inbound transcript is missing the immediate tool_result for a prior Agent tool_call")
+	}
+}
+
+func logAnthropicAgentGuardrailResponse(requestID string, originalModel string, modelUsed string, providerID string, stream bool, entries []toolLoopCallLogEntry) {
+	for _, entry := range filterToolCallEntriesByName(entries, anthropicAgentToolName) {
+		log.Info().
+			Str("request_id", requestID).
+			Str("api_shape", "anthropic").
+			Str("model_requested", originalModel).
+			Str("model_used", modelUsed).
+			Str("provider", providerID).
+			Bool("stream", stream).
+			Str("tool_call_id", entry.ToolCallID).
+			Str("tool_name", entry.ToolName).
+			Bool("expected_client_tool_result", true).
+			Str("failure_boundary", "local_claude_client_after_outbound_tool_call").
+			Msg("AGENT TOOL outbound tool_call requires a local client tool_result on the next Anthropic turn")
 	}
 }
 
