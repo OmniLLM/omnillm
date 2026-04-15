@@ -1856,14 +1856,6 @@ function ModelsMenuItem({
     <>
       <button
         className="btn btn-ghost btn-sm"
-        style={{
-          width: "100%",
-          justifyContent: "flex-start",
-          border: "none",
-          borderRadius: "var(--radius-sm)",
-          padding: "6px 10px",
-          height: 32,
-        }}
         onClick={handleOpen}
       >
         Models
@@ -2176,14 +2168,6 @@ function UsageMenuItem({ provider }: { provider: Provider }) {
     <>
       <button
         className="btn btn-ghost btn-sm"
-        style={{
-          width: "100%",
-          justifyContent: "flex-start",
-          border: "none",
-          borderRadius: "var(--radius-sm)",
-          padding: "6px 10px",
-          height: 32,
-        }}
         onClick={handleOpen}
       >
         Usage
@@ -2494,7 +2478,6 @@ function ProviderCard({
   multiProvider: boolean
 }) {
   const [showAuthForm, setShowAuthForm] = useState(false)
-  const [showActionsMenu, setShowActionsMenu] = useState(false)
   const accent = PROVIDER_ACCENT[provider.type] ?? "#0a84ff"
 
   const handleAuthSubmit = async (body: Record<string, string>) => {
@@ -2703,64 +2686,19 @@ function ProviderCard({
             </button>
           }
 
-          {/* Kebab actions menu */}
-          <div style={{ position: "relative" }}>
-            <button
-              className="btn btn-ghost btn-sm"
-              style={{ minWidth: 28, padding: "4px 6px" }}
-              disabled={isFlowRunning}
-              onClick={() => setShowActionsMenu((v) => !v)}
-              title="More actions"
-            >
-              ⋯
-            </button>
-            {showActionsMenu && (
-              <>
-                <div
-                  style={{ position: "fixed", inset: 0, zIndex: 50 }}
-                  onClick={() => setShowActionsMenu(false)}
-                />
-                <div
-                  style={{
-                    position: "absolute",
-                    bottom: "calc(100% + 4px)",
-                    right: 0,
-                    zIndex: 60,
-                    background: "var(--color-bg-elevated)",
-                    border: "1px solid var(--color-separator)",
-                    borderRadius: "var(--radius-md)",
-                    boxShadow: "var(--shadow-modal)",
-                    padding: "4px",
-                    minWidth: 160,
-                    animation: "slide-up 0.12s var(--ease) both",
-                  }}
-                >
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    style={{
-                      width: "100%",
-                      justifyContent: "flex-start",
-                      border: "none",
-                      borderRadius: "var(--radius-sm)",
-                      padding: "6px 10px",
-                      height: 32,
-                    }}
-                    onClick={() => {
-                      setShowAuthForm((v) => !v)
-                      setShowActionsMenu(false)
-                    }}
-                  >
-                    {showAuthForm ? "Close" : "Authorize"}
-                  </button>
-                  <ModelsMenuItem
-                    provider={provider}
-                    onModelsChanged={onModelsChanged}
-                  />
-                  <UsageMenuItem provider={provider} />
-                </div>
-              </>
-            )}
-          </div>
+          {/* Inline action buttons */}
+          <button
+            className="btn btn-ghost btn-sm"
+            disabled={isFlowRunning}
+            onClick={() => setShowAuthForm((v) => !v)}
+          >
+            {showAuthForm ? "Close" : "Authorize"}
+          </button>
+          <ModelsMenuItem
+            provider={provider}
+            onModelsChanged={onModelsChanged}
+          />
+          <UsageMenuItem provider={provider} />
 
           <div style={{ flex: 1 }} />
           <button
@@ -3897,6 +3835,116 @@ function AddProviderModal({
   )
 }
 
+// ─── Collapsible Group Header ─────────────────────────────────────────────────
+
+function GroupHeader({
+  providerType,
+  typeProviders,
+  isCollapsed,
+  accent,
+  onToggle,
+}: {
+  providerType: string
+  typeProviders: Provider[]
+  isCollapsed: boolean
+  accent: string
+  onToggle: () => void
+}) {
+  const [hovered, setHovered] = useState(false)
+  const clickable = typeProviders.length > 0
+
+  return (
+    <div
+      onClick={clickable ? onToggle : undefined}
+      onMouseEnter={() => clickable && setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        marginBottom: isCollapsed ? 0 : 12,
+        cursor: clickable ? "pointer" : "default",
+        userSelect: "none",
+        ...(isCollapsed ? {
+          background: hovered ?
+            "color-mix(in srgb, var(--color-bg-elevated) 90%, var(--color-text))" :
+            "var(--color-bg-elevated)",
+          borderRadius: "var(--radius-lg)",
+          border: `1px solid ${hovered ? `${accent}40` : "var(--color-separator)"}`,
+          boxShadow: hovered ?
+            "var(--shadow-card), 0 0 0 1px rgba(48,209,88,0.15)" :
+            "var(--shadow-card)",
+          padding: "14px 18px",
+          transition: "all 0.2s var(--ease)",
+        } : {}),
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: "var(--radius-sm)",
+            background: `${accent}18`,
+            border: `1px solid ${accent}28`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: accent,
+          }}
+        >
+          {PROVIDER_ICONS[providerType] ?? (
+            <span style={{ fontSize: 14 }}>◌</span>
+          )}
+        </div>
+        <div>
+          <span
+            style={{
+              fontFamily: "var(--font-display)",
+              fontWeight: 600,
+              fontSize: 15,
+              color: "var(--color-text)",
+              letterSpacing: "-0.01em",
+            }}
+          >
+            {TYPE_NAMES[providerType] ?? providerType}
+          </span>
+          {typeProviders.length > 0 && (
+            <span
+              style={{
+                marginLeft: 8,
+                fontSize: 12,
+                color: "var(--color-text-tertiary)",
+                fontWeight: 400,
+              }}
+            >
+              {typeProviders.length}{" "}
+              {typeProviders.length === 1 ? "account" : "accounts"}
+            </span>
+          )}
+        </div>
+      </div>
+      {isCollapsed && (
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 16 16"
+          fill="none"
+          style={{ color: "var(--color-text-tertiary)" }}
+        >
+          <path
+            d="M6 4l4 4-4 4"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      )}
+    </div>
+  )
+}
+
 // ─── Providers Page ───────────────────────────────────────────────────────────
 
 export function ProvidersPage({ showToast }: ProvidersPageProps) {
@@ -4266,73 +4314,18 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
             return (
               <div key={providerType}>
                 {/* Group header */}
-                <div
-                  onClick={
-                    typeProviders.length > 0 ?
-                      () =>
-                        setCollapsedGroups((prev) => ({
-                          ...prev,
-                          [providerType]: !prev[providerType],
-                        }))
-                    : undefined
+                <GroupHeader
+                  providerType={providerType}
+                  typeProviders={typeProviders}
+                  isCollapsed={isCollapsed}
+                  accent={accent}
+                  onToggle={() =>
+                    setCollapsedGroups((prev) => ({
+                      ...prev,
+                      [providerType]: !prev[providerType],
+                    }))
                   }
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    marginBottom: 12,
-                    cursor: typeProviders.length > 0 ? "pointer" : "default",
-                    userSelect: "none",
-                  }}
-                >
-                  <div
-                    style={{ display: "flex", alignItems: "center", gap: 10 }}
-                  >
-                    <div
-                      style={{
-                        width: 28,
-                        height: 28,
-                        borderRadius: "var(--radius-sm)",
-                        background: `${accent}18`,
-                        border: `1px solid ${accent}28`,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        color: accent,
-                      }}
-                    >
-                      {PROVIDER_ICONS[providerType] ?? (
-                        <span style={{ fontSize: 14 }}>◌</span>
-                      )}
-                    </div>
-                    <div>
-                      <span
-                        style={{
-                          fontFamily: "var(--font-display)",
-                          fontWeight: 600,
-                          fontSize: 15,
-                          color: "var(--color-text)",
-                          letterSpacing: "-0.01em",
-                        }}
-                      >
-                        {TYPE_NAMES[providerType] ?? providerType}
-                      </span>
-                      {typeProviders.length > 0 && (
-                        <span
-                          style={{
-                            marginLeft: 8,
-                            fontSize: 12,
-                            color: "var(--color-text-tertiary)",
-                            fontWeight: 400,
-                          }}
-                        >
-                          {typeProviders.length}{" "}
-                          {typeProviders.length === 1 ? "account" : "accounts"}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                />
 
                 {!isCollapsed && (
                   <div
