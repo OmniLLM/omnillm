@@ -253,6 +253,13 @@ func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 	}()
 
 	state := serialization.CreateAnthropicStreamState()
+	// Suppress thinking blocks unless the client explicitly opted in to the
+	// interleaved-thinking beta.  Non-opted clients (e.g. standard Claude Code)
+	// cannot parse thinking blocks and silently stop processing the stream,
+	// causing tool_use blocks that follow a thinking block to be ignored.
+	if betaHeader := c.GetHeader("anthropic-beta"); !strings.Contains(betaHeader, "interleaved-thinking") {
+		state.SuppressThinkingBlocks = true
+	}
 	flusher, _ := c.Writer.(http.Flusher)
 	modelUsed := canonicalRequest.Model
 	toolCallTracker := newToolLoopCallTracker()

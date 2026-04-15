@@ -266,6 +266,69 @@ data: [DONE]
 	}
 }
 
+// TestParseOpenAISSE_ToolCallSingleChunkWithArguments verifies that when a provider
+// (e.g. GLM/Zhipu) sends the tool call id, name, and complete arguments all in a
+// single SSE chunk (rather than streaming arguments separately), the arguments are
+// not lost. This is the root cause of the "missing required parameter" errors seen
+// when glm-5.1 via the Alibaba provider calls tools like Agent or Glob.
+func TestParseOpenAISSE_ToolCallSingleChunkWithArguments(t *testing.T) {
+	stream := `data: {"id":"r8","model":"glm-5.1","choices":[{"index":0,"delta":{"role":"assistant","content":null},"finish_reason":null}]}
+
+data: {"id":"r8","model":"glm-5.1","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"tool-abc123","type":"function","function":{"name":"Glob","arguments":"{\"pattern\":\"**/*.go\"}"}}]},"finish_reason":null}]}
+
+data: {"id":"r8","model":"glm-5.1","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+
+data: [DONE]
+`
+	events := collectSSE(sseBody(stream))
+
+	var toolCallStart *cif.CIFContentDelta
+	var argDeltas []string
+	for _, e := range events {
+		delta, ok := e.(cif.CIFContentDelta)
+		if !ok {
+			continue
+		}
+		if _, isToolArgs := delta.Delta.(cif.ToolArgumentsDelta); isToolArgs {
+			if delta.ContentBlock != nil {
+				toolCallStart = &delta
+			} else {
+				argDeltas = append(argDeltas, delta.Delta.(cif.ToolArgumentsDelta).PartialJSON)
+			}
+		}
+	}
+
+	if toolCallStart == nil {
+		t.Fatal("expected a tool call block-start delta, got none")
+	}
+	tc, ok := toolCallStart.ContentBlock.(cif.CIFToolCallPart)
+	if !ok {
+		t.Fatalf("expected CIFToolCallPart ContentBlock, got %T", toolCallStart.ContentBlock)
+	}
+	if tc.ToolName != "Glob" {
+		t.Errorf("expected ToolName=Glob, got %q", tc.ToolName)
+	}
+	if tc.ToolCallID != "tool-abc123" {
+		t.Errorf("expected ToolCallID=tool-abc123, got %q", tc.ToolCallID)
+	}
+
+	combined := strings.Join(argDeltas, "")
+	if combined != `{"pattern":"**/*.go"}` {
+		t.Errorf("expected arguments to be preserved, got %q", combined)
+	}
+
+	// Verify stop reason is correctly set to ToolUse
+	var streamEnd *cif.CIFStreamEnd
+	for _, e := range events {
+		if end, ok := e.(cif.CIFStreamEnd); ok {
+			streamEnd = &end
+		}
+	}
+	if streamEnd == nil || streamEnd.StopReason != cif.StopReasonToolUse {
+		t.Errorf("expected StopReasonToolUse, got %v", streamEnd)
+	}
+}
+
 // ─── CIFMessagesToOpenAI: CIFThinkingPart ────────────────────────────────────
 
 // TestCIFMessagesToOpenAIThinkingPartForwardsAsReasoningContent verifies that a

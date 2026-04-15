@@ -168,6 +168,132 @@ func TestConvertCIFEventToAnthropicSSE_ToolUseLifecycle(t *testing.T) {
 	}
 }
 
+// TestConvertCIFEventToAnthropicSSE_SuppressThinkingBlocks verifies that when
+// SuppressThinkingBlocks is true, thinking blocks are silently dropped from the
+// output stream and tool_use blocks that follow are still emitted correctly.
+// This is the fix for qwen3.6-plus (and other reasoning models) emitting
+// reasoning_content alongside tool calls: without suppression, Claude Code's
+// Anthropic SDK silently stops processing the stream and never executes the tool.
+func TestConvertCIFEventToAnthropicSSE_SuppressThinkingBlocks(t *testing.T) {
+	state := CreateAnthropicStreamState()
+	state.SuppressThinkingBlocks = true
+
+	feed := func(event cif.CIFStreamEvent) []map[string]interface{} {
+		evts, err := ConvertCIFEventToAnthropicSSE(event, state)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		return evts
+	}
+
+	var allEvents []map[string]interface{}
+
+	// stream_start
+	allEvents = append(allEvents, feed(cif.CIFStreamStart{ID: "msg_1", Model: "qwen3.6-plus"})...)
+
+	// thinking block start (index -1, provider sentinel)
+	allEvents = append(allEvents, feed(cif.CIFContentDelta{
+		Index:        -1,
+		ContentBlock: cif.CIFThinkingPart{Type: "thinking", Thinking: ""},
+		Delta:        cif.ThinkingDelta{Type: "thinking_delta", Thinking: "Let me explore..."},
+	})...)
+
+	// thinking deltas (same index, no ContentBlock)
+	allEvents = append(allEvents, feed(cif.CIFContentDelta{
+		Index: -1,
+		Delta: cif.ThinkingDelta{Type: "thinking_delta", Thinking: " deeper."},
+	})...)
+
+	// tool_use block (index 1)
+	allEvents = append(allEvents, feed(cif.CIFContentDelta{
+		Index: 1,
+		ContentBlock: cif.CIFToolCallPart{
+			Type:       "tool_call",
+			ToolCallID: "call_agent_1",
+			ToolName:   "Agent",
+		},
+		Delta: cif.ToolArgumentsDelta{Type: "tool_arguments_delta", PartialJSON: `{"description":"explore","prompt":"..."}`},
+	})...)
+
+	// stream end
+	allEvents = append(allEvents, feed(cif.CIFStreamEnd{StopReason: cif.StopReasonToolUse})...)
+
+	// Verify: no thinking-related events in output
+	for _, evt := range allEvents {
+		if cb, ok := evt["content_block"].(map[string]interface{}); ok {
+			if cb["type"] == "thinking" {
+				t.Errorf("expected thinking block to be suppressed, got event: %#v", evt)
+			}
+		}
+		if delta, ok := evt["delta"].(map[string]interface{}); ok {
+			if delta["type"] == "thinking_delta" {
+				t.Errorf("expected thinking delta to be suppressed, got event: %#v", evt)
+			}
+		}
+	}
+
+	// Verify: tool_use block is present
+	var foundToolUse bool
+	for _, evt := range allEvents {
+		if cb, ok := evt["content_block"].(map[string]interface{}); ok {
+			if cb["type"] == "tool_use" && cb["id"] == "call_agent_1" {
+				foundToolUse = true
+			}
+		}
+	}
+	if !foundToolUse {
+		t.Errorf("expected tool_use block to be present after suppressed thinking blocks; events: %#v", allEvents)
+	}
+
+	// Verify tool_use is at index 0 (first non-suppressed block)
+	for _, evt := range allEvents {
+		if evt["type"] == "content_block_start" {
+			if cb, ok := evt["content_block"].(map[string]interface{}); ok && cb["type"] == "tool_use" {
+				if evt["index"] != 0 {
+					t.Errorf("expected suppressed thinking to not consume a block index; tool_use got index %v, want 0", evt["index"])
+				}
+			}
+		}
+	}
+}
+
+// TestConvertCIFEventToAnthropicSSE_ThinkingBlocksPassedThroughWhenNotSuppressed
+// verifies that thinking blocks ARE forwarded when SuppressThinkingBlocks is false
+// (the default) — i.e. for clients that opted in to interleaved-thinking.
+func TestConvertCIFEventToAnthropicSSE_ThinkingBlocksPassedThroughWhenNotSuppressed(t *testing.T) {
+	state := CreateAnthropicStreamState()
+	// SuppressThinkingBlocks is false by default
+
+	feed := func(event cif.CIFStreamEvent) []map[string]interface{} {
+		evts, err := ConvertCIFEventToAnthropicSSE(event, state)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		return evts
+	}
+
+	var allEvents []map[string]interface{}
+	allEvents = append(allEvents, feed(cif.CIFStreamStart{ID: "msg_2", Model: "qwen3.6-plus"})...)
+	allEvents = append(allEvents, feed(cif.CIFContentDelta{
+		Index:        -1,
+		ContentBlock: cif.CIFThinkingPart{Type: "thinking", Thinking: ""},
+		Delta:        cif.ThinkingDelta{Type: "thinking_delta", Thinking: "thinking text"},
+	})...)
+	allEvents = append(allEvents, feed(cif.CIFStreamEnd{StopReason: cif.StopReasonEndTurn})...)
+
+	var foundThinking bool
+	for _, evt := range allEvents {
+		if cb, ok := evt["content_block"].(map[string]interface{}); ok {
+			if cb["type"] == "thinking" {
+				foundThinking = true
+			}
+		}
+	}
+	if !foundThinking {
+		t.Error("expected thinking block to be present when SuppressThinkingBlocks=false")
+	}
+}
+
 func TestConvertCIFEventToResponsesSSE_TextLifecycle(t *testing.T) {
 	state := CreateResponsesStreamState()
 

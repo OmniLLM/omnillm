@@ -321,6 +321,18 @@ func ParseOpenAISSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 						},
 						Delta: cif.ToolArgumentsDelta{Type: "tool_arguments_delta", PartialJSON: ""},
 					}
+					// Some providers (e.g. GLM) send the complete arguments in the
+					// same chunk as the tool call id rather than in a separate delta.
+					// Emit an additional arguments delta so the arguments are not lost.
+					if funcMap != nil {
+						if args, ok := funcMap["arguments"].(string); ok && args != "" {
+							eventCh <- cif.CIFContentDelta{
+								Type:  "content_delta",
+								Index: contentBlockIndex,
+								Delta: cif.ToolArgumentsDelta{Type: "tool_arguments_delta", PartialJSON: args},
+							}
+						}
+					}
 				} else if funcMap, ok := tcMap["function"].(map[string]interface{}); ok {
 					if args, ok := funcMap["arguments"].(string); ok && args != "" {
 						eventCh <- cif.CIFContentDelta{

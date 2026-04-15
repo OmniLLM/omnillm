@@ -17,6 +17,15 @@ type AnthropicStreamState struct {
 	CurrentBlockProviderIdx  *int
 	CurrentBlockAnthropicIdx *int
 	CurrentBlockType         *string
+	// SuppressThinkingBlocks drops thinking content blocks from the stream.
+	// This must be set when the client did not opt in to the
+	// interleaved-thinking beta, otherwise the Anthropic SDK fails to parse
+	// the response and silently stops processing (e.g. never executing a
+	// tool_use block that follows a thinking block).
+	SuppressThinkingBlocks bool
+	// SuppressedProviderIdx is the provider-side index of a thinking block
+	// currently being suppressed (set while SuppressThinkingBlocks is true).
+	SuppressedProviderIdx *int
 }
 
 func CreateAnthropicStreamState() *AnthropicStreamState {
@@ -55,6 +64,29 @@ func ConvertCIFEventToAnthropicSSE(event cif.CIFStreamEvent, state *AnthropicStr
 		events = append(events, messageStart)
 
 	case cif.CIFContentDelta:
+		// Drop thinking blocks entirely when the client did not opt in to the
+		// interleaved-thinking beta.  Forwarding unexpected thinking blocks to the
+		// Anthropic SDK causes it to silently stop processing the stream, which
+		// means any tool_use block that follows never gets executed.
+		if state.SuppressThinkingBlocks {
+			if e.ContentBlock != nil {
+				if _, isThinking := e.ContentBlock.(cif.CIFThinkingPart); isThinking {
+					// Mark this provider index as a suppressed thinking block so
+					// that subsequent deltas for the same block are also dropped.
+					provIdx := e.Index
+					state.SuppressedProviderIdx = &provIdx
+					return events, nil
+				}
+			}
+			if state.SuppressedProviderIdx != nil && *state.SuppressedProviderIdx == e.Index {
+				if _, isThinkingDelta := e.Delta.(cif.ThinkingDelta); isThinkingDelta {
+					return events, nil
+				}
+				// Non-thinking delta for the suppressed index — clear suppression.
+				state.SuppressedProviderIdx = nil
+			}
+		}
+
 		// Handle new content blocks
 		if e.ContentBlock != nil {
 			blockType := getBlockType(e.ContentBlock)
