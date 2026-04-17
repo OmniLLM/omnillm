@@ -18,6 +18,17 @@ import (
 
 // ─── CIF → OpenAI message conversion ─────────────────────────────────────────
 
+// nonEmptyStringPtr returns a pointer to s if s contains non-whitespace text,
+// otherwise nil. This avoids repeating the "trim + take address" pattern
+// across provider parsers.
+func nonEmptyStringPtr(s string) *string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
 // CIFMessagesToOpenAI converts CIF messages to the OpenAI chat completions format.
 func CIFMessagesToOpenAI(messages []cif.CIFMessage) []map[string]interface{} {
 	var result []map[string]interface{}
@@ -82,9 +93,8 @@ func CIFMessagesToOpenAI(messages []cif.CIFMessage) []map[string]interface{} {
 					// from a prior turn is forwarded as reasoning_content so the model
 					// can continue reasoning coherently in multi-turn conversations.
 					reasoningContent = p.Thinking
-					if p.Signature != nil && strings.TrimSpace(*p.Signature) != "" {
-						sig := *p.Signature
-						reasoningSignature = &sig
+					if p.Signature != nil {
+						reasoningSignature = nonEmptyStringPtr(*p.Signature)
 					}
 				case cif.CIFToolCallPart:
 					args, _ := json.Marshal(p.ToolArguments)
@@ -280,9 +290,8 @@ func ParseOpenAISSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 		// Handle Qwen3 reasoning_content (thinking) deltas.
 		if reasoning, ok := delta["reasoning_content"].(string); ok && reasoning != "" {
 			var signature *string
-			if rawSig, ok := delta["reasoning_signature"].(string); ok && strings.TrimSpace(rawSig) != "" {
-				sig := rawSig
-				signature = &sig
+			if rawSig, ok := delta["reasoning_signature"].(string); ok {
+				signature = nonEmptyStringPtr(rawSig)
 			}
 			if !thinkingBlockOpen {
 				eventCh <- cif.CIFContentDelta{
