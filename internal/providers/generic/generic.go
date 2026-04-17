@@ -274,6 +274,14 @@ func (p *GenericProvider) GetConfig() map[string]interface{} {
 	return p.config
 }
 
+func (p *GenericProvider) AlibabaAPIMode() string {
+	if p.id != string(types.ProviderAlibaba) {
+		return ""
+	}
+	p.loadConfigFromDB()
+	return alibabapkg.AlibabaAPIMode(p.config)
+}
+
 // ─── Config management ────────────────────────────────────────────────────────
 
 func (p *GenericProvider) GetBaseURL() string {
@@ -481,7 +489,15 @@ func (a *GenericAdapter) Execute(request *cif.CanonicalRequest) (*cif.CanonicalR
 	a.provider.loadConfigFromDB()
 	switch a.provider.id {
 	case "alibaba":
-		if alibabapkg.IsAnthropicMode(a.provider.config) {
+		mode := alibabapkg.AlibabaAPIMode(a.provider.config)
+		log.Debug().
+			Str("provider", a.provider.instanceID).
+			Str("provider_type", a.provider.id).
+			Str("resolved_alibaba_mode", mode).
+			Str("request_model", request.Model).
+			Bool("stream", false).
+			Msg("Resolved Alibaba API mode in adapter")
+		if mode == alibabapkg.AlibabaAPIModeAnthropic {
 			return a.executeAnthropic(request)
 		}
 		if !alibabapkg.IsChatCompletionsModel(a.RemapModel(request.Model)) {
@@ -512,7 +528,15 @@ func (a *GenericAdapter) ExecuteStream(request *cif.CanonicalRequest) (<-chan ci
 	a.provider.loadConfigFromDB()
 	switch a.provider.id {
 	case "alibaba":
-		if alibabapkg.IsAnthropicMode(a.provider.config) {
+		mode := alibabapkg.AlibabaAPIMode(a.provider.config)
+		log.Debug().
+			Str("provider", a.provider.instanceID).
+			Str("provider_type", a.provider.id).
+			Str("resolved_alibaba_mode", mode).
+			Str("request_model", request.Model).
+			Bool("stream", true).
+			Msg("Resolved Alibaba API mode in adapter")
+		if mode == alibabapkg.AlibabaAPIModeAnthropic {
 			return a.streamAnthropic(request)
 		}
 		if !alibabapkg.IsChatCompletionsModel(a.RemapModel(request.Model)) {
@@ -810,7 +834,7 @@ func (p *GenericProvider) getAlibabaModelsHardcoded() *types.ModelsResponse {
 }
 
 func (p *GenericProvider) fetchAlibabaModelsFromAPI() (*types.ModelsResponse, error) {
-	return alibabapkg.FetchModelsFromAPI(p.instanceID, p.token, p.baseURL)
+	return alibabapkg.FetchModelsFromAPI(p.instanceID, p.token, p.baseURL, p.config)
 }
 
 func isAlibabaChatCompletionsModel(modelID string) bool {

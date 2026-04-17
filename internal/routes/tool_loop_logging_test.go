@@ -7,6 +7,72 @@ import (
 	"omnimodel/internal/cif"
 )
 
+func TestExtractLatestRawAnthropicToolResultEntriesUsesMostRecentUserToolResults(t *testing.T) {
+	isError := true
+	payload := map[string]interface{}{
+		"messages": []interface{}{
+			map[string]interface{}{
+				"role": "user",
+				"content": []interface{}{
+					map[string]interface{}{
+						"type":        "tool_result",
+						"tool_use_id": "older_call",
+						"name":        "Read",
+						"content":     "old result",
+					},
+				},
+			},
+			map[string]interface{}{
+				"role": "assistant",
+				"content": []interface{}{
+					map[string]interface{}{
+						"type": "tool_use",
+						"id":   "call_fs",
+						"name": "Read",
+					},
+				},
+			},
+			map[string]interface{}{
+				"role": "user",
+				"content": []interface{}{
+					map[string]interface{}{"type": "text", "text": "tool output follows"},
+					map[string]interface{}{
+						"type":        "tool_result",
+						"tool_use_id": "call_fs",
+						"name":        "Read",
+						"content":     "[Tool result missing due to internal error]",
+						"is_error":    isError,
+					},
+				},
+			},
+		},
+	}
+
+	entries := extractLatestRawAnthropicToolResultEntries(payload)
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 latest raw tool result entry, got %d", len(entries))
+	}
+	entry := entries[0]
+	if entry.MessageIndex != 2 {
+		t.Fatalf("expected latest message index 2, got %d", entry.MessageIndex)
+	}
+	if entry.ItemIndex != 1 {
+		t.Fatalf("expected latest item index 1, got %d", entry.ItemIndex)
+	}
+	if entry.ToolCallID != "call_fs" {
+		t.Fatalf("expected tool call id call_fs, got %q", entry.ToolCallID)
+	}
+	if entry.ToolName != "Read" {
+		t.Fatalf("expected tool name Read, got %q", entry.ToolName)
+	}
+	if entry.IsError == nil || !*entry.IsError {
+		t.Fatalf("expected is_error=true, got %#v", entry.IsError)
+	}
+	if entry.ResultPreview != "[Tool result missing due to internal error]" {
+		t.Fatalf("unexpected raw result preview: %q", entry.ResultPreview)
+	}
+}
+
 func TestExtractLatestToolResultLogEntriesUsesMostRecentUserToolResults(t *testing.T) {
 	isError := true
 	longResult := strings.Repeat("result-", 80)
@@ -231,6 +297,24 @@ func TestExtractAgentToolTranscriptGapsIgnoresSatisfiedPair(t *testing.T) {
 
 	if gaps := extractAgentToolTranscriptGaps(request); len(gaps) != 0 {
 		t.Fatalf("expected no Agent pairing gaps, got %d", len(gaps))
+	}
+}
+
+func TestFilterErroredToolResultEntriesReturnsOnlyErroredEntries(t *testing.T) {
+	isError := true
+	isNotError := false
+	entries := []toolLoopResultLogEntry{
+		{ToolCallID: "call_err", ToolName: anthropicAgentToolName, IsError: &isError},
+		{ToolCallID: "call_ok", ToolName: anthropicAgentToolName, IsError: &isNotError},
+		{ToolCallID: "call_nil", ToolName: anthropicAgentToolName, IsError: nil},
+	}
+
+	filtered := filterErroredToolResultEntries(entries)
+	if len(filtered) != 1 {
+		t.Fatalf("expected 1 errored tool result, got %d", len(filtered))
+	}
+	if filtered[0].ToolCallID != "call_err" {
+		t.Fatalf("expected errored tool call id call_err, got %q", filtered[0].ToolCallID)
 	}
 }
 

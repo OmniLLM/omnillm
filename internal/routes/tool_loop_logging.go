@@ -21,6 +21,15 @@ type toolLoopResultLogEntry struct {
 	IsError       *bool
 }
 
+type toolLoopRawResultLogEntry struct {
+	MessageIndex  int
+	ItemIndex     int
+	ToolCallID    string
+	ToolName      string
+	ResultPreview string
+	IsError       *bool
+}
+
 type toolLoopCallLogEntry struct {
 	BlockIndex       int
 	ToolCallID       string
@@ -117,6 +126,92 @@ func (t *toolLoopCallTracker) ensure(index int) *toolLoopCallState {
 	return state
 }
 
+func extractLatestRawAnthropicToolResultEntries(payload map[string]interface{}) []toolLoopRawResultLogEntry {
+	messages, ok := payload["messages"].([]interface{})
+	if !ok {
+		return nil
+	}
+
+	for messageIndex := len(messages) - 1; messageIndex >= 0; messageIndex-- {
+		messageMap, ok := messages[messageIndex].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		role, _ := messageMap["role"].(string)
+		if role != "user" {
+			continue
+		}
+		content, ok := messageMap["content"].([]interface{})
+		if !ok {
+			continue
+		}
+
+		entries := make([]toolLoopRawResultLogEntry, 0, len(content))
+		for itemIndex, rawPart := range content {
+			partMap, ok := rawPart.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			partType, _ := partMap["type"].(string)
+			if partType != "tool_result" {
+				continue
+			}
+			toolUseID, _ := partMap["tool_use_id"].(string)
+			toolName, _ := partMap["name"].(string)
+			entries = append(entries, toolLoopRawResultLogEntry{
+				MessageIndex:  messageIndex,
+				ItemIndex:     itemIndex,
+				ToolCallID:    toolUseID,
+				ToolName:      toolName,
+				ResultPreview: truncateToolLoopValue(rawAnthropicToolResultContent(partMap["content"])),
+				IsError:       rawAnthropicToolResultIsError(partMap["is_error"]),
+			})
+		}
+		if len(entries) > 0 {
+			return entries
+		}
+	}
+
+	return nil
+}
+
+func rawAnthropicToolResultContent(content interface{}) string {
+	switch value := content.(type) {
+	case string:
+		return value
+	case []interface{}:
+		parts := make([]string, 0, len(value))
+		for _, rawPart := range value {
+			partMap, ok := rawPart.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if text, ok := partMap["text"].(string); ok {
+				parts = append(parts, text)
+			}
+		}
+		if len(parts) > 0 {
+			return strings.Join(parts, "\n\n")
+		}
+	case nil:
+		return ""
+	}
+
+	jsonBytes, err := json.Marshal(content)
+	if err != nil {
+		return ""
+	}
+	return string(jsonBytes)
+}
+
+func rawAnthropicToolResultIsError(value interface{}) *bool {
+	flag, ok := value.(bool)
+	if !ok {
+		return nil
+	}
+	return &flag
+}
+
 func extractLatestToolResultLogEntries(request *cif.CanonicalRequest) []toolLoopResultLogEntry {
 	if request == nil {
 		return nil
@@ -190,6 +285,16 @@ func filterToolResultEntriesByName(entries []toolLoopResultLogEntry, toolName st
 	filtered := make([]toolLoopResultLogEntry, 0, len(entries))
 	for _, entry := range entries {
 		if entry.ToolName == toolName {
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered
+}
+
+func filterErroredToolResultEntries(entries []toolLoopResultLogEntry) []toolLoopResultLogEntry {
+	filtered := make([]toolLoopResultLogEntry, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsError != nil && *entry.IsError {
 			filtered = append(filtered, entry)
 		}
 	}
@@ -283,6 +388,24 @@ func extractAgentToolTranscriptGaps(request *cif.CanonicalRequest) []agentToolTr
 	return gaps
 }
 
+func logRawAnthropicToolLoopPayload(requestID string, payload map[string]interface{}) {
+	for _, entry := range extractLatestRawAnthropicToolResultEntries(payload) {
+		event := log.Info().
+			Str("request_id", requestID).
+			Str("api_shape", "anthropic").
+			Int("loop_message_index", entry.MessageIndex).
+			Int("loop_item_index", entry.ItemIndex).
+			Str("tool_call_id", entry.ToolCallID).
+			Str("tool_name", entry.ToolName).
+			Str("tool_result", entry.ResultPreview).
+			Bool("raw_inbound_payload", true)
+		if entry.IsError != nil {
+			event = event.Bool("tool_is_error", *entry.IsError)
+		}
+		event.Msg("TOOL LOOP raw inbound tool_result")
+	}
+}
+
 func logAnthropicToolLoopRequest(requestID string, request *cif.CanonicalRequest) {
 	for _, entry := range extractLatestToolResultLogEntries(request) {
 		event := log.Info().
@@ -328,7 +451,9 @@ func logAnthropicAgentGuardrailRequest(requestID string, request *cif.CanonicalR
 	}
 
 	hasAgentTool := hasToolNamed(request, anthropicAgentToolName)
-	agentResults := filterToolResultEntriesByName(extractLatestToolResultLogEntries(request), anthropicAgentToolName)
+	latestToolResults := extractLatestToolResultLogEntries(request)
+	agentResults := filterToolResultEntriesByName(latestToolResults, anthropicAgentToolName)
+	agentErroredResults := filterErroredToolResultEntries(agentResults)
 	agentGaps := extractAgentToolTranscriptGaps(request)
 	if !hasAgentTool && len(agentResults) == 0 && len(agentGaps) == 0 {
 		return
@@ -340,8 +465,25 @@ func logAnthropicAgentGuardrailRequest(requestID string, request *cif.CanonicalR
 		Str("model_requested", request.Model).
 		Bool("agent_tool_available", hasAgentTool).
 		Int("latest_agent_tool_results", len(agentResults)).
+		Int("latest_agent_tool_errors", len(agentErroredResults)).
 		Int("agent_tool_pairing_gaps", len(agentGaps)).
 		Msg("AGENT TOOL inbound guardrail")
+
+	for _, entry := range agentErroredResults {
+		event := log.Warn().
+			Str("request_id", requestID).
+			Str("api_shape", "anthropic").
+			Str("model_requested", request.Model).
+			Str("tool_call_id", entry.ToolCallID).
+			Str("tool_name", entry.ToolName).
+			Str("tool_result", entry.ResultPreview).
+			Bool("likely_client_tool_execution_failure", true).
+			Str("failure_boundary", "local_claude_client_after_outbound_tool_call")
+		if entry.IsError != nil {
+			event = event.Bool("tool_is_error", *entry.IsError)
+		}
+		event.Msg("AGENT TOOL inbound tool_result indicates local client execution failure")
+	}
 
 	for _, gap := range agentGaps {
 		event := log.Warn().

@@ -4,8 +4,10 @@ import (
 	"os"
 	"testing"
 
+	alibabapkg "omnimodel/internal/providers/alibaba"
 	"omnimodel/internal/database"
 	"omnimodel/internal/providers/types"
+	"omnimodel/internal/registry"
 )
 
 // TestMain initializes a temp SQLite database so the functions that call
@@ -262,25 +264,62 @@ func TestGetEnabledModelsByProvider_ReturnsAllModels(t *testing.T) {
 	}
 }
 
-func TestGetEnabledModelsByProvider_SkipsErroredProviders(t *testing.T) {
-	good := &mockProvider{
-		instanceID: "good",
-		models:     &types.ModelsResponse{Data: []types.Model{{ID: "m1"}}},
+func TestResolveProvidersForModel_FiltersAlibabaByAPIMode(t *testing.T) {
+	reg := registry.GetProviderRegistry()
+	for _, provider := range reg.ListProviders() {
+		_ = reg.RemoveActive(provider.GetInstanceID())
 	}
-	bad := &mockProvider{
-		instanceID: "bad",
-		fetchErr:   os.ErrPermission,
+
+	standard := newAlibabaMockProvider("alibaba-standard", map[string]interface{}{"auth_type": "api-key", "plan": "standard"}, []types.Model{{
+		ID: "qwen3.6-plus", Capabilities: map[string]interface{}{"api_modes": []string{alibabapkg.AlibabaAPIModeOpenAICompatible}},
+	}})
+	anthropic := newAlibabaMockProvider("alibaba-anthropic", map[string]interface{}{"auth_type": "api-key", "api_format": "anthropic"}, []types.Model{{
+		ID: "qwen3.6-plus", Capabilities: map[string]interface{}{"api_modes": []string{alibabapkg.AlibabaAPIModeOpenAICompatible}},
+	}})
+
+	if err := reg.Register(standard, false); err != nil {
+		t.Fatalf("register standard provider: %v", err)
+	}
+	if err := reg.Register(anthropic, false); err != nil {
+		t.Fatalf("register anthropic provider: %v", err)
+	}
+	if _, err := reg.AddActive(standard.GetInstanceID()); err != nil {
+		t.Fatalf("activate standard provider: %v", err)
+	}
+	if _, err := reg.AddActive(anthropic.GetInstanceID()); err != nil {
+		t.Fatalf("activate anthropic provider: %v", err)
 	}
 
 	cache := NewModelCache()
-	result, err := GetEnabledModelsByProvider([]types.Provider{good, bad}, cache)
+	route, err := ResolveProvidersForModel("qwen3.6-plus", "qwen3.6-plus", cache)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("ResolveProvidersForModel() error = %v", err)
 	}
-	if _, ok := result["good"]; !ok {
-		t.Error("expected 'good' provider models in result")
+	if len(route.CandidateProviders) != 1 {
+		t.Fatalf("candidate providers = %d, want 1", len(route.CandidateProviders))
 	}
-	if _, ok := result["bad"]; ok {
-		t.Error("expected 'bad' provider to be skipped")
+	if got := route.CandidateProviders[0].GetInstanceID(); got != standard.GetInstanceID() {
+		t.Fatalf("candidate provider = %q, want %q", got, standard.GetInstanceID())
 	}
+}
+
+type alibabaMockProvider struct {
+	mockProvider
+	config map[string]interface{}
+}
+
+func newAlibabaMockProvider(instanceID string, config map[string]interface{}, models []types.Model) *alibabaMockProvider {
+	return &alibabaMockProvider{
+		mockProvider: mockProvider{
+			instanceID: instanceID,
+			name:       instanceID,
+			models:     &types.ModelsResponse{Data: models},
+		},
+		config: config,
+	}
+}
+
+func (p *alibabaMockProvider) GetID() string { return string(types.ProviderAlibaba) }
+func (p *alibabaMockProvider) GetConfig() map[string]interface{} {
+	return p.config
 }

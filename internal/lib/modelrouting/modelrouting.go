@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	alibabapkg "omnimodel/internal/providers/alibaba"
 	"omnimodel/internal/database"
 	"omnimodel/internal/providers/types"
 	"omnimodel/internal/registry"
@@ -155,15 +156,24 @@ func ResolveProvidersForModel(requestedModel string, normalizedModel string, cac
 		}, nil
 	}
 
+	selectedModes := modelAPIModes(*selectedModel)
+
 	// Find candidate providers that have this model
 	var candidateProviders []types.Provider
 	for _, provider := range activeProviders {
 		providerModels := modelsByProvider[provider.GetInstanceID()]
 		for _, model := range providerModels {
-			if model.ID == requestedModel || model.ID == normalizedModel {
-				candidateProviders = append(candidateProviders, provider)
-				break
+			if model.ID != requestedModel && model.ID != normalizedModel {
+				continue
 			}
+			if provider.GetID() == string(types.ProviderAlibaba) && len(selectedModes) > 0 {
+				providerMode := alibabapkg.AlibabaAPIMode(providerConfig(provider))
+				if !containsString(selectedModes, providerMode) {
+					continue
+				}
+			}
+			candidateProviders = append(candidateProviders, provider)
+			break
 		}
 	}
 
@@ -175,6 +185,49 @@ func ResolveProvidersForModel(requestedModel string, normalizedModel string, cac
 		CandidateProviders: candidateProviders,
 		AvailableModels:    availableModels,
 	}, nil
+}
+
+func modelAPIModes(model types.Model) []string {
+	if model.Capabilities == nil {
+		return nil
+	}
+	raw, ok := model.Capabilities["api_modes"]
+	if !ok {
+		return nil
+	}
+	switch value := raw.(type) {
+	case []string:
+		return value
+	case []interface{}:
+		result := make([]string, 0, len(value))
+		for _, item := range value {
+			if text, ok := item.(string); ok && text != "" {
+				result = append(result, text)
+			}
+		}
+		return result
+	default:
+		return nil
+	}
+}
+
+func providerConfig(provider types.Provider) map[string]interface{} {
+	type configProvider interface {
+		GetConfig() map[string]interface{}
+	}
+	if configured, ok := provider.(configProvider); ok {
+		return configured.GetConfig()
+	}
+	return nil
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func NormalizeModelName(modelName string) string {

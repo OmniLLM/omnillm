@@ -270,11 +270,31 @@ func ChatURL(baseURL string) string {
 	return base + "/chat/completions"
 }
 
+const (
+	AlibabaAPIModeOpenAICompatible = "openai-compatible"
+	AlibabaAPIModeCodingPlan       = "coding-plan"
+	AlibabaAPIModeAnthropic        = "anthropic"
+)
+
 // IsAnthropicMode reports whether the provider config selects the Anthropic-compatible API.
 // This is enabled by setting api_format = "anthropic" in the provider config.
 func IsAnthropicMode(config map[string]interface{}) bool {
+	return AlibabaAPIMode(config) == AlibabaAPIModeAnthropic
+}
+
+// AlibabaAPIMode returns the canonical Alibaba API mode for a provider config.
+func AlibabaAPIMode(config map[string]interface{}) string {
 	apiFormat, _ := shared.FirstString(config, "api_format", "apiFormat")
-	return strings.EqualFold(strings.TrimSpace(apiFormat), "anthropic")
+	if strings.EqualFold(strings.TrimSpace(apiFormat), AlibabaAPIModeAnthropic) {
+		return AlibabaAPIModeAnthropic
+	}
+
+	plan, _ := shared.FirstString(config, "plan")
+	if NormalizeAPIPlan(plan) == AlibabaAPIModeCodingPlan {
+		return AlibabaAPIModeCodingPlan
+	}
+
+	return AlibabaAPIModeOpenAICompatible
 }
 
 // AnthropicMessagesURL returns the messages endpoint for the Alibaba Anthropic-compatible API.
@@ -320,8 +340,7 @@ var anthropicAliasTargets = map[string][]string{
 func GetModelsAnthropicMode(instanceID string) *types.ModelsResponse {
 	result := make([]types.Model, len(AnthropicModels))
 	for i, m := range AnthropicModels {
-		result[i] = m
-		result[i].Provider = instanceID
+		result[i] = withAlibabaAPIModes(m, instanceID, AlibabaAPIModeAnthropic)
 	}
 	return &types.ModelsResponse{Data: result, Object: "list"}
 }
@@ -384,7 +403,7 @@ func GetModels(instanceID, token, baseURL string, config map[string]interface{})
 		return GetModelsHardcoded(instanceID, config), nil
 	}
 
-	resp, err := FetchModelsFromAPI(instanceID, token, baseURL)
+	resp, err := FetchModelsFromAPI(instanceID, token, baseURL, config)
 	if err == nil && len(resp.Data) > 0 {
 		return resp, nil
 	}
@@ -409,16 +428,16 @@ func GetModelsHardcoded(instanceID string, config map[string]interface{}) *types
 	if models == nil {
 		models = []types.Model{}
 	}
+	mode := AlibabaAPIMode(config)
 	result := make([]types.Model, len(models))
 	for i, m := range models {
-		result[i] = m
-		result[i].Provider = instanceID
+		result[i] = withAlibabaAPIModes(m, instanceID, mode)
 	}
 	return &types.ModelsResponse{Data: result, Object: "list"}
 }
 
 // FetchModelsFromAPI fetches available models from the Alibaba DashScope API.
-func FetchModelsFromAPI(instanceID, token, baseURL string) (*types.ModelsResponse, error) {
+func FetchModelsFromAPI(instanceID, token, baseURL string, config map[string]interface{}) (*types.ModelsResponse, error) {
 	url := strings.TrimRight(baseURL, "/") + "/models"
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
@@ -449,6 +468,7 @@ func FetchModelsFromAPI(instanceID, token, baseURL string) (*types.ModelsRespons
 		return nil, fmt.Errorf("failed to decode alibaba models response: %w", err)
 	}
 
+	mode := AlibabaAPIMode(config)
 	models := make([]types.Model, 0, len(payload.Data))
 	for _, model := range payload.Data {
 		if model.ID == "" {
@@ -470,7 +490,7 @@ func FetchModelsFromAPI(instanceID, token, baseURL string) (*types.ModelsRespons
 			result.Capabilities = metadata.Capabilities
 			result.MaxTokens = metadata.MaxTokens
 		}
-		models = append(models, result)
+		models = append(models, withAlibabaAPIModes(result, instanceID, mode))
 	}
 	return &types.ModelsResponse{Data: models, Object: "list"}, nil
 }
@@ -501,6 +521,28 @@ func ModelMetadata(modelID string) (types.Model, bool) {
 		}
 	}
 	return types.Model{}, false
+}
+
+func withAlibabaAPIModes(model types.Model, instanceID string, modes ...string) types.Model {
+	model.Provider = instanceID
+	capabilities := make(map[string]interface{})
+	for key, value := range model.Capabilities {
+		capabilities[key] = value
+	}
+	if len(modes) > 0 {
+		apiModes := make([]string, 0, len(modes))
+		for _, mode := range modes {
+			if strings.TrimSpace(mode) == "" {
+				continue
+			}
+			apiModes = append(apiModes, mode)
+		}
+		capabilities["api_modes"] = apiModes
+	}
+	if len(capabilities) > 0 {
+		model.Capabilities = capabilities
+	}
+	return model
 }
 
 // ─── URL helpers ──────────────────────────────────────────────────────────────

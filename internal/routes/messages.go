@@ -23,6 +23,10 @@ func SetupMessageRoutes(router *gin.RouterGroup) {
 	router.POST("/messages/count_tokens", handleCountTokens)
 }
 
+type alibabaModeProvider interface {
+	AlibabaAPIMode() string
+}
+
 func upstreamAPIForProvider(providerID string, model string) string {
 	if providerID == "azure-openai" && strings.Contains(strings.ToLower(model), "gpt-5.4") {
 		return "responses"
@@ -46,6 +50,8 @@ func handleMessages(c *gin.Context) {
 		})
 		return
 	}
+
+	logRawAnthropicToolLoopPayload(requestIDStr, payload)
 
 	// Convert Anthropic format to CIF
 	canonicalRequest, err := ingestion.ParseAnthropicMessages(payload)

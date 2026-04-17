@@ -362,7 +362,7 @@ func TestFetchModelsFromAPI(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	resp, err := FetchModelsFromAPI("alibaba-1", "test-token", srv.URL+"/v1")
+	resp, err := FetchModelsFromAPI("alibaba-1", "test-token", srv.URL+"/v1", map[string]interface{}{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -397,7 +397,7 @@ func TestFetchModelsFromAPIError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := FetchModelsFromAPI("alibaba-1", "bad-token", srv.URL+"/v1")
+	_, err := FetchModelsFromAPI("alibaba-1", "bad-token", srv.URL+"/v1", map[string]interface{}{})
 	if err == nil {
 		t.Error("expected error, got nil")
 	}
@@ -645,7 +645,29 @@ func TestIsAnthropicMode(t *testing.T) {
 	}
 }
 
-// ─── AnthropicMessagesURL ────────────────────────────────────────────────────
+func TestAlibabaAPIMode(t *testing.T) {
+	cases := []struct {
+		name   string
+		config map[string]interface{}
+		want   string
+	}{
+		{"empty config", map[string]interface{}{}, AlibabaAPIModeOpenAICompatible},
+		{"anthropic api_format", map[string]interface{}{"api_format": "anthropic"}, AlibabaAPIModeAnthropic},
+		{"anthropic apiFormat", map[string]interface{}{"apiFormat": "Anthropic"}, AlibabaAPIModeAnthropic},
+		{"coding plan", map[string]interface{}{"plan": "coding"}, AlibabaAPIModeCodingPlan},
+		{"coding plan underscore", map[string]interface{}{"plan": "coding_plan"}, AlibabaAPIModeCodingPlan},
+		{"standard plan", map[string]interface{}{"plan": "standard"}, AlibabaAPIModeOpenAICompatible},
+		{"anthropic wins over plan", map[string]interface{}{"api_format": "anthropic", "plan": "coding"}, AlibabaAPIModeAnthropic},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := AlibabaAPIMode(tc.config)
+			if got != tc.want {
+				t.Errorf("AlibabaAPIMode(%v) = %v, want %v", tc.config, got, tc.want)
+			}
+		})
+	}
+}
 
 func TestAnthropicMessagesURL(t *testing.T) {
 	cases := []struct {
@@ -709,6 +731,55 @@ func TestRemapModel(t *testing.T) {
 			t.Errorf("RemapModel(%q) = %q, want %q", tc.modelID, got, tc.want)
 		}
 	}
+}
+
+func TestSetupAPIKeyAuthAnthropicMode(t *testing.T) {
+	t.Run("stores anthropic config without plan or region", func(t *testing.T) {
+		token, baseURL, name, config, err := SetupAPIKeyAuth("alibaba-anthropic-test", &types.AuthOptions{
+			APIKey:    "sk-test",
+			APIFormat: "anthropic",
+			Plan:      "coding",
+			Region:    "china",
+		})
+		if err != nil {
+			t.Fatalf("SetupAPIKeyAuth() error = %v", err)
+		}
+		if token != "sk-test" {
+			t.Fatalf("token = %q, want sk-test", token)
+		}
+		if baseURL != AnthropicBaseURL {
+			t.Fatalf("baseURL = %q, want %q", baseURL, AnthropicBaseURL)
+		}
+		if name != "Alibaba Anthropic API" {
+			t.Fatalf("name = %q, want Alibaba Anthropic API", name)
+		}
+		if got := config["api_format"]; got != "anthropic" {
+			t.Fatalf("config api_format = %v, want anthropic", got)
+		}
+		if _, exists := config["plan"]; exists {
+			t.Fatalf("config unexpectedly contains plan: %#v", config)
+		}
+		if _, exists := config["region"]; exists {
+			t.Fatalf("config unexpectedly contains region: %#v", config)
+		}
+	})
+
+	t.Run("respects explicit endpoint", func(t *testing.T) {
+		_, baseURL, _, config, err := SetupAPIKeyAuth("alibaba-anthropic-endpoint", &types.AuthOptions{
+			APIKey:    "sk-test",
+			APIFormat: "anthropic",
+			Endpoint:  "https://example.com/custom",
+		})
+		if err != nil {
+			t.Fatalf("SetupAPIKeyAuth() error = %v", err)
+		}
+		if baseURL != "https://example.com/custom/v1" {
+			t.Fatalf("baseURL = %q, want https://example.com/custom/v1", baseURL)
+		}
+		if got := config["base_url"]; got != "https://example.com/custom" {
+			t.Fatalf("config base_url = %v, want https://example.com/custom", got)
+		}
+	})
 }
 
 // ─── NormalizeBaseURL: anthropic mode ────────────────────────────────────────

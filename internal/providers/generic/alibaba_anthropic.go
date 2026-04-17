@@ -496,7 +496,7 @@ func parseAnthropicSSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 					Message struct {
 						ID    string `json:"id"`
 						Model string `json:"model"`
-						Usage struct {
+						Usage *struct {
 							InputTokens              int  `json:"input_tokens"`
 							CacheCreationInputTokens *int `json:"cache_creation_input_tokens,omitempty"`
 							CacheReadInputTokens     *int `json:"cache_read_input_tokens,omitempty"`
@@ -507,10 +507,12 @@ func parseAnthropicSSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 					log.Warn().Err(err).Msg("Failed to parse Anthropic message_start event")
 					continue
 				}
-				inputTokens = start.Message.Usage.InputTokens
-				cacheWriteTokens = start.Message.Usage.CacheCreationInputTokens
-				cacheReadTokens = start.Message.Usage.CacheReadInputTokens
-				hasUsage = true
+				if start.Message.Usage != nil {
+					inputTokens = start.Message.Usage.InputTokens
+					cacheWriteTokens = start.Message.Usage.CacheCreationInputTokens
+					cacheReadTokens = start.Message.Usage.CacheReadInputTokens
+					hasUsage = true
+				}
 				eventCh <- cif.CIFStreamStart{
 					Type:  "stream_start",
 					ID:    start.Message.ID,
@@ -626,7 +628,7 @@ func parseAnthropicSSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 						StopReason   *string `json:"stop_reason"`
 						StopSequence *string `json:"stop_sequence"`
 					} `json:"delta"`
-					Usage struct {
+					Usage *struct {
 						OutputTokens             int  `json:"output_tokens"`
 						CacheCreationInputTokens *int `json:"cache_creation_input_tokens,omitempty"`
 						CacheReadInputTokens     *int `json:"cache_read_input_tokens,omitempty"`
@@ -640,14 +642,16 @@ func parseAnthropicSSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 					stopReason = anthropicStopReason(*delta.Delta.StopReason)
 				}
 				stopSequence = delta.Delta.StopSequence
-				outputTokens = delta.Usage.OutputTokens
-				if delta.Usage.CacheCreationInputTokens != nil {
-					cacheWriteTokens = delta.Usage.CacheCreationInputTokens
+				if delta.Usage != nil {
+					outputTokens = delta.Usage.OutputTokens
+					if delta.Usage.CacheCreationInputTokens != nil {
+						cacheWriteTokens = delta.Usage.CacheCreationInputTokens
+					}
+					if delta.Usage.CacheReadInputTokens != nil {
+						cacheReadTokens = delta.Usage.CacheReadInputTokens
+					}
+					hasUsage = true
 				}
-				if delta.Usage.CacheReadInputTokens != nil {
-					cacheReadTokens = delta.Usage.CacheReadInputTokens
-				}
-				hasUsage = true
 			case "message_stop":
 				var usage *cif.CIFUsage
 				if hasUsage {
