@@ -261,6 +261,14 @@ func SetupProviderAuth(instanceID string, options *types.AuthOptions) (token, ba
 		"name":      displayName,
 	}
 
+	// Parse and persist any pre-configured model IDs.
+	if options.Models != "" {
+		var modelIDs []string
+		if jsonErr := json.Unmarshal([]byte(options.Models), &modelIDs); jsonErr == nil && len(modelIDs) > 0 {
+			config["models"] = modelIDs
+		}
+	}
+
 	configStore := database.NewProviderConfigStore()
 	if err := configStore.Save(instanceID, config); err != nil {
 		return "", "", "", nil, fmt.Errorf("openai-compatible: failed to save config: %w", err)

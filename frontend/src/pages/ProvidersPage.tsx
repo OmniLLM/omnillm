@@ -3906,10 +3906,29 @@ function AddFlowOpenAICompatibleForm({
 }: AddFlowFormProps) {
   const [endpoint, setEndpoint] = useState("")
   const [apiKey, setApiKey] = useState("")
+  const [models, setModels] = useState<Array<string>>([])
+  const [newModel, setNewModel] = useState("")
+
+  const addModel = () => {
+    const id = newModel.trim()
+    if (!id || models.includes(id)) return
+    setModels((prev) => [...prev, id])
+    setNewModel("")
+  }
+
+  const removeModel = (id: string) => {
+    setModels((prev) => prev.filter((m) => m !== id))
+  }
+
   const submit = async () => {
     if (!endpoint.trim()) return
-    await onSubmit({ endpoint: endpoint.trim(), apiKey: apiKey.trim() })
+    await onSubmit({
+      endpoint: endpoint.trim(),
+      apiKey: apiKey.trim(),
+      ...(models.length > 0 ? { models: JSON.stringify(models) } : {}),
+    })
   }
+
   return (
     <div style={addFlowPanelStyle}>
       <FormRow label="Base URL">
@@ -3930,11 +3949,76 @@ function AddFlowOpenAICompatibleForm({
           style={addFlowTextInputStyle}
         />
       </FormRow>
+      <FormRow label="Models (optional)">
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ display: "flex", gap: 6 }}>
+            <input
+              type="text"
+              placeholder="e.g. llama3, mistral, phi3"
+              value={newModel}
+              onChange={(e) => setNewModel(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault()
+                  addModel()
+                }
+              }}
+              style={{ ...addFlowTextInputStyle, flex: 1 }}
+            />
+            <button
+              className="btn btn-ghost btn-sm"
+              type="button"
+              onClick={addModel}
+              disabled={!newModel.trim()}
+              style={{ whiteSpace: "nowrap" }}
+            >
+              + Add
+            </button>
+          </div>
+          {models.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {models.map((m) => (
+                <span
+                  key={m}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
+                    padding: "2px 8px",
+                    borderRadius: 999,
+                    background: "rgba(16,185,129,0.12)",
+                    border: "1px solid rgba(16,185,129,0.3)",
+                    fontSize: 12,
+                    fontFamily: "var(--font-mono)",
+                    color: "#10b981",
+                  }}
+                >
+                  {m}
+                  <button
+                    type="button"
+                    onClick={() => removeModel(m)}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      color: "inherit",
+                      padding: 0,
+                      lineHeight: 1,
+                      opacity: 0.7,
+                    }}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </FormRow>
       <AddFlowHint>
         Connect to any OpenAI-compatible endpoint — Ollama, vLLM, LM Studio,
-        llama.cpp, or a hosted service. The Base URL must end in{" "}
-        <code>/v1</code> (e.g.{" "}
-        <code>http://localhost:11434/v1</code>).
+        llama.cpp, or a hosted service. Add model IDs upfront, or add them
+        later from the Models panel.
       </AddFlowHint>
       <div style={{ display: "flex", gap: 8 }}>
         <button

@@ -831,6 +831,19 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 			return
 		}
 
+		// If the user specified model IDs upfront, enable them immediately.
+		if req.Models != "" {
+			var modelIDs []string
+			if jsonErr := json.Unmarshal([]byte(req.Models), &modelIDs); jsonErr == nil {
+				modelStateStore := database.NewModelStateStore()
+				for _, modelID := range modelIDs {
+					if modelID != "" {
+						_ = modelStateStore.SetEnabled(canonicalID, modelID, true)
+					}
+				}
+			}
+		}
+
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"provider": gin.H{

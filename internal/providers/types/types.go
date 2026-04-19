@@ -29,6 +29,7 @@ type AuthOptions struct {
 	Plan         string `json:"plan,omitempty"`
 	Endpoint     string `json:"endpoint,omitempty"`
 	APIFormat    string `json:"apiFormat,omitempty"` // e.g. "anthropic" for Alibaba Anthropic-compatible endpoint
+	Models       string `json:"models,omitempty"`    // JSON-encoded []string, used by openai-compatible
 }
 
 type Model struct {
