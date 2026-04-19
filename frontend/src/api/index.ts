@@ -17,6 +17,7 @@ export interface Provider {
     endpoint?: string
     apiVersion?: string
     deployments?: Array<string>
+    models?: Array<string>
   }
 }
 

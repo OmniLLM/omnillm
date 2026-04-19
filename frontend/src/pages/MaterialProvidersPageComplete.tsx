@@ -195,21 +195,23 @@ function MaterialAuthFlowBanner({
 }
 
 // Material Design provider type icons
-const PROVIDER_ICONS = {
+const PROVIDER_ICONS: Record<string, string> = {
   "github-copilot": "🐙",
   antigravity: "🌐",
   alibaba: "☁️",
   "azure-openai": "🔵",
   kimi: "🌙",
+  "openai-compatible": "🔌",
 }
 
-const PROVIDER_COLORS = {
+const PROVIDER_COLORS: Record<string, string> = {
   "github-copilot": "#0a84ff",
   antigravity: "#30d158",
   alibaba: "#ff9f0a",
   "azure-openai": "#0078d4",
   google: "#4285f4",
   kimi: "#e040fb",
+  "openai-compatible": "#10b981",
 }
 
 const PROVIDER_TYPES = [
@@ -242,6 +244,11 @@ const PROVIDER_TYPES = [
     id: "kimi",
     name: "Kimi (Moonshot)",
     desc: "Kimi models via API key",
+  },
+  {
+    id: "openai-compatible",
+    name: "OpenAI-Compatible",
+    desc: "Any OpenAI-compatible endpoint (Ollama, vLLM, LM Studio, etc.)",
   },
 ]
 
@@ -477,6 +484,37 @@ function MaterialAuthForm({
               </>
             }
           />
+        )
+      }
+
+      case "openai-compatible": {
+        return (
+          <>
+            <TextField
+              fullWidth
+              label="Base URL"
+              type="text"
+              placeholder="http://localhost:11434/v1"
+              value={values.endpoint || ""}
+              onChange={(e) =>
+                setValues({ ...values, endpoint: e.target.value })
+              }
+              sx={{ mb: 2 }}
+              helperText="The base URL of your OpenAI-compatible endpoint, e.g. http://localhost:11434/v1"
+            />
+            <TextField
+              fullWidth
+              label="API Key (optional)"
+              type="password"
+              placeholder="Leave empty for open endpoints (e.g. Ollama)"
+              value={values.apiKey || ""}
+              onChange={(e) =>
+                setValues({ ...values, apiKey: e.target.value })
+              }
+              sx={{ mb: 2 }}
+              helperText="Leave blank for unauthenticated local endpoints."
+            />
+          </>
         )
       }
 

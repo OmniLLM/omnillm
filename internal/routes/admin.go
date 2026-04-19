@@ -200,6 +200,18 @@ func normalizeProviderConfigForFrontend(providerType string, config map[string]i
 			return nil
 		}
 		return normalized
+	case "openai-compatible":
+		normalized := map[string]interface{}{}
+		if endpoint, ok := firstStringValue(config, "base_url", "endpoint"); ok {
+			normalized["endpoint"] = endpoint
+		}
+		if models := stringSliceValue(config["models"]); len(models) > 0 {
+			normalized["models"] = models
+		}
+		if len(normalized) == 0 {
+			return nil
+		}
+		return normalized
 	default:
 		return config
 	}
@@ -241,6 +253,15 @@ func normalizeProviderConfigForStorage(providerType string, config map[string]in
 		}
 		if apiFormat != "" {
 			normalized["api_format"] = apiFormat
+		}
+		return normalized
+	case "openai-compatible":
+		normalized := map[string]interface{}{}
+		if baseURL, _ := firstStringValue(config, "base_url", "endpoint"); baseURL != "" {
+			normalized["base_url"] = baseURL
+		}
+		if models := stringSliceValue(config["models"]); len(models) > 0 {
+			normalized["models"] = models
 		}
 		return normalized
 	default:
@@ -321,6 +342,28 @@ func loadProviderModels(provider types.Provider, forceRefresh bool) ([]providerM
 			Capabilities: model.Capabilities,
 		})
 		seen[model.ID] = struct{}{}
+	}
+
+	// Merge user-defined models from provider config (e.g. openai-compatible).
+	if cfg, err := loadProviderConfig(instanceID); err == nil && cfg != nil {
+		for _, modelID := range stringSliceValue(cfg["models"]) {
+			if modelID == "" {
+				continue
+			}
+			if _, exists := seen[modelID]; exists {
+				continue
+			}
+			enabled := true
+			if state, ok := stateByID[modelID]; ok {
+				enabled = state.Enabled
+			}
+			models = append(models, providerModelView{
+				ID:      modelID,
+				Name:    modelID,
+				Enabled: enabled,
+			})
+			seen[modelID] = struct{}{}
+		}
 	}
 
 	for _, state := range states {

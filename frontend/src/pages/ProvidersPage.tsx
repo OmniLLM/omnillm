@@ -602,6 +602,12 @@ function ModelsDialog({
     provider.config?.deployments || [],
   )
 
+  // OpenAI-compatible user-defined model management
+  const [newModel, setNewModel] = useState("")
+  const [userModels, setUserModels] = useState<Array<string>>(
+    (provider.config?.models as Array<string>) || [],
+  )
+
   const load = async () => {
     setLoading(true)
     setError(null)
@@ -611,6 +617,9 @@ function ModelsDialog({
       // Also update deployments from current config
       if (provider.type === "azure-openai") {
         setDeployments(provider.config?.deployments || [])
+      }
+      if (provider.type === "openai-compatible") {
+        setUserModels((provider.config?.models as Array<string>) || [])
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -691,6 +700,46 @@ function ModelsDialog({
       setDeployments(newDeployments)
       onModelsChanged?.() // Refresh provider data
       // Reload models to reflect the removed deployment
+      await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setConfigLoading(false)
+    }
+  }
+
+  const handleAddUserModel = async () => {
+    if (!newModel.trim() || provider.type !== "openai-compatible") return
+    const modelID = newModel.trim()
+    if (userModels.includes(modelID)) {
+      setError("Model already in list")
+      return
+    }
+    setConfigLoading(true)
+    setError(null)
+    try {
+      const updated = [...userModels, modelID]
+      await updateProviderConfig(provider.id, { models: updated })
+      setUserModels(updated)
+      setNewModel("")
+      onModelsChanged?.()
+      await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setConfigLoading(false)
+    }
+  }
+
+  const handleRemoveUserModel = async (modelID: string) => {
+    if (provider.type !== "openai-compatible") return
+    setConfigLoading(true)
+    setError(null)
+    try {
+      const updated = userModels.filter((m) => m !== modelID)
+      await updateProviderConfig(provider.id, { models: updated })
+      setUserModels(updated)
+      onModelsChanged?.()
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -915,6 +964,70 @@ function ModelsDialog({
                     </div>
                   )}
 
+                  {/* OpenAI-compatible user-defined model management */}
+                  {provider.type === "openai-compatible" && (
+                    <div
+                      style={{
+                        padding: "14px 16px",
+                        background: "rgba(16,185,129,0.06)",
+                        border: "1px solid rgba(16,185,129,0.18)",
+                        borderRadius: "var(--radius-lg)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 600,
+                          color: "#10b981",
+                          marginBottom: 12,
+                        }}
+                      >
+                        Model IDs
+                      </div>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          alignItems: "center",
+                          marginBottom: 8,
+                        }}
+                      >
+                        <input
+                          className="sys-input"
+                          placeholder="Add model ID (e.g. llama3, mistral)..."
+                          value={newModel}
+                          onChange={(e) => setNewModel(e.target.value)}
+                          disabled={configLoading}
+                          style={{ flex: 1, fontSize: 13 }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault()
+                              handleAddUserModel()
+                            }
+                          }}
+                        />
+                        <button
+                          className="btn btn-primary btn-sm"
+                          onClick={handleAddUserModel}
+                          disabled={configLoading || !newModel.trim()}
+                          style={{ minWidth: 32, padding: "6px 8px" }}
+                        >
+                          {configLoading ? <Spin size={12} /> : "+"}
+                        </button>
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: "var(--color-text-tertiary)",
+                        }}
+                      >
+                        Enter model IDs to use from this endpoint. These are
+                        merged with any models returned by{" "}
+                        <code>/models</code>.
+                      </div>
+                    </div>
+                  )}
+
                   <div
                     style={{ display: "flex", gap: 8, alignItems: "center" }}
                   >
@@ -1016,6 +1129,25 @@ function ModelsDialog({
                                   color: "var(--color-red)",
                                 }}
                                 title={`Remove deployment ${m.id}`}
+                              >
+                                {configLoading ?
+                                  <Spin size={10} />
+                                : "−"}
+                              </button>
+                            )}
+                          {/* Remove model button for openai-compatible */}
+                          {provider.type === "openai-compatible"
+                            && userModels.includes(m.id) && (
+                              <button
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => handleRemoveUserModel(m.id)}
+                                disabled={configLoading}
+                                style={{
+                                  minWidth: 32,
+                                  padding: "4px 6px",
+                                  color: "var(--color-red)",
+                                }}
+                                title={`Remove model ${m.id}`}
                               >
                                 {configLoading ?
                                   <Spin size={10} />
@@ -1719,6 +1851,12 @@ function ModelsMenuItem({
     provider.config?.deployments || [],
   )
 
+  // OpenAI-compatible user-defined model management
+  const [newModel, setNewModel] = useState("")
+  const [userModels, setUserModels] = useState<Array<string>>(
+    (provider.config?.models as Array<string>) || [],
+  )
+
   const load = async () => {
     setLoading(true)
     setError(null)
@@ -1727,6 +1865,9 @@ function ModelsMenuItem({
       setModels(resp?.models ?? [])
       if (provider.type === "azure-openai") {
         setDeployments(provider.config?.deployments || [])
+      }
+      if (provider.type === "openai-compatible") {
+        setUserModels((provider.config?.models as Array<string>) || [])
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -1801,6 +1942,46 @@ function ModelsMenuItem({
         deployments: newDeployments,
       })
       setDeployments(newDeployments)
+      onModelsChanged?.()
+      await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setConfigLoading(false)
+    }
+  }
+
+  const handleAddUserModel = async () => {
+    if (!newModel.trim() || provider.type !== "openai-compatible") return
+    const modelID = newModel.trim()
+    if (userModels.includes(modelID)) {
+      setError("Model already in list")
+      return
+    }
+    setConfigLoading(true)
+    setError(null)
+    try {
+      const updated = [...userModels, modelID]
+      await updateProviderConfig(provider.id, { models: updated })
+      setUserModels(updated)
+      setNewModel("")
+      onModelsChanged?.()
+      await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setConfigLoading(false)
+    }
+  }
+
+  const handleRemoveUserModel = async (modelID: string) => {
+    if (provider.type !== "openai-compatible") return
+    setConfigLoading(true)
+    setError(null)
+    try {
+      const updated = userModels.filter((m) => m !== modelID)
+      await updateProviderConfig(provider.id, { models: updated })
+      setUserModels(updated)
       onModelsChanged?.()
       await load()
     } catch (e) {
@@ -2029,6 +2210,70 @@ function ModelsMenuItem({
                     </div>
                   )}
 
+                  {/* OpenAI-compatible user-defined model management */}
+                  {provider.type === "openai-compatible" && (
+                    <div
+                      style={{
+                        padding: "14px 16px",
+                        background: "rgba(16,185,129,0.06)",
+                        border: "1px solid rgba(16,185,129,0.18)",
+                        borderRadius: "var(--radius-lg)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 600,
+                          color: "#10b981",
+                          marginBottom: 12,
+                        }}
+                      >
+                        Model IDs
+                      </div>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          alignItems: "center",
+                          marginBottom: 8,
+                        }}
+                      >
+                        <input
+                          className="sys-input"
+                          placeholder="Add model ID (e.g. llama3, mistral)..."
+                          value={newModel}
+                          onChange={(e) => setNewModel(e.target.value)}
+                          disabled={configLoading}
+                          style={{ flex: 1, fontSize: 13 }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault()
+                              handleAddUserModel()
+                            }
+                          }}
+                        />
+                        <button
+                          className="btn btn-primary btn-sm"
+                          onClick={handleAddUserModel}
+                          disabled={configLoading || !newModel.trim()}
+                          style={{ minWidth: 32, padding: "6px 8px" }}
+                        >
+                          {configLoading ? <Spin size={12} /> : "+"}
+                        </button>
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: "var(--color-text-tertiary)",
+                        }}
+                      >
+                        Enter model IDs to use from this endpoint. These are
+                        merged with any models returned by{" "}
+                        <code>/models</code>.
+                      </div>
+                    </div>
+                  )}
+
                   <div
                     style={{ display: "flex", gap: 8, alignItems: "center" }}
                   >
@@ -2129,6 +2374,25 @@ function ModelsMenuItem({
                                   color: "var(--color-red)",
                                 }}
                                 title={`Remove deployment ${m.id}`}
+                              >
+                                {configLoading ?
+                                  <Spin size={10} />
+                                : "−"}
+                              </button>
+                            )}
+                          {/* Remove model button for openai-compatible */}
+                          {provider.type === "openai-compatible"
+                            && userModels.includes(m.id) && (
+                              <button
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => handleRemoveUserModel(m.id)}
+                                disabled={configLoading}
+                                style={{
+                                  minWidth: 32,
+                                  padding: "4px 6px",
+                                  color: "var(--color-red)",
+                                }}
+                                title={`Remove model ${m.id}`}
                               >
                                 {configLoading ?
                                   <Spin size={10} />
@@ -2413,6 +2677,7 @@ const PROVIDER_ACCENT: Record<string, string> = {
   "azure-openai": "#0078d4",
   google: "#4285f4",
   kimi: "#e040fb",
+  "openai-compatible": "#10b981",
 }
 
 const PROVIDER_ICONS: Record<string, React.ReactNode> = {
@@ -3112,6 +3377,9 @@ function AddProviderFlow({
           {selectedType === "kimi" && (
             <AddFlowKimiForm {...authFormProps} />
           )}
+          {selectedType === "openai-compatible" && (
+            <AddFlowOpenAICompatibleForm {...authFormProps} />
+          )}
         </div>
       </div>
     )
@@ -3631,6 +3899,67 @@ function AddFlowKimiForm({
   )
 }
 
+function AddFlowOpenAICompatibleForm({
+  onSubmit,
+  onCancel,
+  submitting,
+}: AddFlowFormProps) {
+  const [endpoint, setEndpoint] = useState("")
+  const [apiKey, setApiKey] = useState("")
+  const submit = async () => {
+    if (!endpoint.trim()) return
+    await onSubmit({ endpoint: endpoint.trim(), apiKey: apiKey.trim() })
+  }
+  return (
+    <div style={addFlowPanelStyle}>
+      <FormRow label="Base URL">
+        <input
+          type="text"
+          placeholder="http://localhost:11434/v1"
+          value={endpoint}
+          onChange={(e) => setEndpoint(e.target.value)}
+          style={addFlowTextInputStyle}
+        />
+      </FormRow>
+      <FormRow label="API Key (optional)">
+        <input
+          type="password"
+          placeholder="Leave empty for open endpoints (e.g. Ollama)"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          style={addFlowTextInputStyle}
+        />
+      </FormRow>
+      <AddFlowHint>
+        Connect to any OpenAI-compatible endpoint — Ollama, vLLM, LM Studio,
+        llama.cpp, or a hosted service. The Base URL must end in{" "}
+        <code>/v1</code> (e.g.{" "}
+        <code>http://localhost:11434/v1</code>).
+      </AddFlowHint>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={submit}
+          disabled={submitting || !endpoint.trim()}
+        >
+          {submitting ?
+            <>
+              <Spin size={13} /> Connecting…
+            </>
+          : "Add Provider"}
+        </button>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={onCancel}
+          disabled={submitting}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Add Provider Modal ───────────────────────────────────────────────────────
 
 const PROVIDER_TYPES = [
@@ -3663,6 +3992,11 @@ const PROVIDER_TYPES = [
     id: "kimi",
     name: "Kimi (Moonshot)",
     desc: "Kimi models via API key",
+  },
+  {
+    id: "openai-compatible",
+    name: "OpenAI-Compatible",
+    desc: "Any OpenAI-compatible endpoint (Ollama, vLLM, LM Studio, etc.)",
   },
 ]
 
@@ -4117,6 +4451,7 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
     "azure-openai",
     "google",
     "kimi",
+    "openai-compatible",
   ]
 
   const providerGroups = providers.reduce<Record<string, Array<Provider>>>(
