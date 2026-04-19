@@ -30,3 +30,8 @@ omnimodel.exe
 .playwright-mcp/
 .tmp-gocache/
 .tmp-gomodcache/
+
+# temp log files
+.tmp-hook-log.jsonl
+.tmp-live-*-err.log
+.tmp-live-*-out.log
