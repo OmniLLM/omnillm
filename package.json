@@ -77,5 +77,8 @@
     "tailwindcss": "^4.2.2",
     "typescript": "^5.9.3",
     "vite": "^8.0.8"
+  },
+  "overrides": {
+    "hono": "^4.12.14"
   }
 }
