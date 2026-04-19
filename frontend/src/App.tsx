@@ -33,7 +33,7 @@ const NAV_ITEMS = [
   { id: "chat" as const, label: "Chat", icon: MessageSquare },
   { id: "logging" as const, label: "Logging", icon: BarChart3 },
   { id: "vmodel" as const, label: "Virtual Models", icon: Layers },
-  { id: "config" as const, label: "ToolSettings", icon: SlidersHorizontal },
+  { id: "config" as const, label: "ToolConfig", icon: SlidersHorizontal },
   { id: "about" as const, label: "About", icon: Settings },
 ]
 

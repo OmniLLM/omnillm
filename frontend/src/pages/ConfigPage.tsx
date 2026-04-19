@@ -1045,7 +1045,7 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
             margin: 0,
           }}
         >
-          ToolSettings
+          ToolConfig
         </h1>
         <p style={{ fontSize: 14, color: "var(--color-text-secondary)", margin: "8px 0 0" }}>
           Select a tool to view and edit its configuration

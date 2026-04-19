@@ -113,7 +113,7 @@ b363cc4 feat: add openai-compatible provider type
 d80d860 feat: frontend support for openai-compatible provider with user-defined models
 a635eab feat: allow model IDs to be entered during openai-compatible provider setup
 105a2bf feat: expand openai-compatible provider with responses API, streaming, and admin enhancements
-86225a0 feat: add ToolSettings page for editing Claude Code and Codex configs
+86225a0 feat: add ToolConfig page for editing Claude Code and Codex configs
 69f1619 chore: update providers and routes with openai-compatible improvements
 fb18e69 fix: reduce tool loop log verbosity from info to debug
 ```
