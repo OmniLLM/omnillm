@@ -192,7 +192,8 @@ func handleAnthropicNonStreamingResponse(c *gin.Context, adapter types.ProviderA
 		logAnthropicToolLoopResponse(requestID, originalModel, response.Model, providerID, false, extractToolCallLogEntriesFromResponse(response))
 	}
 
-	anthropicResp, err := serialization.SerializeToAnthropic(response)
+	suppressThinking := !strings.Contains(c.GetHeader("anthropic-beta"), "interleaved-thinking")
+	anthropicResp, err := serialization.SerializeToAnthropicWithSuppression(response, suppressThinking)
 	if err != nil {
 		return fmt.Errorf("serialization failed: %w", err)
 	}

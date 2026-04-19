@@ -16,6 +16,7 @@ import (
 
 	"omnimodel/internal/database"
 	"omnimodel/internal/lib/ratelimit"
+	alibabapkg "omnimodel/internal/providers/alibaba"
 	"omnimodel/internal/providers/copilot"
 	"omnimodel/internal/providers/generic"
 	"omnimodel/internal/providers/types"
@@ -235,6 +236,12 @@ func registerDefaultProviders(reg *registry.ProviderRegistry, options StartOptio
 				}
 				if options.GithubToken != "" {
 					p.SetupAuth(&types.AuthOptions{GithubToken: options.GithubToken})
+				}
+				provider = p
+			case "alibaba":
+				p := alibabapkg.NewProvider(inst.InstanceID, inst.Name)
+				if err := p.LoadFromDB(); err != nil {
+					log.Warn().Err(err).Str("instance", inst.InstanceID).Msg("Failed to load provider token")
 				}
 				provider = p
 			default:

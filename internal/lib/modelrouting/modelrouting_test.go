@@ -264,30 +264,31 @@ func TestGetEnabledModelsByProvider_ReturnsAllModels(t *testing.T) {
 	}
 }
 
-func TestResolveProvidersForModel_FiltersAlibabaByAPIMode(t *testing.T) {
+func TestResolveProvidersForModel_AlibabaOpenAICompatibleIncluded(t *testing.T) {
 	reg := registry.GetProviderRegistry()
 	for _, provider := range reg.ListProviders() {
 		_ = reg.RemoveActive(provider.GetInstanceID())
 	}
 
-	standard := newAlibabaMockProvider("alibaba-standard", map[string]interface{}{"auth_type": "api-key", "plan": "standard"}, []types.Model{{
+	// Both providers are OpenAI-compatible — both should be candidates.
+	provider1 := newAlibabaMockProvider("alibaba-standard", map[string]interface{}{"auth_type": "api-key", "plan": "standard"}, []types.Model{{
 		ID: "qwen3.6-plus", Capabilities: map[string]interface{}{"api_modes": []string{alibabapkg.AlibabaAPIModeOpenAICompatible}},
 	}})
-	anthropic := newAlibabaMockProvider("alibaba-anthropic", map[string]interface{}{"auth_type": "api-key", "api_format": "anthropic"}, []types.Model{{
+	provider2 := newAlibabaMockProvider("alibaba-coding", map[string]interface{}{"auth_type": "api-key", "plan": "coding-plan"}, []types.Model{{
 		ID: "qwen3.6-plus", Capabilities: map[string]interface{}{"api_modes": []string{alibabapkg.AlibabaAPIModeOpenAICompatible}},
 	}})
 
-	if err := reg.Register(standard, false); err != nil {
-		t.Fatalf("register standard provider: %v", err)
+	if err := reg.Register(provider1, false); err != nil {
+		t.Fatalf("register provider1: %v", err)
 	}
-	if err := reg.Register(anthropic, false); err != nil {
-		t.Fatalf("register anthropic provider: %v", err)
+	if err := reg.Register(provider2, false); err != nil {
+		t.Fatalf("register provider2: %v", err)
 	}
-	if _, err := reg.AddActive(standard.GetInstanceID()); err != nil {
-		t.Fatalf("activate standard provider: %v", err)
+	if _, err := reg.AddActive(provider1.GetInstanceID()); err != nil {
+		t.Fatalf("activate provider1: %v", err)
 	}
-	if _, err := reg.AddActive(anthropic.GetInstanceID()); err != nil {
-		t.Fatalf("activate anthropic provider: %v", err)
+	if _, err := reg.AddActive(provider2.GetInstanceID()); err != nil {
+		t.Fatalf("activate provider2: %v", err)
 	}
 
 	cache := NewModelCache()
@@ -295,11 +296,8 @@ func TestResolveProvidersForModel_FiltersAlibabaByAPIMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveProvidersForModel() error = %v", err)
 	}
-	if len(route.CandidateProviders) != 1 {
-		t.Fatalf("candidate providers = %d, want 1", len(route.CandidateProviders))
-	}
-	if got := route.CandidateProviders[0].GetInstanceID(); got != standard.GetInstanceID() {
-		t.Fatalf("candidate provider = %q, want %q", got, standard.GetInstanceID())
+	if len(route.CandidateProviders) != 2 {
+		t.Fatalf("candidate providers = %d, want 2", len(route.CandidateProviders))
 	}
 }
 

@@ -21,7 +21,8 @@ type OpenAIMessage struct {
 }
 
 type ToolCall struct {
-	ID       string       `json:"id"`
+	ID       string       `json:"id,omitempty"`
+	CallID   string       `json:"call_id,omitempty"`
 	Type     string       `json:"type"`
 	Function FunctionCall `json:"function"`
 }
@@ -504,9 +505,13 @@ func convertAnthropicContentBlock(block AnthropicContentBlock) (cif.CIFContentPa
 		}, nil
 
 	case "tool_result":
+		toolCallID := block.ToolUseID
+		if toolCallID == "" {
+			toolCallID = block.ID
+		}
 		return cif.CIFToolResultPart{
 			Type:       "tool_result",
-			ToolCallID: block.ToolUseID,
+			ToolCallID: toolCallID,
 			ToolName:   block.Name,
 			Content:    normalizeAnthropicToolResultContent(block.Content),
 			IsError:    block.IsError,

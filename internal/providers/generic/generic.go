@@ -573,7 +573,59 @@ func (a *GenericAdapter) buildOpenAIPayload(request *cif.CanonicalRequest) map[s
 	}
 
 	if a.provider.id == "alibaba" {
-		return alibabapkg.BuildOpenAIPayload(model, messages, request, false, false)
+		// Alibaba uses its own adapter; this path is a fallback for direct
+		// GenericProvider usage with API-key auth.
+		payload := map[string]interface{}{
+			"model":    model,
+			"messages": messages,
+		}
+		defTemp := 0.55
+		defTopP := 1.0
+		if request.Temperature != nil {
+			payload["temperature"] = *request.Temperature
+		} else {
+			payload["temperature"] = defTemp
+		}
+		if request.TopP != nil {
+			payload["top_p"] = *request.TopP
+		} else {
+			payload["top_p"] = defTopP
+		}
+		if request.MaxTokens != nil {
+			payload["max_tokens"] = *request.MaxTokens
+		}
+		if len(request.Stop) > 0 {
+			payload["stop"] = request.Stop
+		}
+		if request.UserID != nil {
+			payload["user"] = *request.UserID
+		}
+		if len(request.Tools) > 0 {
+			tools := make([]map[string]interface{}, 0, len(request.Tools))
+			for _, tool := range request.Tools {
+				t := map[string]interface{}{
+					"type": "function",
+					"function": map[string]interface{}{
+						"name":       tool.Name,
+						"parameters": shared.NormalizeToolParameters(tool.ParametersSchema),
+					},
+				}
+				if tool.Description != nil {
+					t["function"].(map[string]interface{})["description"] = *tool.Description
+				}
+				tools = append(tools, t)
+			}
+			payload["tools"] = tools
+		}
+		if request.ToolChoice != nil {
+			if tc := shared.ConvertCanonicalToolChoiceToOpenAI(request.ToolChoice); tc != nil {
+				payload["tool_choice"] = tc
+			}
+		}
+		if alibabapkg.IsReasoningModel(model) && len(request.Tools) == 0 {
+			payload["enable_thinking"] = true
+		}
+		return payload
 	}
 
 	if a.provider.id == "azure-openai" {
@@ -766,7 +818,7 @@ func (p *GenericProvider) getAlibabaModels() (*types.ModelsResponse, error) {
 }
 
 func (p *GenericProvider) getAlibabaModelsHardcoded() *types.ModelsResponse {
-	return alibabapkg.GetModelsHardcoded(p.instanceID, p.config)
+	return alibabapkg.GetModelsHardcoded(p.instanceID)
 }
 
 func (p *GenericProvider) fetchAlibabaModelsFromAPI() (*types.ModelsResponse, error) {
@@ -797,8 +849,8 @@ func alibabaAPIKeyProviderName(config map[string]interface{}) string {
 	return alibabapkg.APIKeyProviderName(config)
 }
 
-func ensureAlibabaBaseURL(raw string, forOAuth bool) string {
-	return alibabapkg.EnsureBaseURL(raw, forOAuth)
+func ensureAlibabaBaseURL(raw string) string {
+	return alibabapkg.EnsureBaseURL(raw)
 }
 
 

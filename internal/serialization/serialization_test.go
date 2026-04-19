@@ -97,6 +97,9 @@ func TestSerializeToOpenAI_ToolCall(t *testing.T) {
 	if len(out.Choices[0].Message.ToolCalls) != 1 {
 		t.Fatalf("expected 1 tool call, got %d", len(out.Choices[0].Message.ToolCalls))
 	}
+	if out.Choices[0].Message.Content != nil {
+		t.Fatalf("expected content to be nil for tool-call-only assistant message, got %v", out.Choices[0].Message.Content)
+	}
 	tc := out.Choices[0].Message.ToolCalls[0]
 	if tc.ID != "call_xyz" {
 		t.Errorf("expected id=call_xyz, got %q", tc.ID)
@@ -302,6 +305,29 @@ func TestSerializeToAnthropic_ThinkingBlock(t *testing.T) {
 	}
 	if out.Content[0].Type != "thinking" {
 		t.Errorf("expected first block type=thinking, got %q", out.Content[0].Type)
+	}
+}
+
+func TestSerializeToAnthropicWithSuppression_SkipsThinkingBlock(t *testing.T) {
+	resp := &cif.CanonicalResponse{
+		ID:    "msg_005",
+		Model: "claude",
+		Content: []cif.CIFContentPart{
+			cif.CIFThinkingPart{Type: "thinking", Thinking: "Let me think..."},
+			cif.CIFTextPart{Type: "text", Text: "Answer here."},
+		},
+		StopReason: cif.StopReasonEndTurn,
+	}
+
+	out, err := SerializeToAnthropicWithSuppression(resp, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(out.Content) != 1 {
+		t.Fatalf("expected 1 content block, got %d", len(out.Content))
+	}
+	if out.Content[0].Type != "text" {
+		t.Errorf("expected first block type=text, got %q", out.Content[0].Type)
 	}
 }
 

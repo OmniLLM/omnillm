@@ -99,8 +99,9 @@ func CIFMessagesToOpenAI(messages []cif.CIFMessage) []map[string]interface{} {
 				case cif.CIFToolCallPart:
 					args, _ := json.Marshal(p.ToolArguments)
 					toolCalls = append(toolCalls, map[string]interface{}{
-						"id":   p.ToolCallID,
-						"type": "function",
+						"id":      p.ToolCallID,
+						"call_id": p.ToolCallID,
+						"type":    "function",
 						"function": map[string]interface{}{
 							"name":      p.ToolName,
 							"arguments": string(args),

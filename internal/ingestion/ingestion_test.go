@@ -113,6 +113,46 @@ func TestParseOpenAI_ToolCallInAssistantMessage(t *testing.T) {
 	}
 }
 
+func TestParseOpenAI_ToolCallInAssistantMessage_WithCallIDAlias(t *testing.T) {
+	payload := map[string]interface{}{
+		"model": "gpt-4o",
+		"messages": []interface{}{
+			map[string]interface{}{
+				"role":    "assistant",
+				"content": nil,
+				"tool_calls": []interface{}{
+					map[string]interface{}{
+						"call_id": "call_alias",
+						"type":    "function",
+						"function": map[string]interface{}{
+							"name":      "get_weather",
+							"arguments": `{"location":"SF"}`,
+						},
+					},
+				},
+			},
+		},
+	}
+	req, err := ParseOpenAIChatCompletions(payload)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	assistantMsg, ok := req.Messages[0].(cif.CIFAssistantMessage)
+	if !ok {
+		t.Fatalf("expected CIFAssistantMessage, got %T", req.Messages[0])
+	}
+	if len(assistantMsg.Content) != 1 {
+		t.Fatalf("expected 1 content part, got %d", len(assistantMsg.Content))
+	}
+	toolCall, ok := assistantMsg.Content[0].(cif.CIFToolCallPart)
+	if !ok {
+		t.Fatalf("expected CIFToolCallPart, got %T", assistantMsg.Content[0])
+	}
+	if toolCall.ToolCallID != "call_alias" {
+		t.Errorf("expected call_alias, got %q", toolCall.ToolCallID)
+	}
+}
+
 func TestParseOpenAI_Tools(t *testing.T) {
 	payload := map[string]interface{}{
 		"model": "gpt-4o",
@@ -359,6 +399,43 @@ func TestParseAnthropic_ToolResultBlock(t *testing.T) {
 	}
 	if resultPart.Content != "Sunny, 72°F" {
 		t.Errorf("unexpected content: %q", resultPart.Content)
+	}
+}
+
+func TestParseAnthropic_ToolResultBlockFallsBackToID(t *testing.T) {
+	payload := map[string]interface{}{
+		"model": "claude-3-5-sonnet-20241022",
+		"messages": []interface{}{
+			map[string]interface{}{
+				"role": "user",
+				"content": []interface{}{
+					map[string]interface{}{
+						"type":    "tool_result",
+						"id":      "toolu_fallback",
+						"name":    "Read",
+						"content": "fallback id result",
+					},
+				},
+			},
+		},
+	}
+	req, err := ParseAnthropicMessages(payload)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	userMsg, ok := req.Messages[0].(cif.CIFUserMessage)
+	if !ok {
+		t.Fatalf("expected CIFUserMessage, got %T", req.Messages[0])
+	}
+	resultPart, ok := userMsg.Content[0].(cif.CIFToolResultPart)
+	if !ok {
+		t.Fatalf("expected CIFToolResultPart, got %T", userMsg.Content[0])
+	}
+	if resultPart.ToolCallID != "toolu_fallback" {
+		t.Errorf("expected fallback tool call id toolu_fallback, got %q", resultPart.ToolCallID)
+	}
+	if resultPart.ToolName != "Read" {
+		t.Errorf("expected tool name Read, got %q", resultPart.ToolName)
 	}
 }
 

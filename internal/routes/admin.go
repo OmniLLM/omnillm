@@ -536,108 +536,9 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 	// ── Alibaba ──────────────────────────────────────────────────────────────
 	case "alibaba":
 		if req.Method == "oauth" {
-			// Build an ephemeral provider object — not yet in the registry.
-			gen := generic.NewGenericProvider("alibaba", "alibaba-tmp", "")
-
-			// Initiate device flow without creating a DB record first.
-			flow, err := alibabapkg.InitiateDeviceFlow(context.Background())
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{
-					"success": false,
-					"message": fmt.Sprintf("Failed to initiate Alibaba OAuth: %v", err),
-				})
-				return
-			}
-
-			verifyURL := flow.VerificationURIComplete
-			if verifyURL == "" {
-				verifyURL = flow.VerificationURI
-			}
-			if verifyURL != "" && !strings.Contains(verifyURL, "prompt=") {
-				sep := "&"
-				if !strings.Contains(verifyURL, "?") {
-					sep = "?"
-				}
-				verifyURL += sep + "prompt=login"
-			}
-
-			// Use a sentinel provider ID for the auth flow; the real ID is
-			// assigned by SaveAlibabaOAuthToken once the user authorizes.
-			const pendingID = "alibaba-pending"
-
-			alibabaCtx, alibabaCancel := context.WithCancel(context.Background())
-			activeAuthFlowMu.Lock()
-			activeAuthFlow = &authFlowState{
-				ProviderID:     pendingID,
-				Status:         "awaiting_user",
-				InstructionURL: verifyURL,
-				UserCode:       flow.UserCode,
-				deviceCode:     flow.DeviceCode,
-				codeVerifier:   flow.CodeVerifier,
-				cancelFn:       alibabaCancel,
-			}
-			activeAuthFlowMu.Unlock()
-
-			alibabaFlow := flow
-			go func() {
-				defer alibabaCancel()
-				td, err := alibabapkg.PollForToken(
-					alibabaCtx,
-					alibabaFlow.DeviceCode,
-					alibabaFlow.CodeVerifier,
-					alibabaFlow.Interval,
-					alibabaFlow.ExpiresIn,
-				)
-				if err != nil {
-					if alibabaCtx.Err() != nil {
-						return
-					}
-					activeAuthFlowMu.Lock()
-					if activeAuthFlow != nil && activeAuthFlow.ProviderID == pendingID {
-						activeAuthFlow.Status = "error"
-						activeAuthFlow.Error = err.Error()
-					}
-					activeAuthFlowMu.Unlock()
-					log.Error().Err(err).Str("type", "alibaba").Msg("Auth-and-create: Alibaba OAuth failed")
-					return
-				}
-
-				// Derive canonical instance ID and persist token — first DB write.
-				newInstanceID, err := gen.SaveAlibabaOAuthToken(td)
-				if err != nil {
-					log.Error().Err(err).Str("type", "alibaba").Msg("Auth-and-create: failed to save Alibaba OAuth token")
-					activeAuthFlowMu.Lock()
-					if activeAuthFlow != nil && activeAuthFlow.ProviderID == pendingID {
-						activeAuthFlow.Status = "error"
-						activeAuthFlow.Error = "Failed to save OAuth token"
-					}
-					activeAuthFlowMu.Unlock()
-					return
-				}
-
-				// Register provider for the first time with its canonical ID.
-				if err := providerRegistry.Register(gen, true); err != nil {
-					log.Warn().Err(err).Str("provider", newInstanceID).Msg("Auth-and-create: failed to register Alibaba provider")
-				}
-
-				// Update status and provider ID atomically.
-				activeAuthFlowMu.Lock()
-				if activeAuthFlow != nil && activeAuthFlow.ProviderID == pendingID {
-					activeAuthFlow.ProviderID = newInstanceID
-					activeAuthFlow.Status = "complete"
-				}
-				activeAuthFlowMu.Unlock()
-
-				log.Info().Str("provider", newInstanceID).Msg("Auth-and-create: Alibaba OAuth completed")
-			}()
-
-			c.JSON(http.StatusOK, gin.H{
-				"success":          false,
-				"requiresAuth":     true,
-				"pending_id":       pendingID,
-				"user_code":        flow.UserCode,
-				"verification_uri": verifyURL,
-				"message":          fmt.Sprintf("Visit %s and enter code: %s", verifyURL, flow.UserCode),
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"message": "OAuth authentication is not supported for Alibaba DashScope — please use API key authentication",
 			})
 			return
 		}
@@ -649,30 +550,24 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 			suffix = suffix[len(suffix)-6:]
 		}
 
-		var canonicalID string
-		if strings.EqualFold(strings.TrimSpace(req.APIFormat), "anthropic") {
-			// Anthropic-mode: use a distinct ID slug so it never collides with DashScope providers.
-			canonicalID = "alibaba-anthropic-" + suffix
-		} else {
-			plan := strings.ToLower(strings.TrimSpace(req.Plan))
-			switch plan {
-			case "", "standard":
-				plan = "standard"
-			case "coding", "coding_plan", "coding-plan":
-				plan = "coding-plan"
-			default:
-				plan = "standard"
-			}
-			region := req.Region
-			if region == "" {
-				region = "global"
-			}
-			planSlug := strings.ReplaceAll(plan, "-plan", "")
-			canonicalID = "alibaba-" + planSlug + "-" + region + "-" + suffix
+		plan := strings.ToLower(strings.TrimSpace(req.Plan))
+		switch plan {
+		case "", "standard":
+			plan = "standard"
+		case "coding", "coding_plan", "coding-plan":
+			plan = "coding-plan"
+		default:
+			plan = "standard"
 		}
-		gen := generic.NewGenericProvider("alibaba", canonicalID, "")
+		region := req.Region
+		if region == "" {
+			region = "global"
+		}
+		planSlug := strings.ReplaceAll(plan, "-plan", "")
+		canonicalID := "alibaba-" + planSlug + "-" + region + "-" + suffix
 
-		if err := gen.SetupAuth(&req); err != nil {
+		prov := alibabapkg.NewProvider(canonicalID, "")
+		if err := prov.SetupAuth(&req); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"success": false,
 				"message": fmt.Sprintf("Authentication failed: %v", err),
@@ -680,7 +575,7 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 			return
 		}
 
-		if err := providerRegistry.Register(gen, true); err != nil {
+		if err := providerRegistry.Register(prov, true); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"success": false,
 				"message": fmt.Sprintf("Failed to register provider: %v", err),
@@ -691,9 +586,9 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"provider": gin.H{
-				"id":         gen.GetInstanceID(),
-				"type":       gen.GetID(),
-				"name":       gen.GetName(),
+				"id":         prov.GetInstanceID(),
+				"type":       prov.GetID(),
+				"name":       prov.GetName(),
 				"isActive":   false,
 				"authStatus": "authenticated",
 			},
@@ -1064,118 +959,34 @@ func handleProviderAuth(c *gin.Context) {
 	}
 
 	cop, isCopilot := provider.(*copilot.GitHubCopilotProvider)
-	gen, isGeneric := provider.(*generic.GenericProvider)
+	_, isGeneric := provider.(*generic.GenericProvider)
+	_ = isGeneric
 
-	// ── Alibaba OAuth device-code flow ───────────────────────────────────────
-	if isGeneric && gen.GetID() == "alibaba" && req.Method == "oauth" {
-		flow, err := alibabapkg.InitiateDeviceFlow(context.Background())
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
+	// Alibaba: API-key only — OAuth is not supported.
+	if aliProv, ok := provider.(*alibabapkg.Provider); ok {
+		if req.Method == "oauth" {
+			c.JSON(http.StatusBadRequest, gin.H{
 				"success": false,
-				"message": fmt.Sprintf("Failed to initiate Alibaba OAuth: %v", err),
+				"message": "OAuth authentication is not supported for Alibaba DashScope — please use API key authentication",
 			})
 			return
 		}
-
-		// Pick the best verification URL to show the user.
-		// Append prompt=login so Qwen shows the account chooser instead of
-		// auto-signing in with the already-logged-in session.
-		verifyURL := flow.VerificationURIComplete
-		if verifyURL == "" {
-			verifyURL = flow.VerificationURI
+		if err := aliProv.SetupAuth(&req); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": fmt.Sprintf("Authentication failed: %v", err)})
+			return
 		}
-		if verifyURL != "" && !strings.Contains(verifyURL, "prompt=") {
-			sep := "&"
-			if !strings.Contains(verifyURL, "?") {
-				sep = "?"
-			}
-			verifyURL += sep + "prompt=login"
+		if err := providerRegistry.Register(aliProv, true); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": fmt.Sprintf("Failed to update provider: %v", err)})
+			return
 		}
-
-		// Poll for the token in the background.
-		alibabaCtx, alibabaCancel := context.WithCancel(context.Background())
-		alibabaFlow := flow
-		alibabaGen := gen
-		alibabaReg := providerRegistry
-
-		activeAuthFlowMu.Lock()
-		activeAuthFlow = &authFlowState{
-			ProviderID:     providerID,
-			Status:         "awaiting_user",
-			InstructionURL: verifyURL,
-			UserCode:       flow.UserCode,
-			deviceCode:     flow.DeviceCode,
-			codeVerifier:   flow.CodeVerifier,
-			cancelFn:       alibabaCancel,
-		}
-		activeAuthFlowMu.Unlock()
-
-		go func() {
-			defer alibabaCancel()
-			td, err := alibabapkg.PollForToken(
-				alibabaCtx,
-				alibabaFlow.DeviceCode,
-				alibabaFlow.CodeVerifier,
-				alibabaFlow.Interval,
-				alibabaFlow.ExpiresIn,
-			)
-			if err != nil {
-				// Ignore cancellation — user cancelled intentionally
-				if alibabaCtx.Err() != nil {
-					return
-				}
-				activeAuthFlowMu.Lock()
-				if activeAuthFlow != nil && activeAuthFlow.ProviderID == providerID {
-					activeAuthFlow.Status = "error"
-					activeAuthFlow.Error = err.Error()
-				}
-				activeAuthFlowMu.Unlock()
-				log.Error().Err(err).Str("provider", providerID).Msg("Alibaba OAuth device code flow failed")
-				return
-			}
-
-			newInstanceID, err := alibabaGen.SaveAlibabaOAuthToken(td)
-			if err != nil {
-				log.Error().Err(err).Str("provider", providerID).Msg("Failed to save Alibaba OAuth token")
-			}
-
-			// Invalidate model cache on re-auth
-			if cacheErr := database.NewProviderModelsCacheStore().Delete(providerID); cacheErr != nil {
-				log.Warn().Err(cacheErr).Str("provider", providerID).Msg("Failed to invalidate model cache")
-			}
-			// Also invalidate for the new instance ID if renamed
-			if newInstanceID != "" && newInstanceID != providerID {
-				_ = database.NewProviderModelsCacheStore().Delete(newInstanceID)
-			}
-
-			// Rename in registry: "alibaba-2" → "alibaba-oauth-china" etc.
-			if newInstanceID != "" && newInstanceID != providerID {
-				if err := alibabaReg.Rename(providerID, newInstanceID); err != nil {
-					log.Warn().Err(err).Str("old", providerID).Str("new", newInstanceID).Msg("Failed to rename Alibaba provider in registry")
-				} else {
-					log.Info().Str("old", providerID).Str("new", newInstanceID).Msg("Alibaba provider renamed")
-				}
-			}
-
-			if err := alibabaReg.Register(alibabaGen, true); err != nil {
-				log.Warn().Err(err).Str("provider", alibabaGen.GetInstanceID()).Msg("Failed to update Alibaba provider in registry")
-			}
-
-			activeAuthFlowMu.Lock()
-			if activeAuthFlow != nil && activeAuthFlow.ProviderID == providerID {
-				activeAuthFlow.Status = "complete"
-			}
-			activeAuthFlowMu.Unlock()
-
-			log.Info().Str("provider", providerID).Msg("Alibaba OAuth completed")
-		}()
-
 		c.JSON(http.StatusOK, gin.H{
-			"success":          false,
-			"requiresAuth":     true,
-			"user_code":        flow.UserCode,
-			"verification_uri": verifyURL,
-			"message":          fmt.Sprintf("Visit %s and enter code: %s", verifyURL, flow.UserCode),
+			"success": true,
+			"provider": gin.H{
+				"id":         aliProv.GetInstanceID(),
+				"type":       aliProv.GetID(),
+				"name":       aliProv.GetName(),
+				"authStatus": "authenticated",
+			},
 		})
 		return
 	}
@@ -1302,46 +1113,6 @@ func handleInitiateDeviceCode(c *gin.Context) {
 		return
 	}
 
-	// ── Alibaba OAuth device-code initiation ──────────────────────────────
-	if gen, ok := provider.(*generic.GenericProvider); ok && gen.GetID() == "alibaba" {
-		flow, err := alibabapkg.InitiateDeviceFlow(context.Background())
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"success": false,
-				"error":   fmt.Sprintf("Failed to initiate Alibaba device code flow: %v", err),
-			})
-			return
-		}
-
-		verifyURL := flow.VerificationURIComplete
-		if verifyURL == "" {
-			verifyURL = flow.VerificationURI
-		}
-
-		// Store the flow state (including PKCE verifier) for the frontend-driven poll.
-		activeAuthFlowMu.Lock()
-		activeAuthFlow = &authFlowState{
-			ProviderID:     providerID,
-			Status:         "awaiting_user",
-			InstructionURL: verifyURL,
-			UserCode:       flow.UserCode,
-			deviceCode:     flow.DeviceCode,
-			codeVerifier:   flow.CodeVerifier,
-		}
-		activeAuthFlowMu.Unlock()
-
-		c.JSON(http.StatusOK, gin.H{
-			"success":          true,
-			"user_code":        flow.UserCode,
-			"device_code":      flow.DeviceCode,
-			"verification_uri": verifyURL,
-			"expires_in":       flow.ExpiresIn,
-			"interval":         flow.Interval,
-			"message":          fmt.Sprintf("Please visit %s and enter code: %s", verifyURL, flow.UserCode),
-		})
-		return
-	}
-
 	// ── GitHub Copilot device-code initiation ─────────────────────────────
 	cop, ok := provider.(*copilot.GitHubCopilotProvider)
 	if !ok {
@@ -1388,59 +1159,6 @@ func handleCompleteDeviceCode(c *gin.Context) {
 	provider, err := providerRegistry.GetProvider(providerID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-		return
-	}
-
-	// ── Alibaba OAuth device-code completion ──────────────────────────────
-	if gen, ok := provider.(*generic.GenericProvider); ok && gen.GetID() == "alibaba" {
-		td, err := alibabapkg.PollForToken(
-			context.Background(),
-			req.DeviceCode,
-			req.CodeVerifier,
-			5,   // default interval
-			600, // default expires_in
-		)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"success": false,
-				"error":   fmt.Sprintf("Failed to complete Alibaba OAuth: %v", err),
-			})
-			return
-		}
-
-		newInstanceID, err := gen.SaveAlibabaOAuthToken(td)
-		if err != nil {
-			log.Error().Err(err).Str("provider", providerID).Msg("Failed to save Alibaba OAuth token")
-		}
-
-		// Rename in registry: e.g. "alibaba-2" → "alibaba-oauth-china"
-		if newInstanceID != "" && newInstanceID != providerID {
-			if err := providerRegistry.Rename(providerID, newInstanceID); err != nil {
-				log.Warn().Err(err).Str("old", providerID).Str("new", newInstanceID).Msg("Failed to rename Alibaba provider in registry")
-			} else {
-				log.Info().Str("old", providerID).Str("new", newInstanceID).Msg("Alibaba provider renamed")
-			}
-		}
-
-		if err := providerRegistry.Register(gen, true); err != nil {
-			log.Warn().Err(err).Str("provider", gen.GetInstanceID()).Msg("Failed to update Alibaba provider in registry")
-		}
-
-		activeAuthFlowMu.Lock()
-		if activeAuthFlow != nil && activeAuthFlow.ProviderID == providerID {
-			activeAuthFlow.Status = "complete"
-		}
-		activeAuthFlowMu.Unlock()
-
-		c.JSON(http.StatusOK, gin.H{
-			"success": true,
-			"message": "Alibaba authenticated successfully",
-			"provider": gin.H{
-				"id":   gen.GetInstanceID(),
-				"name": gen.GetName(),
-				"type": "alibaba",
-			},
-		})
 		return
 	}
 

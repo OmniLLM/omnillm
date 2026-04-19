@@ -73,6 +73,36 @@ func TestExtractLatestRawAnthropicToolResultEntriesUsesMostRecentUserToolResults
 	}
 }
 
+func TestExtractLatestRawAnthropicToolResultEntriesFallsBackToID(t *testing.T) {
+	payload := map[string]interface{}{
+		"messages": []interface{}{
+			map[string]interface{}{
+				"role": "user",
+				"content": []interface{}{
+					map[string]interface{}{
+						"type":    "tool_result",
+						"id":      "call_fallback",
+						"name":    "Read",
+						"content": "fallback result",
+					},
+				},
+			},
+		},
+	}
+
+	entries := extractLatestRawAnthropicToolResultEntries(payload)
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 latest raw tool result entry, got %d", len(entries))
+	}
+	entry := entries[0]
+	if entry.ToolCallID != "call_fallback" {
+		t.Fatalf("expected fallback tool call id call_fallback, got %q", entry.ToolCallID)
+	}
+	if entry.ToolName != "Read" {
+		t.Fatalf("expected tool name Read, got %q", entry.ToolName)
+	}
+}
+
 func TestExtractLatestToolResultLogEntriesUsesMostRecentUserToolResults(t *testing.T) {
 	isError := true
 	longResult := strings.Repeat("result-", 80)

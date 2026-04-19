@@ -207,6 +207,91 @@ func readBody(t *testing.T, resp *http.Response) string {
 	return string(body)
 }
 
+
+func TestAnthropicMessagesRoute_NonStreamingThinkingSuppression(t *testing.T) {
+	registerStubProvider(t, "thinking-model", func(_ *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+		return &cif.CanonicalResponse{
+			ID:    "msg_thinking",
+			Model: "thinking-model",
+			Content: []cif.CIFContentPart{
+				cif.CIFThinkingPart{Type: "thinking", Thinking: "Let me think this through."},
+				cif.CIFTextPart{Type: "text", Text: "Final answer."},
+			},
+			StopReason: cif.StopReasonEndTurn,
+		}, nil
+	}, nil)
+
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	requestBody := `{"model":"thinking-model","max_tokens":100,"messages":[{"role":"user","content":"Hi"}]}`
+
+	t.Run("suppresses thinking by default", func(t *testing.T) {
+		resp := postJSON(
+			t,
+			srv.URL+"/v1/messages",
+			requestBody,
+			map[string]string{"anthropic-version": "2023-06-01"},
+		)
+		body := readBody(t, resp)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
+		}
+
+		var payload struct {
+			Content []struct {
+				Type     string `json:"type"`
+				Text     string `json:"text"`
+				Thinking string `json:"thinking"`
+			} `json:"content"`
+		}
+		if err := json.Unmarshal([]byte(body), &payload); err != nil {
+			t.Fatalf("invalid JSON: %v", err)
+		}
+		if len(payload.Content) != 1 {
+			t.Fatalf("expected 1 content block, got %d: %#v", len(payload.Content), payload.Content)
+		}
+		if payload.Content[0].Type != "text" || payload.Content[0].Text != "Final answer." {
+			t.Fatalf("unexpected content: %#v", payload.Content)
+		}
+	})
+
+	t.Run("preserves thinking when opted in", func(t *testing.T) {
+		resp := postJSON(
+			t,
+			srv.URL+"/v1/messages",
+			requestBody,
+			map[string]string{
+				"anthropic-version": "2023-06-01",
+				"anthropic-beta":   "interleaved-thinking-2025-05-14",
+			},
+		)
+		body := readBody(t, resp)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
+		}
+
+		var payload struct {
+			Content []struct {
+				Type     string `json:"type"`
+				Text     string `json:"text"`
+				Thinking string `json:"thinking"`
+			} `json:"content"`
+		}
+		if err := json.Unmarshal([]byte(body), &payload); err != nil {
+			t.Fatalf("invalid JSON: %v", err)
+		}
+		if len(payload.Content) != 2 {
+			t.Fatalf("expected 2 content blocks, got %d: %#v", len(payload.Content), payload.Content)
+		}
+		if payload.Content[0].Type != "thinking" || payload.Content[0].Thinking != "Let me think this through." {
+			t.Fatalf("unexpected first content block: %#v", payload.Content[0])
+		}
+		if payload.Content[1].Type != "text" || payload.Content[1].Text != "Final answer." {
+			t.Fatalf("unexpected second content block: %#v", payload.Content[1])
+		}
+	})
+}
 func TestModelsEndpointReturnsOnlyActiveProviderModels(t *testing.T) {
 	activeInstanceID := registerStubModelsProvider(t, []providertypes.Model{
 		{

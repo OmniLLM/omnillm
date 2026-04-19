@@ -157,6 +157,9 @@ func extractLatestRawAnthropicToolResultEntries(payload map[string]interface{}) 
 				continue
 			}
 			toolUseID, _ := partMap["tool_use_id"].(string)
+			if toolUseID == "" {
+				toolUseID, _ = partMap["id"].(string)
+			}
 			toolName, _ := partMap["name"].(string)
 			entries = append(entries, toolLoopRawResultLogEntry{
 				MessageIndex:  messageIndex,

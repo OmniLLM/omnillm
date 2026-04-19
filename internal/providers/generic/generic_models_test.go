@@ -85,19 +85,6 @@ func TestAlibabaGetModelsFetchesLiveModels(t *testing.T) {
 	}
 }
 
-func TestAlibabaApplyConfigUsesOAuthResourceURL(t *testing.T) {
-	provider := NewGenericProvider("alibaba", "alibaba-oauth", "Alibaba")
-	provider.applyConfig(map[string]interface{}{
-		"auth_type":    "oauth",
-		"base_url":     "https://ignored.example.com/custom",
-		"resource_url": "enterprise.example.com/compatible-mode",
-	})
-
-	if provider.baseURL != "https://enterprise.example.com/compatible-mode/v1" {
-		t.Fatalf("expected OAuth resource_url to win, got %q", provider.baseURL)
-	}
-}
-
 func TestAlibabaApplyConfigUsesStandardAPIKeyDefaults(t *testing.T) {
 	provider := NewGenericProvider("alibaba", "alibaba-standard", "Alibaba")
 	provider.applyConfig(map[string]interface{}{
@@ -124,42 +111,3 @@ func TestAlibabaApplyConfigUsesCodingPlanDefaults(t *testing.T) {
 	}
 }
 
-func TestAlibabaOAuthGetModelsUsesSupportedCatalog(t *testing.T) {
-	if err := database.InitializeDatabase(t.TempDir()); err != nil {
-		t.Fatalf("failed to initialize database: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = database.GetDatabase().Close()
-	})
-
-	tokenStore := database.NewTokenStore()
-	if err := tokenStore.Save("alibaba-oauth-test", "alibaba", map[string]interface{}{
-		"access_token": "oauth-token",
-		"auth_type":    "oauth",
-		"resource_url": "portal.qwen.ai",
-	}); err != nil {
-		t.Fatalf("failed to save token: %v", err)
-	}
-
-	provider := NewGenericProvider("alibaba", "alibaba-oauth-test", "Alibaba")
-	if err := provider.LoadFromDB(); err != nil {
-		t.Fatalf("failed to load provider from database: %v", err)
-	}
-
-	models, err := provider.GetModels()
-	if err != nil {
-		t.Fatalf("GetModels() error = %v", err)
-	}
-	if len(models.Data) != 3 {
-		t.Fatalf("expected 3 supported OAuth models, got %d", len(models.Data))
-	}
-	modelIDs := make(map[string]bool, len(models.Data))
-	for _, m := range models.Data {
-		modelIDs[m.ID] = true
-	}
-	for _, want := range []string{"qwen3-coder-plus", "qwen3-coder-flash", "qwen3-coder-next"} {
-		if !modelIDs[want] {
-			t.Fatalf("expected %q in OAuth model list, got %#v", want, models.Data)
-		}
-	}
-}

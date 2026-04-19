@@ -239,24 +239,9 @@ func TestHandleAuthAndCreateProviderAlibabaAPIKeyUsesCanonicalID(t *testing.T) {
 	}
 }
 
-func TestHandleAuthAndCreateProviderAlibabaOAuthStartsPendingFlowWithoutPlaceholderRecord(t *testing.T) {
+func TestHandleAuthAndCreateProviderAlibabaOAuthReturnsError(t *testing.T) {
 	resetAdminTestState(t)
 	t.Cleanup(func() { resetAdminTestState(t) })
-
-	stubDefaultTransport(t, func(req *http.Request) (*http.Response, error) {
-		if req.URL.Host == "chat.qwen.ai" && req.URL.Path == "/api/v1/oauth2/device/code" {
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Header:     make(http.Header),
-				Body: io.NopCloser(strings.NewReader(
-					`{"device_code":"device-123","user_code":"QWEN-CODE","verification_uri":"https://chat.qwen.ai/authorize?user_code=QWEN-CODE","expires_in":300,"interval":60}`,
-				)),
-				Request: req,
-			}, nil
-		}
-
-		return nil, context.Canceled
-	})
 
 	router := newAdminTestRouter()
 
@@ -268,63 +253,24 @@ func TestHandleAuthAndCreateProviderAlibabaOAuthStartsPendingFlowWithoutPlacehol
 		`{"method":"oauth"}`,
 	)
 
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", recorder.Code, recorder.Body.String())
 	}
 
 	var payload struct {
-		Success         bool   `json:"success"`
-		RequiresAuth    bool   `json:"requiresAuth"`
-		PendingID       string `json:"pending_id"`
-		UserCode        string `json:"user_code"`
-		VerificationURI string `json:"verification_uri"`
+		Success bool   `json:"success"`
+		Message string `json:"message"`
 	}
 	payload = decodeJSONBody[struct {
-		Success         bool   `json:"success"`
-		RequiresAuth    bool   `json:"requiresAuth"`
-		PendingID       string `json:"pending_id"`
-		UserCode        string `json:"user_code"`
-		VerificationURI string `json:"verification_uri"`
+		Success bool   `json:"success"`
+		Message string `json:"message"`
 	}](t, recorder)
 
 	if payload.Success {
-		t.Fatal("expected success=false while waiting for device authorization")
+		t.Fatal("expected success=false for unsupported OAuth")
 	}
-	if !payload.RequiresAuth {
-		t.Fatal("expected requiresAuth=true")
-	}
-	if payload.PendingID != "alibaba-pending" {
-		t.Fatalf("expected pending_id=alibaba-pending, got %q", payload.PendingID)
-	}
-	if payload.UserCode != "QWEN-CODE" {
-		t.Fatalf("unexpected user code: %q", payload.UserCode)
-	}
-	if !strings.Contains(payload.VerificationURI, "prompt=login") {
-		t.Fatalf("expected verification URI to append prompt=login, got %q", payload.VerificationURI)
-	}
-
-	reg := registry.GetProviderRegistry()
-	if len(reg.ListProviders()) != 0 {
-		t.Fatalf("expected no provider records before OAuth completes, got %d", len(reg.ListProviders()))
-	}
-
-	tokenRecord, err := database.NewTokenStore().Get("alibaba-pending")
-	if err != nil {
-		t.Fatalf("failed to check pending token record: %v", err)
-	}
-	if tokenRecord != nil {
-		t.Fatalf("did not expect a pending token record, got %#v", tokenRecord)
-	}
-
-	cancelRecorder := performJSONRequest(
-		t,
-		router,
-		http.MethodPost,
-		"/api/admin/auth/cancel",
-		`{}`,
-	)
-	if cancelRecorder.Code != http.StatusOK {
-		t.Fatalf("expected 200 from cancel, got %d: %s", cancelRecorder.Code, cancelRecorder.Body.String())
+	if payload.Message == "" {
+		t.Fatal("expected error message")
 	}
 }
 

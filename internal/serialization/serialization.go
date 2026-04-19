@@ -171,6 +171,12 @@ func SerializeToOpenAI(response *cif.CanonicalResponse) (*OpenAIResponse, error)
 
 // SerializeToAnthropic converts a CIF response to Anthropic format
 func SerializeToAnthropic(response *cif.CanonicalResponse) (*AnthropicResponse, error) {
+	return SerializeToAnthropicWithSuppression(response, false)
+}
+
+// SerializeToAnthropicWithSuppression converts a CIF response to Anthropic format
+// and optionally suppresses thinking blocks for clients that did not opt in.
+func SerializeToAnthropicWithSuppression(response *cif.CanonicalResponse, suppressThinking bool) (*AnthropicResponse, error) {
 	var content []AnthropicContentBlock
 
 	for _, part := range response.Content {
@@ -188,7 +194,9 @@ func SerializeToAnthropic(response *cif.CanonicalResponse) (*AnthropicResponse, 
 				Input: p.ToolArguments,
 			})
 		case cif.CIFThinkingPart:
-			// Anthropic thinking blocks
+			if suppressThinking {
+				continue
+			}
 			content = append(content, AnthropicContentBlock{
 				Type:      "thinking",
 				Thinking:  p.Thinking,
@@ -221,6 +229,7 @@ func SerializeToAnthropic(response *cif.CanonicalResponse) (*AnthropicResponse, 
 		Str("id", response.ID).
 		Str("model", response.Model).
 		Str("stop_reason", *stopReason).
+		Bool("suppress_thinking", suppressThinking).
 		Msg("Converted CIF response to Anthropic format")
 
 	return anthropicResp, nil
