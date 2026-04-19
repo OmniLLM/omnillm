@@ -66,26 +66,7 @@ func handleMessages(c *gin.Context) {
 		return
 	}
 
-	// Capture incoming request headers for trace logging
-	canonicalRequest.IncomingHeaders = make(map[string]string)
-	for k, v := range c.Request.Header {
-		if len(v) > 0 {
-			canonicalRequest.IncomingHeaders[k] = v[0]
-		}
-	}
-	setInboundAPIShape(canonicalRequest, "anthropic")
-
-	originalModel := canonicalRequest.Model
-
-	// Log REQUEST
-	log.Info().
-		Str("request_id", requestIDStr).
-		Str("api_shape", "anthropic").
-		Str("model_requested", originalModel).
-		Int("messages", len(canonicalRequest.Messages)).
-		Int("tools", len(canonicalRequest.Tools)).
-		Bool("stream", canonicalRequest.Stream).
-		Msg("\x1b[33m-->\x1b[0m REQUEST")
+	originalModel := prepareCanonicalRequest(c, canonicalRequest, "anthropic")
 	logAnthropicToolLoopRequest(requestIDStr, canonicalRequest)
 
 	// Resolve providers
@@ -102,12 +83,7 @@ func handleMessages(c *gin.Context) {
 		)
 		if err != nil {
 			log.Error().Err(err).Str("request_id", requestIDStr).Str("model", attempt.RequestedModel).Msg("Failed to resolve providers")
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": gin.H{
-					"message": fmt.Sprintf("Failed to resolve providers: %v", err),
-					"type":    "api_error",
-				},
-			})
+			writeResolveProvidersError(c, err, "api_error")
 			return
 		}
 
@@ -171,16 +147,7 @@ func handleMessages(c *gin.Context) {
 		}
 	}
 
-	errMsg := "All providers failed"
-	if lastErr != nil {
-		errMsg = fmt.Sprintf("All providers failed. Last error: %v", lastErr)
-	}
-	c.JSON(providerFailureStatus(lastErr), gin.H{
-		"error": gin.H{
-			"message": errMsg,
-			"type":    providerFailureType("api_error", lastErr),
-		},
-	})
+	writeProviderFailure(c, "api_error", lastErr)
 }
 
 func handleAnthropicNonStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID string, originalModel string, providerID string, startTime time.Time) error {

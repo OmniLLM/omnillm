@@ -24,6 +24,19 @@ import {
   type Status,
   type UsageData,
 } from "@/api"
+import { EmptyState } from "@/components/EmptyState"
+import { Spinner } from "@/components/Spinner"
+import { AuthFlowBanner } from "@/pages/providers/components/AuthFlowBanner"
+import { GroupHeader } from "@/pages/providers/components/GroupHeader"
+import { PriorityModal } from "@/pages/providers/components/PriorityModal"
+import { StatsBar } from "@/pages/providers/components/StatsBar"
+import { UsageDialog } from "@/pages/providers/components/UsageDialog"
+import {
+  PROVIDER_ACCENT,
+  PROVIDER_ICONS,
+  PROVIDER_TYPES as PROVIDER_TYPE_IDS,
+  TYPE_NAMES,
+} from "@/pages/providers/constants/providerRegistry"
 import { getDeviceAuthCopy } from "@/lib/device-auth"
 import { createLogger } from "@/lib/logger"
 
@@ -32,8 +45,6 @@ const _log = createLogger("providers-page")
 interface ProvidersPageProps {
   showToast: (msg: string, type?: "success" | "error") => void
 }
-
-// ─── Spinner ──────────────────────────────────────────────────────────────────
 
 function Spin({ size = 14 }: { size?: number }) {
   return (
@@ -56,169 +67,6 @@ function Spin({ size = 14 }: { size?: number }) {
         opacity="0.6"
       />
     </svg>
-  )
-}
-
-// ─── Auth Flow Banner ─────────────────────────────────────────────────────────
-
-function AuthFlowBanner({
-  authFlow,
-  providers,
-  onCancel,
-}: {
-  authFlow: AuthFlow | null | undefined
-  providers: Array<Provider>
-  onCancel: () => void
-}) {
-  if (
-    !authFlow
-    || authFlow.status === "complete"
-    || authFlow.status === "error"
-  )
-    return null
-  const name =
-    providers.find((p) => p.id === authFlow.providerId)?.name
-    ?? authFlow.providerId
-  const authCopy = getDeviceAuthCopy(authFlow, providers)
-
-  return (
-    <div
-      style={{
-        background: "rgba(255,159,10,0.1)",
-        border: "1px solid rgba(255,159,10,0.25)",
-        borderRadius: "var(--radius-lg)",
-        padding: "14px 18px",
-        marginBottom: 24,
-      }}
-    >
-      {authFlow.status === "pending" && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            color: "var(--color-orange)",
-            fontSize: 14,
-            fontWeight: 500,
-          }}
-        >
-          <Spin size={14} />
-          Initiating auth flow for {name}…
-        </div>
-      )}
-      {authFlow.status === "awaiting_user" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div
-            style={{
-              color: "var(--color-orange)",
-              fontSize: 14,
-              fontWeight: 600,
-            }}
-          >
-            Authorization Required — {name}
-          </div>
-          {authFlow.userCode && (
-            <div>
-              <div
-                style={{
-                  fontSize: 12,
-                  color: "var(--color-text-secondary)",
-                  marginBottom: 6,
-                }}
-              >
-                {authCopy.codeLabel}
-              </div>
-              <div
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 22,
-                  fontWeight: 700,
-                  color: "var(--color-orange)",
-                  letterSpacing: "0.2em",
-                  background: "rgba(255,159,10,0.08)",
-                  border: "1px solid rgba(255,159,10,0.2)",
-                  borderRadius: "var(--radius-md)",
-                  padding: "10px 16px",
-                  display: "inline-block",
-                }}
-              >
-                {authFlow.userCode}
-              </div>
-              {authCopy.codeHint && (
-                <div
-                  style={{
-                    fontSize: 12,
-                    color: "var(--color-text-secondary)",
-                    marginTop: 8,
-                    lineHeight: 1.5,
-                  }}
-                >
-                  {authCopy.codeHint}
-                </div>
-              )}
-            </div>
-          )}
-          {authFlow.instructionURL && (
-            <div>
-              <div
-                style={{
-                  fontSize: 12,
-                  color: "var(--color-text-secondary)",
-                  marginBottom: 6,
-                }}
-              >
-                Authorization URL:
-              </div>
-              <div
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11,
-                  color: "var(--color-text-secondary)",
-                  background: "rgba(255,255,255,0.04)",
-                  border: "1px solid var(--color-separator)",
-                  borderRadius: "var(--radius-sm)",
-                  padding: "8px 12px",
-                  wordBreak: "break-all",
-                  marginBottom: 10,
-                }}
-              >
-                {authFlow.instructionURL}
-              </div>
-              <a
-                href={authFlow.instructionURL}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <button className="btn btn-amber btn-sm">
-                  Open in Browser ↗
-                </button>
-              </a>
-            </div>
-          )}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              color: "var(--color-text-secondary)",
-              fontSize: 13,
-            }}
-          >
-            <Spin size={13} />
-            {authCopy.waitingLabel}
-          </div>
-          <div>
-            <button
-              className="btn btn-sm"
-              style={{ color: "var(--color-text-secondary)" }}
-              onClick={onCancel}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
   )
 }
 
@@ -1293,664 +1141,9 @@ function ModelsDialog({
   )
 }
 
-// ─── Usage Dialog ─────────────────────────────────────────────────────────────
-
-function UsageDialog({ provider }: { provider: Provider }) {
-  const [data, setData] = useState<UsageData | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [open, setOpen] = useState(false)
-
-  const load = async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      setData(await getProviderUsage(provider.id))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleOpen = () => {
-    setOpen(true)
-    if (data === null && !loading) load()
-  }
-
-  const getBarColor = (pct: number) =>
-    pct > 90 ? "var(--color-red)"
-    : pct > 75 ? "var(--color-orange)"
-    : "var(--color-green)"
-
-  return (
-    <>
-      <button className="btn btn-ghost btn-sm" onClick={handleOpen}>
-        Usage
-      </button>
-
-      {open && (
-        <div
-          className="dialog-overlay"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setOpen(false)
-          }}
-        >
-          <div className="dialog-box">
-            <div className="dialog-header">
-              <div
-                style={{
-                  fontFamily: "var(--font-display)",
-                  fontWeight: 600,
-                  fontSize: 15,
-                  color: "var(--color-text)",
-                }}
-              >
-                {provider.name} — Usage
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  onClick={load}
-                  disabled={loading}
-                >
-                  Refresh
-                </button>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => setOpen(false)}
-                >
-                  Done
-                </button>
-              </div>
-            </div>
-            <div className="dialog-body">
-              {loading && (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    padding: "32px 0",
-                    justifyContent: "center",
-                    color: "var(--color-text-secondary)",
-                    fontSize: 14,
-                  }}
-                >
-                  <Spin /> Fetching usage data…
-                </div>
-              )}
-              {error && (
-                <div
-                  style={{
-                    color: "var(--color-red)",
-                    fontSize: 13,
-                    padding: "12px 0",
-                  }}
-                >
-                  {error}
-                </div>
-              )}
-              {data && !loading && (
-                <div
-                  style={{ display: "flex", flexDirection: "column", gap: 20 }}
-                >
-                  {(() => {
-                    const metaFields = [
-                      { label: "Plan", value: data.copilot_plan },
-                      { label: "SKU", value: data.access_type_sku },
-                      {
-                        label: "Quota Resets",
-                        value:
-                          data.quota_reset_date ?
-                            new Date(data.quota_reset_date).toLocaleDateString()
-                          : undefined,
-                      },
-                      {
-                        label: "Assigned",
-                        value:
-                          data.assigned_date ?
-                            new Date(data.assigned_date).toLocaleDateString()
-                          : undefined,
-                      },
-                      {
-                        label: "Chat",
-                        value:
-                          data.chat_enabled !== undefined ?
-                            data.chat_enabled ?
-                              "Enabled"
-                            : "Disabled"
-                          : undefined,
-                      },
-                    ].filter((f) => f.value !== undefined)
-
-                    return metaFields.length > 0 ?
-                        <div
-                          style={{
-                            display: "grid",
-                            gridTemplateColumns: "1fr 1fr",
-                            gap: "12px 24px",
-                            padding: "14px 16px",
-                            background: "rgba(255,255,255,0.04)",
-                            borderRadius: "var(--radius-md)",
-                            border: "1px solid var(--color-separator)",
-                          }}
-                        >
-                          {metaFields.map(({ label, value }) => (
-                            <div key={label}>
-                              <div
-                                style={{
-                                  fontSize: 11,
-                                  color: "var(--color-text-tertiary)",
-                                  marginBottom: 3,
-                                }}
-                              >
-                                {label}
-                              </div>
-                              <div
-                                style={{
-                                  fontSize: 13,
-                                  color: "var(--color-text)",
-                                  textTransform: "capitalize",
-                                }}
-                              >
-                                {value}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      : null
-                  })()}
-
-                  {(
-                    data.quota_snapshots
-                    && Object.keys(data.quota_snapshots).length > 0
-                  ) ?
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 18,
-                      }}
-                    >
-                      {Object.entries(data.quota_snapshots).map(
-                        ([key, value]) => {
-                          const { entitlement, percent_remaining, unlimited } =
-                            value
-                          const remaining =
-                            value.quota_remaining ?? value.remaining
-                          const pctUsed =
-                            unlimited ? 0 : 100 - percent_remaining
-                          const used =
-                            unlimited ? "N/A" : (
-                              (entitlement - remaining).toLocaleString()
-                            )
-                          const barColor =
-                            unlimited ? "var(--color-blue)" : (
-                              getBarColor(pctUsed)
-                            )
-                          return (
-                            <div key={key}>
-                              <div
-                                style={{
-                                  display: "flex",
-                                  justifyContent: "space-between",
-                                  marginBottom: 8,
-                                  alignItems: "baseline",
-                                }}
-                              >
-                                <span
-                                  style={{
-                                    fontSize: 13,
-                                    fontWeight: 500,
-                                    textTransform: "capitalize",
-                                    color: "var(--color-text)",
-                                  }}
-                                >
-                                  {key.replaceAll("_", " ")}
-                                </span>
-                                {unlimited ?
-                                  <span
-                                    style={{
-                                      fontSize: 11,
-                                      padding: "2px 8px",
-                                      background: "var(--color-blue-fill)",
-                                      borderRadius: "var(--radius-pill)",
-                                      color: "var(--color-blue)",
-                                      fontWeight: 500,
-                                    }}
-                                  >
-                                    Unlimited
-                                  </span>
-                                : <span
-                                    style={{
-                                      fontSize: 12,
-                                      fontFamily: "var(--font-mono)",
-                                      color:
-                                        pctUsed > 75 ? barColor : (
-                                          "var(--color-text-secondary)"
-                                        ),
-                                    }}
-                                  >
-                                    {pctUsed.toFixed(1)}% used
-                                  </span>
-                                }
-                              </div>
-                              <div className="progress-track">
-                                <div
-                                  className="progress-bar"
-                                  style={{
-                                    width: `${unlimited ? 100 : pctUsed}%`,
-                                    background: barColor,
-                                  }}
-                                />
-                              </div>
-                              <div
-                                style={{
-                                  display: "flex",
-                                  justifyContent: "space-between",
-                                  marginTop: 5,
-                                  fontSize: 12,
-                                  color: "var(--color-text-secondary)",
-                                  fontFamily: "var(--font-mono)",
-                                }}
-                              >
-                                <span>
-                                  {used} /{" "}
-                                  {unlimited ?
-                                    "∞"
-                                  : entitlement.toLocaleString()}
-                                </span>
-                                <span>
-                                  {unlimited ? "∞" : remaining.toLocaleString()}{" "}
-                                  remaining
-                                </span>
-                              </div>
-                            </div>
-                          )
-                        },
-                      )}
-                    </div>
-                  : <div>
-                      <div
-                        style={{
-                          fontSize: 12,
-                          color: "var(--color-text-secondary)",
-                          marginBottom: 10,
-                        }}
-                      >
-                        Raw Data
-                      </div>
-                      <pre
-                        style={{
-                          fontSize: 12,
-                          fontFamily: "var(--font-mono)",
-                          color: "var(--color-text-secondary)",
-                          background: "rgba(255,255,255,0.04)",
-                          border: "1px solid var(--color-separator)",
-                          borderRadius: "var(--radius-md)",
-                          padding: 14,
-                          overflow: "auto",
-                          maxHeight: 280,
-                        }}
-                      >
-                        {JSON.stringify(data, null, 2)}
-                      </pre>
-                    </div>
-                  }
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-    </>
-  )
-}
-
 // ─── Priority Modal ───────────────────────────────────────────────────────────
 
-function PriorityModal({
-  providers,
-  priorities,
-  onPrioritiesChange,
-}: {
-  providers: Array<Provider>
-  priorities: Record<string, number>
-  onPrioritiesChange: (p: Record<string, number>) => void
-}) {
-  const [open, setOpen] = useState(false)
-  const [ordered, setOrdered] = useState<Array<Provider>>([])
-
-  const openModal = () => {
-    const snapshot = providers
-      .filter((p) => p.isActive)
-      .sort((a, b) => (priorities[a.id] ?? 0) - (priorities[b.id] ?? 0))
-    setOrdered(snapshot)
-    setOpen(true)
-  }
-
-  const activeCount = providers.filter((p) => p.isActive).length
-
-  if (activeCount < 2) return null
-
-  const handleMove = (index: number, direction: -1 | 1) => {
-    const nextIndex = index + direction
-    if (nextIndex < 0 || nextIndex >= ordered.length) return
-    setOrdered((prev) => {
-      const next = [...prev]
-      ;[next[index], next[nextIndex]] = [next[nextIndex], next[index]]
-      return next
-    })
-  }
-  const handleSave = () => {
-    const newPriorities: Record<string, number> = {}
-    for (const [i, p] of ordered.entries()) {
-      newPriorities[p.id] = i
-    }
-    onPrioritiesChange(newPriorities)
-    setOpen(false)
-  }
-
-  return (
-    <>
-      <button className="btn btn-ghost btn-sm" onClick={openModal}>
-        Priority
-      </button>
-      {open && (
-        <div
-          className="dialog-overlay"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setOpen(false)
-          }}
-        >
-          <div className="dialog-box" style={{ maxWidth: 420 }}>
-            <div className="dialog-header">
-              <div
-                style={{
-                  fontFamily: "var(--font-display)",
-                  fontWeight: 600,
-                  fontSize: 15,
-                  color: "var(--color-text)",
-                }}
-              >
-                Routing Priority
-              </div>
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={() => setOpen(false)}
-              >
-                ✕
-              </button>
-            </div>
-            <div className="dialog-body">
-              <p
-                style={{
-                  fontSize: 13,
-                  color: "var(--color-text-secondary)",
-                  marginBottom: 16,
-                }}
-              >
-                Reorder providers. Higher items are tried first.
-              </p>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {ordered.map((p, i) => (
-                  <div
-                    key={p.id}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      padding: "12px 16px",
-                      background: "rgba(255,255,255,0.04)",
-                      border: "1px solid var(--color-separator)",
-                      borderRadius: "var(--radius-md)",
-                      transition: "all 0.12s var(--ease)",
-                    }}
-                  >
-                    <span
-                      style={{
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 12,
-                        color: "var(--color-blue)",
-                        minWidth: 22,
-                        fontWeight: 600,
-                      }}
-                    >
-                      {i + 1}
-                    </span>
-                    <span style={{ flex: 1, fontSize: 14, fontWeight: 500 }}>
-                      {p.name}
-                    </span>
-                    <div
-                      style={{ display: "flex", gap: 4, alignItems: "center" }}
-                    >
-                      <button
-                        onClick={() => handleMove(i, -1)}
-                        disabled={i === 0}
-                        style={{
-                          background: "transparent",
-                          border: "1px solid var(--color-separator)",
-                          borderRadius: 4,
-                          color:
-                            i === 0 ?
-                              "var(--color-text-tertiary)"
-                            : "var(--color-text)",
-                          cursor: i === 0 ? "not-allowed" : "pointer",
-                          opacity: i === 0 ? 0.3 : 1,
-                          padding: "2px 8px",
-                          fontSize: 14,
-                          lineHeight: 1,
-                          pointerEvents: i === 0 ? "none" : "auto",
-                        }}
-                        title="Move up"
-                      >
-                        ↑
-                      </button>
-                      <button
-                        onClick={() => handleMove(i, 1)}
-                        disabled={i === ordered.length - 1}
-                        style={{
-                          background: "transparent",
-                          border: "1px solid var(--color-separator)",
-                          borderRadius: 4,
-                          color:
-                            i === ordered.length - 1 ?
-                              "var(--color-text-tertiary)"
-                            : "var(--color-text)",
-                          cursor:
-                            i === ordered.length - 1 ?
-                              "not-allowed"
-                            : "pointer",
-                          opacity: i === ordered.length - 1 ? 0.3 : 1,
-                          padding: "2px 8px",
-                          fontSize: 14,
-                          lineHeight: 1,
-                          pointerEvents:
-                            i === ordered.length - 1 ? "none" : "auto",
-                        }}
-                        title="Move down"
-                      >
-                        ↓
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  gap: 8,
-                  justifyContent: "flex-end",
-                  marginTop: 20,
-                }}
-              >
-                <button
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => setOpen(false)}
-                >
-                  Cancel
-                </button>
-                <button className="btn btn-primary btn-sm" onClick={handleSave}>
-                  Save Order
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
-  )
-}
-
-// ─── Stats Bar ──────────────────────────────────────────────────────────────────
-
-function StatsBar({
-  providers,
-  totalActive,
-}: {
-  providers: Array<Provider>
-  totalActive: number
-}) {
-  const totalModels = providers.reduce(
-    (sum, p) => sum + (p.totalModelCount ?? 0),
-    0,
-  )
-  const enabledModels = providers.reduce(
-    (sum, p) => sum + (p.enabledModelCount ?? 0),
-    0,
-  )
-  const authCount = providers.filter(
-    (p) => p.authStatus === "authenticated",
-  ).length
-
-  const stats = [
-    {
-      label: "Active",
-      value: totalActive,
-      color: "var(--color-green)",
-      icon: (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-          <polyline points="22 4 12 14.08 9 11.08" />
-        </svg>
-      ),
-    },
-    {
-      label: "Instances",
-      value: providers.length,
-      color: "var(--color-blue)",
-      icon: (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="2" y="3" width="20" height="14" rx="2" />
-          <line x1="8" y1="21" x2="16" y2="21" />
-          <line x1="12" y1="17" x2="12" y2="21" />
-        </svg>
-      ),
-    },
-    {
-      label: "Models",
-      value: enabledModels,
-      suffix: totalModels > 0 ? ` / ${totalModels}` : "",
-      color: "var(--color-orange)",
-      icon: (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M12 2L2 7l10 5 10-5-10-5z" />
-          <path d="M2 17l10 5 10-5" />
-          <path d="M2 12l10 5 10-5" />
-        </svg>
-      ),
-    },
-    {
-      label: "Authenticated",
-      value: authCount,
-      color: "var(--color-text-secondary)",
-      icon: (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="3" y="11" width="18" height="11" rx="2" />
-          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-        </svg>
-      ),
-    },
-  ]
-
-  return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
-        gap: 12,
-        marginBottom: 28,
-      }}
-    >
-      {stats.map((stat) => (
-        <div
-          key={stat.label}
-          style={{
-            background: "var(--color-bg-elevated)",
-            border: "1px solid var(--color-separator)",
-            borderRadius: "var(--radius-lg)",
-            padding: "14px 16px",
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            transition: "border-color 0.15s var(--ease)",
-          }}
-        >
-          <div
-            style={{
-              color: stat.color,
-              display: "flex",
-              alignItems: "center",
-              opacity: 0.8,
-            }}
-          >
-            {stat.icon}
-          </div>
-          <div>
-            <div
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 20,
-                fontWeight: 700,
-                color: stat.color,
-                lineHeight: 1,
-              }}
-            >
-              {stat.value}
-              {stat.suffix && (
-                <span
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 400,
-                    color: "var(--color-text-tertiary)",
-                    marginLeft: 2,
-                  }}
-                >
-                  {stat.suffix}
-                </span>
-              )}
-            </div>
-            <div
-              style={{
-                fontSize: 11,
-                color: "var(--color-text-tertiary)",
-                marginTop: 3,
-                textTransform: "uppercase",
-                letterSpacing: "0.04em",
-                fontWeight: 500,
-              }}
-            >
-              {stat.label}
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// ─── Menu Item Wrappers for Models & Usage Dialogs ─────────────────────────────
+// ─── Menu Item Wrappers for Models Dialog ─────────────────────────────────────
 
 function ModelsMenuItem({
   provider,
@@ -2862,83 +2055,6 @@ function UsageMenuItem({ provider }: { provider: Provider }) {
 
 // ─── Provider Card ────────────────────────────────────────────────────────────
 
-const PROVIDER_ACCENT: Record<string, string> = {
-  "github-copilot": "#0a84ff",
-  antigravity: "#30d158",
-  alibaba: "#ff9f0a",
-  "azure-openai": "#0078d4",
-  google: "#4285f4",
-  kimi: "#e040fb",
-  "openai-compatible": "#10b981",
-}
-
-const PROVIDER_ICONS: Record<string, React.ReactNode> = {
-  "github-copilot": (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.868-.013-1.703-2.782.604-3.369-1.342-3.369-1.342-.454-1.155-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.161 22 16.416 22 12c0-5.523-4.477-10-10-10z" />
-    </svg>
-  ),
-  antigravity: (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-      <path
-        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-        opacity=".7"
-      />
-      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-      <path
-        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-        opacity=".7"
-      />
-    </svg>
-  ),
-  alibaba: (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-    </svg>
-  ),
-  "azure-openai": (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10c1.19 0 2.34-.21 3.41-.6.39-.14.65-.5.65-.93 0-.55-.45-1-1-1-.24 0-.46.08-.64.21-.82.3-1.7.45-2.59.45-3.86 0-7-3.14-7-7s3.14-7 7-7 7 3.14 7 7c0 .89-.15 1.77-.45 2.59-.13.18-.21.4-.21.64 0 .55.45 1 1 1 .43 0 .79-.26.93-.65.39-1.07.6-2.22.6-3.41C22 6.48 17.52 2 12 2z" />
-      <circle cx="12" cy="12" r="3" />
-    </svg>
-  ),
-  google: (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-      <path
-        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-        fill="#4285F4"
-      />
-      <path
-        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-        fill="#34A853"
-      />
-      <path
-        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-        fill="#FBBC05"
-      />
-      <path
-        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-        fill="#EA4335"
-      />
-    </svg>
-  ),
-  kimi: (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  ),
-}
-
-const TYPE_NAMES: Record<string, string> = {
-  "github-copilot": "GitHub Copilot",
-  antigravity: "Antigravity (Google)",
-  alibaba: "Alibaba DashScope",
-  "azure-openai": "Azure OpenAI",
-  google: "Google Gemini",
-  kimi: "Kimi (Moonshot)",
-}
-
 function ProviderCard({
   provider,
   isFlowRunning,
@@ -3150,7 +2266,7 @@ function ProviderCard({
             >
               {isActivating ?
                 <>
-                  <Spin size={12} /> Working…
+                  <Spinner className="h-3 w-3" /> Working…
                 </>
               : "Deactivate"}
             </button>
@@ -3165,7 +2281,7 @@ function ProviderCard({
             >
               {isActivating ?
                 <>
-                  <Spin size={12} /> Working…
+                  <Spinner className="h-3 w-3" /> Working…
                 </>
               : "Activate"}
             </button>
@@ -3183,7 +2299,7 @@ function ProviderCard({
             provider={provider}
             onModelsChanged={onModelsChanged}
           />
-          <UsageMenuItem provider={provider} />
+          <UsageDialog provider={provider} />
 
           <div style={{ flex: 1 }} />
           <button
@@ -4415,130 +3531,6 @@ function AddProviderModal({
 
 // ─── Collapsible Group Header ─────────────────────────────────────────────────
 
-function GroupHeader({
-  providerType,
-  typeProviders,
-  isCollapsed,
-  accent,
-  onToggle,
-}: {
-  providerType: string
-  typeProviders: Provider[]
-  isCollapsed: boolean
-  accent: string
-  onToggle: () => void
-}) {
-  const [hovered, setHovered] = useState(false)
-  const clickable = typeProviders.length > 0
-  const activeCount = typeProviders.filter((p) => p.isActive).length
-
-  return (
-    <div
-      onClick={clickable ? onToggle : undefined}
-      onMouseEnter={() => clickable && setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        marginBottom: isCollapsed ? 0 : 12,
-        cursor: clickable ? "pointer" : "default",
-        userSelect: "none",
-        ...(isCollapsed ? {
-          background: hovered ?
-            "color-mix(in srgb, var(--color-bg-elevated) 90%, var(--color-text))" :
-            "var(--color-bg-elevated)",
-          borderRadius: "var(--radius-lg)",
-          border: `1px solid ${hovered ? `${accent}40` : "var(--color-separator)"}`,
-          boxShadow: hovered ?
-            "var(--shadow-card), 0 0 0 1px rgba(48,209,88,0.15)" :
-            "var(--shadow-card)",
-          padding: "14px 18px",
-          transition: "all 0.2s var(--ease)",
-        } : {}),
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <div
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: "var(--radius-sm)",
-            background: `${accent}18`,
-            border: `1px solid ${accent}28`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: accent,
-          }}
-        >
-          {PROVIDER_ICONS[providerType] ?? (
-            <span style={{ fontSize: 14 }}>◌</span>
-          )}
-        </div>
-        <div>
-          <span
-            style={{
-              fontFamily: "var(--font-display)",
-              fontWeight: 600,
-              fontSize: 15,
-              color: "var(--color-text)",
-              letterSpacing: "-0.01em",
-            }}
-          >
-            {TYPE_NAMES[providerType] ?? providerType}
-          </span>
-          {typeProviders.length > 0 && (
-            <span
-              style={{
-                marginLeft: 8,
-                fontSize: 12,
-                color: "var(--color-text-tertiary)",
-                fontWeight: 400,
-              }}
-            >
-              {typeProviders.length}{" "}
-              {typeProviders.length === 1 ? "account" : "accounts"}
-            </span>
-          )}
-          {isCollapsed && activeCount > 0 && (
-            <span
-              style={{
-                marginLeft: 6,
-                fontSize: 11,
-                fontWeight: 600,
-                color: "var(--color-success)",
-                background: "rgba(48, 209, 88, 0.12)",
-                padding: "2px 7px",
-                borderRadius: "var(--radius-sm)",
-              }}
-            >
-              {activeCount} active
-            </span>
-          )}
-        </div>
-      </div>
-      {isCollapsed && (
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 16 16"
-          fill="none"
-          style={{ color: "var(--color-text-tertiary)" }}
-        >
-          <path
-            d="M6 4l4 4-4 4"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      )}
-    </div>
-  )
-}
-
 // ─── Providers Page ───────────────────────────────────────────────────────────
 
 export function ProvidersPage({ showToast }: ProvidersPageProps) {
@@ -4731,15 +3723,7 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
     status?.authFlow?.status ?? "",
   )
 
-  const ALL_TYPES = [
-    "github-copilot",
-    "antigravity",
-    "alibaba",
-    "azure-openai",
-    "google",
-    "kimi",
-    "openai-compatible",
-  ]
+  const ALL_PROVIDER_TYPES = PROVIDER_TYPE_IDS
 
   const providerGroups = providers.reduce<Record<string, Array<Provider>>>(
     (g, p) => {
@@ -4751,7 +3735,9 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
   )
 
   const completeGroups: Record<string, Array<Provider>> = {}
-  for (const t of ALL_TYPES) completeGroups[t] = providerGroups[t] ?? []
+  for (const providerType of ALL_PROVIDER_TYPES) {
+    completeGroups[providerType] = providerGroups[providerType] ?? []
+  }
 
   // Determine if all groups are collapsed/expanded
   const groupsWithProviders = Object.entries(completeGroups).filter(
@@ -4813,6 +3799,7 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
         authFlow={status?.authFlow}
         providers={providers}
         onCancel={handleCancelAuth}
+        Spin={Spin}
       />
 
       {/* Page header */}
@@ -4957,51 +3944,15 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
                           multiProvider={activeProviders.length >= 2}
                         />
                       ))
-                    : <div
-                        style={{
-                          padding: "32px 24px",
-                          border: `1px dashed ${accent}28`,
-                          borderRadius: "var(--radius-lg)",
-                          textAlign: "center",
-                          background: `${accent}06`,
+                    : <EmptyState
+                        icon={PROVIDER_ICONS[providerType] ?? <span style={{ fontSize: 20 }}>◌</span>}
+                        title={`No ${TYPE_NAMES[providerType]} accounts configured`}
+                        description="Add an account to start using this provider type."
+                        action={{
+                          label: "Add Account",
+                          onClick: () => setAddingProvider(true),
                         }}
-                      >
-                        <div
-                          style={{
-                            width: 44,
-                            height: 44,
-                            borderRadius: "var(--radius-md)",
-                            background: `${accent}14`,
-                            border: `1px solid ${accent}22`,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            color: accent,
-                            margin: "0 auto 12px",
-                            opacity: 0.6,
-                          }}
-                        >
-                          {PROVIDER_ICONS[providerType] ?? (
-                            <span style={{ fontSize: 20 }}>◌</span>
-                          )}
-                        </div>
-                        <p
-                          style={{
-                            fontSize: 13,
-                            color: "var(--color-text-secondary)",
-                            marginBottom: 14,
-                          }}
-                        >
-                          No {TYPE_NAMES[providerType]} accounts configured
-                        </p>
-                        <button
-                          className="btn btn-ghost btn-sm"
-                          onClick={() => setAddingProvider(true)}
-                          disabled={isFlowRunning}
-                        >
-                          Add Account
-                        </button>
-                      </div>
+                      />
                     }
                   </div>
                 )}

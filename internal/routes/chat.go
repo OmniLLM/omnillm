@@ -93,26 +93,7 @@ func handleChatCompletions(c *gin.Context) {
 		return
 	}
 
-	// Capture incoming request headers for trace logging
-	canonicalRequest.IncomingHeaders = make(map[string]string)
-	for k, v := range c.Request.Header {
-		if len(v) > 0 {
-			canonicalRequest.IncomingHeaders[k] = v[0]
-		}
-	}
-	setInboundAPIShape(canonicalRequest, "openai")
-
-	originalModel := canonicalRequest.Model
-
-	// Log REQUEST
-	log.Info().
-		Str("request_id", requestIDStr).
-		Str("api_shape", "openai").
-		Str("model_requested", originalModel).
-		Int("messages", len(canonicalRequest.Messages)).
-		Int("tools", len(canonicalRequest.Tools)).
-		Bool("stream", canonicalRequest.Stream).
-		Msg("\x1b[33m-->\x1b[0m REQUEST")
+	originalModel := prepareCanonicalRequest(c, canonicalRequest, "openai")
 
 	// Resolve providers for the requested model
 	attempts := resolveRequestedModels(requestIDStr, canonicalRequest.Model)
@@ -129,12 +110,7 @@ func handleChatCompletions(c *gin.Context) {
 		)
 		if err != nil {
 			log.Error().Err(err).Str("request_id", requestIDStr).Str("model", attempt.RequestedModel).Msg("Failed to resolve providers for model")
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": gin.H{
-					"message": fmt.Sprintf("Failed to resolve providers: %v", err),
-					"type":    "provider_error",
-				},
-			})
+			writeResolveProvidersError(c, err, "provider_error")
 			return
 		}
 
@@ -190,17 +166,7 @@ func handleChatCompletions(c *gin.Context) {
 		}
 	}
 
-	// All providers failed
-	errMsg := "All providers failed"
-	if lastErr != nil {
-		errMsg = fmt.Sprintf("All providers failed. Last error: %v", lastErr)
-	}
-	c.JSON(providerFailureStatus(lastErr), gin.H{
-		"error": gin.H{
-			"message": errMsg,
-			"type":    providerFailureType("provider_error", lastErr),
-		},
-	})
+	writeProviderFailure(c, "provider_error", lastErr)
 }
 
 func handleNonStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID string, originalModel string, providerID string, startTime time.Time) error {
@@ -215,25 +181,7 @@ func handleNonStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, c
 		return fmt.Errorf("serialization failed: %w", err)
 	}
 
-	inputTokens := 0
-	outputTokens := 0
-	if response.Usage != nil {
-		inputTokens = response.Usage.InputTokens
-		outputTokens = response.Usage.OutputTokens
-	}
-
-	log.Info().
-		Str("request_id", requestID).
-		Str("api_shape", "openai").
-		Str("model_requested", originalModel).
-		Str("model_used", response.Model).
-		Str("provider", providerID).
-		Str("stop_reason", string(response.StopReason)).
-		Bool("stream", false).
-		Int("input_tokens", inputTokens).
-		Int("output_tokens", outputTokens).
-		Int64("latency_ms", time.Since(startTime).Milliseconds()).
-		Msg("\x1b[32m<--\x1b[0m RESPONSE")
+	logCompletedResponse("openai", requestID, originalModel, response.Model, providerID, false, response.StopReason, response.Usage, startTime)
 
 	c.JSON(http.StatusOK, openaiResp)
 	return nil
@@ -250,29 +198,9 @@ func handleStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, cano
 		return err
 	}
 
-	// Set SSE headers
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
-	c.Header("Transfer-Encoding", "chunked")
+	setSSEHeaders(c, true)
 
-	// Wrap upstream channel so it exits when client disconnects.
-	ctx := c.Request.Context()
-	wrappedCh := make(chan cif.CIFStreamEvent, cap(eventCh))
-	go func() {
-		defer close(wrappedCh)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case evt, ok := <-eventCh:
-				if !ok {
-					return
-				}
-				wrappedCh <- evt
-			}
-		}
-	}()
+	wrappedCh := wrapStreamWithContext(c.Request.Context().Done(), eventCh)
 
 	state := serialization.CreateOpenAIStreamState()
 	flusher, _ := c.Writer.(http.Flusher)
@@ -291,10 +219,7 @@ func handleStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, cano
 		}
 
 		if sseData != "" {
-			fmt.Fprint(w, sseData)
-			if flusher != nil {
-				flusher.Flush()
-			}
+			flushStreamWriter(w, flusher, sseData)
 		}
 
 		if endEvt, isEnd := event.(cif.CIFStreamEnd); isEnd {

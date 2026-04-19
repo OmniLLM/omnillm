@@ -50,26 +50,7 @@ func handleResponses(c *gin.Context) {
 		return
 	}
 
-	// Capture incoming request headers for trace logging
-	canonicalRequest.IncomingHeaders = make(map[string]string)
-	for k, v := range c.Request.Header {
-		if len(v) > 0 {
-			canonicalRequest.IncomingHeaders[k] = v[0]
-		}
-	}
-	setInboundAPIShape(canonicalRequest, "responses")
-
-	originalModel := canonicalRequest.Model
-
-	// Log REQUEST
-	log.Info().
-		Str("request_id", requestIDStr).
-		Str("api_shape", "responses").
-		Str("model_requested", originalModel).
-		Int("messages", len(canonicalRequest.Messages)).
-		Int("tools", len(canonicalRequest.Tools)).
-		Bool("stream", canonicalRequest.Stream).
-		Msg("\x1b[33m-->\x1b[0m REQUEST")
+	originalModel := prepareCanonicalRequest(c, canonicalRequest, "responses")
 
 	// Resolve providers
 	resolvedModel, normalizedModel := resolveRequestedModel(requestIDStr, canonicalRequest.Model)
@@ -81,12 +62,7 @@ func handleResponses(c *gin.Context) {
 	)
 	if err != nil {
 		log.Error().Err(err).Str("request_id", requestIDStr).Str("model", canonicalRequest.Model).Msg("Failed to resolve providers")
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": gin.H{
-				"message": fmt.Sprintf("Failed to resolve providers: %v", err),
-				"type":    "server_error",
-			},
-		})
+		writeResolveProvidersError(c, err, "server_error")
 		return
 	}
 
@@ -117,28 +93,30 @@ func handleResponses(c *gin.Context) {
 			continue
 		}
 
+		providerRequest := *canonicalRequest
+
 		log.Debug().
 			Str("request_id", requestIDStr).
-			Str("model", canonicalRequest.Model).
+			Str("model", providerRequest.Model).
 			Str("provider", provider.GetInstanceID()).
 			Msg("Trying provider for Responses API request")
 
-		remappedModel := adapter.RemapModel(canonicalRequest.Model)
+		remappedModel := adapter.RemapModel(providerRequest.Model)
 		log.Debug().
 			Str("request_id", requestIDStr).
 			Str("provider", provider.GetInstanceID()).
 			Str("api_shape", "responses").
 			Str("inbound_path", c.FullPath()).
-			Str("upstream_api", detectUpstreamAPI(provider.GetID(), adapter, canonicalRequest, remappedModel)).
-			Str("canonical_model", canonicalRequest.Model).
+			Str("upstream_api", detectUpstreamAPI(provider.GetID(), adapter, &providerRequest, remappedModel)).
+			Str("canonical_model", providerRequest.Model).
 			Str("upstream_model", remappedModel).
 			Msg("Converted CIF request to upstream model API")
-		canonicalRequest.Model = remappedModel
+		providerRequest.Model = remappedModel
 
-		if canonicalRequest.Stream {
-			lastErr = handleResponsesStreamingResponse(c, adapter, canonicalRequest, requestIDStr, originalModel, provider.GetInstanceID(), startTime)
+		if providerRequest.Stream {
+			lastErr = handleResponsesStreamingResponse(c, adapter, &providerRequest, requestIDStr, originalModel, provider.GetInstanceID(), startTime)
 		} else {
-			lastErr = handleResponsesNonStreamingResponse(c, adapter, canonicalRequest, requestIDStr, originalModel, provider.GetInstanceID(), startTime)
+			lastErr = handleResponsesNonStreamingResponse(c, adapter, &providerRequest, requestIDStr, originalModel, provider.GetInstanceID(), startTime)
 		}
 
 		if lastErr == nil {
@@ -148,19 +126,11 @@ func handleResponses(c *gin.Context) {
 		log.Warn().Err(lastErr).
 			Str("request_id", requestIDStr).
 			Str("provider", provider.GetInstanceID()).
+			Str("upstream_model", providerRequest.Model).
 			Msg("Provider failed for Responses API request, trying next")
 	}
 
-	errMsg := "All providers failed"
-	if lastErr != nil {
-		errMsg = fmt.Sprintf("All providers failed. Last error: %v", lastErr)
-	}
-	c.JSON(providerFailureStatus(lastErr), gin.H{
-		"error": gin.H{
-			"message": errMsg,
-			"type":    providerFailureType("server_error", lastErr),
-		},
-	})
+	writeProviderFailure(c, "server_error", lastErr)
 }
 
 func handleResponsesNonStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID string, originalModel string, providerID string, startTime time.Time) error {
@@ -174,25 +144,7 @@ func handleResponsesNonStreamingResponse(c *gin.Context, adapter types.ProviderA
 		return fmt.Errorf("serialization failed: %w", err)
 	}
 
-	inputTokens := 0
-	outputTokens := 0
-	if response.Usage != nil {
-		inputTokens = response.Usage.InputTokens
-		outputTokens = response.Usage.OutputTokens
-	}
-
-	log.Info().
-		Str("request_id", requestID).
-		Str("api_shape", "responses").
-		Str("model_requested", originalModel).
-		Str("model_used", response.Model).
-		Str("provider", providerID).
-		Str("stop_reason", string(response.StopReason)).
-		Bool("stream", false).
-		Int("input_tokens", inputTokens).
-		Int("output_tokens", outputTokens).
-		Int64("latency_ms", time.Since(startTime).Milliseconds()).
-		Msg("\x1b[32m<--\x1b[0m RESPONSE")
+	logCompletedResponse("responses", requestID, originalModel, response.Model, providerID, false, response.StopReason, response.Usage, startTime)
 
 	c.JSON(http.StatusOK, responsesResp)
 	return nil
@@ -209,27 +161,9 @@ func handleResponsesStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 		return err
 	}
 
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
+	setSSEHeaders(c, false)
 
-	// Wrap upstream channel so it exits when client disconnects.
-	ctx := c.Request.Context()
-	wrappedCh := make(chan cif.CIFStreamEvent, cap(eventCh))
-	go func() {
-		defer close(wrappedCh)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case evt, ok := <-eventCh:
-				if !ok {
-					return
-				}
-				wrappedCh <- evt
-			}
-		}
-	}()
+	wrappedCh := wrapStreamWithContext(c.Request.Context().Done(), eventCh)
 
 	state := serialization.CreateResponsesStreamState()
 	flusher, _ := c.Writer.(http.Flusher)

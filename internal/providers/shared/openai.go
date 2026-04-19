@@ -192,6 +192,19 @@ func OpenAIStopReason(reason string) cif.CIFStopReason {
 	}
 }
 
+// NormalizeOpenAICompatibleAPIFormat canonicalizes supported OpenAI-compatible
+// upstream API format aliases.
+func NormalizeOpenAICompatibleAPIFormat(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "responses", "response", "openai-responses", "openai_responses":
+		return "responses"
+	case "chat", "chat.completions", "chat_completions", "openai-chat", "openai_chat":
+		return "chat.completions"
+	default:
+		return ""
+	}
+}
+
 // ParseOpenAISSE parses an OpenAI-compatible SSE stream into CIF events.
 //
 // Qwen3/Alibaba quirks handled here:

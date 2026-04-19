@@ -2,11 +2,9 @@ package openaicompat
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"strings"
 
 	"omnimodel/internal/cif"
@@ -343,24 +341,16 @@ func ExecuteResponses(url string, headers map[string]string, payload map[string]
 
 	log.Trace().Str("url", url).RawJSON("payload", body).Msg("outbound openaicompat responses request")
 
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
+	req, err := newPOSTRequest(url, headers, body, false)
 	if err != nil {
 		return nil, fmt.Errorf("openaicompat: create responses request: %w", err)
 	}
-	for key, value := range headers {
-		req.Header.Set(key, value)
-	}
 
-	resp, err := httpClient.Do(req)
+	resp, err := doPOST(req, false)
 	if err != nil {
 		return nil, fmt.Errorf("openaicompat: responses request failed: %w", err)
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		responseBody, _ := io.ReadAll(resp.Body)
-		return nil, &APIError{StatusCode: resp.StatusCode, Body: responseBody}
-	}
 
 	var responsesResp ResponsesResponse
 	if err := json.NewDecoder(resp.Body).Decode(&responsesResp); err != nil {
@@ -378,28 +368,17 @@ func StreamResponses(url string, headers map[string]string, payload map[string]i
 
 	log.Trace().Str("url", url).RawJSON("payload", body).Msg("outbound openaicompat responses stream request")
 
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
+	req, err := newPOSTRequest(url, headers, body, true)
 	if err != nil {
 		return nil, fmt.Errorf("openaicompat: create responses stream request: %w", err)
 	}
-	for key, value := range headers {
-		req.Header.Set(key, value)
-	}
-	req.Header.Set("Accept", "text/event-stream")
 
-	resp, err := streamClient.Do(req)
+	resp, err := doPOST(req, true)
 	if err != nil {
 		return nil, fmt.Errorf("openaicompat: responses stream request failed: %w", err)
 	}
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		responseBody, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		return nil, &APIError{StatusCode: resp.StatusCode, Body: responseBody}
-	}
 
-	eventCh := make(chan cif.CIFStreamEvent, 64)
-	go ParseResponsesSSE(resp.Body, eventCh)
-	return eventCh, nil
+	return startSSEStream(resp.Body, ParseResponsesSSE), nil
 }
 
 func ParseResponsesSSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
@@ -407,7 +386,7 @@ func ParseResponsesSSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 	defer close(eventCh)
 
 	scanner := bufio.NewScanner(body)
-	scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
+	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
 
 	state := &responsesStreamState{
 		textBlockIndices:  make(map[string]int),

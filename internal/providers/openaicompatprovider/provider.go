@@ -481,14 +481,7 @@ func isOfficialOpenAIBaseURL(rawURL string) bool {
 }
 
 func normalizeOpenAICompatibleAPIFormat(raw string) string {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "responses", "response", "openai-responses", "openai_responses":
-		return openAICompatResponsesAPI
-	case "chat", "chat.completions", "chat_completions", "openai-chat", "openai_chat":
-		return openAICompatChatCompletionsAPI
-	default:
-		return ""
-	}
+	return shared.NormalizeOpenAICompatibleAPIFormat(raw)
 }
 
 // urlSlug converts a URL to a safe identifier fragment.
