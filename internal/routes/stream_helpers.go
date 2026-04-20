@@ -22,25 +22,6 @@ func setSSEHeaders(c *gin.Context, chunked bool) {
 	}
 }
 
-func wrapStreamWithContext(ctxDone <-chan struct{}, eventCh <-chan cif.CIFStreamEvent) <-chan cif.CIFStreamEvent {
-	wrappedCh := make(chan cif.CIFStreamEvent, cap(eventCh))
-	go func() {
-		defer close(wrappedCh)
-		for {
-			select {
-			case <-ctxDone:
-				return
-			case evt, ok := <-eventCh:
-				if !ok {
-					return
-				}
-				wrappedCh <- evt
-			}
-		}
-	}()
-	return wrappedCh
-}
-
 func flushStreamWriter(w io.Writer, flusher http.Flusher, data string) {
 	if data == "" {
 		return
