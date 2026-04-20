@@ -10,6 +10,7 @@
 package openaicompatprovider
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -222,12 +223,12 @@ func (a *Adapter) UpstreamAPI(request *cif.CanonicalRequest, _ string) string {
 	return a.selectedUpstreamAPI(request)
 }
 
-func (a *Adapter) Execute(request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+func (a *Adapter) Execute(ctx context.Context, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
 	a.provider.ensureConfig()
 	switch a.selectedUpstreamAPI(request) {
 	case openAICompatResponsesAPI:
 		payload := openaicompat.BuildResponsesPayload(a.RemapModel(request.Model), request, false, openaicompat.ResponsesConfig{})
-		return openaicompat.ExecuteResponses(responsesURL(a.provider.baseURL), buildHeaders(a.provider.token, false), payload)
+		return openaicompat.ExecuteResponses(ctx, responsesURL(a.provider.baseURL), buildHeaders(a.provider.token, false), payload)
 	default:
 		cr, err := openaicompat.BuildChatRequest(
 			a.RemapModel(request.Model),
@@ -238,14 +239,14 @@ func (a *Adapter) Execute(request *cif.CanonicalRequest) (*cif.CanonicalResponse
 		if err != nil {
 			return nil, err
 		}
-		return openaicompat.Execute(chatURL(a.provider.baseURL), buildHeaders(a.provider.token, false), cr)
+		return openaicompat.Execute(ctx, chatURL(a.provider.baseURL), buildHeaders(a.provider.token, false), cr)
 	}
 }
 
-func (a *Adapter) ExecuteStream(request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
+func (a *Adapter) ExecuteStream(ctx context.Context, request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
 	a.provider.ensureConfig()
 	if a.shouldBufferAnthropicStreaming(request) {
-		response, err := a.Execute(request)
+		response, err := a.Execute(ctx, request)
 		if err != nil {
 			return nil, err
 		}
@@ -254,7 +255,7 @@ func (a *Adapter) ExecuteStream(request *cif.CanonicalRequest) (<-chan cif.CIFSt
 	switch a.selectedUpstreamAPI(request) {
 	case openAICompatResponsesAPI:
 		payload := openaicompat.BuildResponsesPayload(a.RemapModel(request.Model), request, true, openaicompat.ResponsesConfig{})
-		return openaicompat.StreamResponses(responsesURL(a.provider.baseURL), buildHeaders(a.provider.token, true), payload)
+		return openaicompat.StreamResponses(ctx, responsesURL(a.provider.baseURL), buildHeaders(a.provider.token, true), payload)
 	default:
 		cr, err := openaicompat.BuildChatRequest(
 			a.RemapModel(request.Model),
@@ -265,7 +266,7 @@ func (a *Adapter) ExecuteStream(request *cif.CanonicalRequest) (<-chan cif.CIFSt
 		if err != nil {
 			return nil, err
 		}
-		return openaicompat.Stream(chatURL(a.provider.baseURL), buildHeaders(a.provider.token, true), cr)
+		return openaicompat.Stream(ctx, chatURL(a.provider.baseURL), buildHeaders(a.provider.token, true), cr)
 	}
 }
 

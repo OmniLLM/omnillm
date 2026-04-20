@@ -2,6 +2,7 @@ package azure
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,8 +16,31 @@ import (
 
 // Shared HTTP clients: one for normal requests with timeout, one for streaming.
 var (
-	azureHTTPClient   = &http.Client{Timeout: 120 * time.Second}
-	azureStreamClient = &http.Client{}
+	azureHTTPClient = &http.Client{
+		Timeout: 120 * time.Second,
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   20,
+			MaxConnsPerHost:       50,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		},
+	}
+	azureStreamClient = &http.Client{
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   20,
+			MaxConnsPerHost:       50,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		},
+	}
 )
 
 // BuildOpenAIPayload builds the Azure OpenAI chat completions request payload.
@@ -77,7 +101,7 @@ func BuildOpenAIPayload(model string, messages []map[string]interface{}, request
 }
 
 // ExecuteOpenAI executes a non-streaming OpenAI-compatible chat completion for Azure.
-func ExecuteOpenAI(url string, headers map[string]string, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+func ExecuteOpenAI(ctx context.Context, url string, headers map[string]string, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
 	messages := shared.CIFMessagesToOpenAI(request.Messages)
 	if request.SystemPrompt != nil && strings.TrimSpace(*request.SystemPrompt) != "" {
 		messages = append([]map[string]interface{}{{
@@ -94,7 +118,7 @@ func ExecuteOpenAI(url string, headers map[string]string, request *cif.Canonical
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -122,7 +146,7 @@ func ExecuteOpenAI(url string, headers map[string]string, request *cif.Canonical
 }
 
 // StreamOpenAI executes a streaming OpenAI-compatible chat completion for Azure.
-func StreamOpenAI(url string, headers map[string]string, request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
+func StreamOpenAI(ctx context.Context, url string, headers map[string]string, request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
 	messages := shared.CIFMessagesToOpenAI(request.Messages)
 	if request.SystemPrompt != nil && strings.TrimSpace(*request.SystemPrompt) != "" {
 		messages = append([]map[string]interface{}{{
@@ -139,7 +163,7 @@ func StreamOpenAI(url string, headers map[string]string, request *cif.CanonicalR
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

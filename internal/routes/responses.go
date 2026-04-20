@@ -146,7 +146,7 @@ func handleResponses(c *gin.Context) {
 }
 
 func handleResponsesNonStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID string, originalModel string, providerID string, startTime time.Time) error {
-	response, err := adapter.Execute(canonicalRequest)
+	response, err := adapter.Execute(c.Request.Context(), canonicalRequest)
 	if err != nil {
 		return fmt.Errorf("adapter execute failed: %w", err)
 	}
@@ -163,7 +163,7 @@ func handleResponsesNonStreamingResponse(c *gin.Context, adapter types.ProviderA
 }
 
 func handleResponsesStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID string, originalModel string, providerID string, startTime time.Time) error {
-	eventCh, err := adapter.ExecuteStream(canonicalRequest)
+	eventCh, err := adapter.ExecuteStream(c.Request.Context(), canonicalRequest)
 	if err != nil {
 		if shouldFallbackToNonStreaming(err) {
 			log.Warn().Err(err).Str("request_id", requestID).Msg("Streaming request failed before stream start, retrying as non-streaming")

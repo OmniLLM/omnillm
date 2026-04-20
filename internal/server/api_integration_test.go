@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -63,25 +64,25 @@ func (p *stubProvider) GetAdapter() providertypes.ProviderAdapter { return p.ada
 
 type stubAdapter struct {
 	provider  providertypes.Provider
-	executeFn func(*cif.CanonicalRequest) (*cif.CanonicalResponse, error)
-	streamFn  func(*cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error)
+	executeFn func(context.Context, *cif.CanonicalRequest) (*cif.CanonicalResponse, error)
+	streamFn  func(context.Context, *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error)
 	remapFn   func(string) string
 }
 
 func (a *stubAdapter) GetProvider() providertypes.Provider { return a.provider }
 
-func (a *stubAdapter) Execute(request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+func (a *stubAdapter) Execute(ctx context.Context, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
 	if a.executeFn == nil {
 		return nil, errors.New("execute not configured")
 	}
-	return a.executeFn(request)
+	return a.executeFn(ctx, request)
 }
 
-func (a *stubAdapter) ExecuteStream(request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
+func (a *stubAdapter) ExecuteStream(ctx context.Context, request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
 	if a.streamFn == nil {
 		return nil, errors.New("stream not configured")
 	}
-	return a.streamFn(request)
+	return a.streamFn(ctx, request)
 }
 
 func (a *stubAdapter) RemapModel(canonicalModel string) string {
@@ -129,8 +130,8 @@ func registerStubModelsProvider(
 func registerStubProvider(
 	t *testing.T,
 	modelID string,
-	executeFn func(*cif.CanonicalRequest) (*cif.CanonicalResponse, error),
-	streamFn func(*cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error),
+	executeFn func(context.Context, *cif.CanonicalRequest) (*cif.CanonicalResponse, error),
+	streamFn func(context.Context, *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error),
 ) string {
 	return registerStubProviderWithType(t, "stub-provider", modelID, executeFn, streamFn)
 }
@@ -139,8 +140,8 @@ func registerStubProviderWithType(
 	t *testing.T,
 	providerID string,
 	modelID string,
-	executeFn func(*cif.CanonicalRequest) (*cif.CanonicalResponse, error),
-	streamFn func(*cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error),
+	executeFn func(context.Context, *cif.CanonicalRequest) (*cif.CanonicalResponse, error),
+	streamFn func(context.Context, *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error),
 ) string {
 	t.Helper()
 
@@ -229,7 +230,7 @@ func readBody(t *testing.T, resp *http.Response) string {
 }
 
 func TestAnthropicMessagesRoute_NonStreamingThinkingSuppression(t *testing.T) {
-	registerStubProvider(t, "thinking-model", func(_ *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+	registerStubProvider(t, "thinking-model", func(_ context.Context, _ *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
 		return &cif.CanonicalResponse{
 			ID:    "msg_thinking",
 			Model: "thinking-model",
@@ -477,7 +478,7 @@ func TestAPIShapeEndpointsUseGoSerializers(t *testing.T) {
 	registerStubProvider(
 		t,
 		modelID,
-		func(req *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+		func(_ context.Context, req *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
 			return &cif.CanonicalResponse{
 				ID:    "resp_shape",
 				Model: req.Model,
@@ -623,7 +624,7 @@ func TestRoutesAnnotateInboundAPIShapeOnCanonicalRequest(t *testing.T) {
 			registerStubProvider(
 				t,
 				"shape-hint-model",
-				func(req *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+				func(_ context.Context, req *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
 					if req.Extensions != nil && req.Extensions.InboundAPIShape != nil {
 						capturedShape = *req.Extensions.InboundAPIShape
 					}
@@ -680,7 +681,7 @@ func TestAnthropicMessagesRouteNormalizesAliasesBeforeProviderExecution(t *testi
 			registerStubProvider(
 				t,
 				tc.registeredID,
-				func(req *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+				func(_ context.Context, req *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
 					capturedModel = req.Model
 					return &cif.CanonicalResponse{
 						ID:    "resp_alias",
@@ -724,7 +725,7 @@ func TestAnthropicMessagesRouteRoutesVirtualModelsBeforeProviderExecution(t *tes
 	registerStubProvider(
 		t,
 		upstreamModel,
-		func(req *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+		func(_ context.Context, req *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
 			capturedModel = req.Model
 			return &cif.CanonicalResponse{
 				ID:    "resp_virtual_model",
@@ -789,7 +790,7 @@ func TestAnthropicMessagesRouteRewritesAlibabaAnthropicAliasBeforeProxy(t *testi
 		t,
 		"alibaba",
 		"claude-haiku-4.5",
-		func(req *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+		func(_ context.Context, req *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
 			capturedModel = req.Model
 			return &cif.CanonicalResponse{
 				ID:    "resp_alibaba_alias",
@@ -828,7 +829,7 @@ func TestStreamingEndpointsExposeExpectedEventShapes(t *testing.T) {
 		t,
 		modelID,
 		nil,
-		func(req *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
+		func(_ context.Context, req *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
 			ch := make(chan cif.CIFStreamEvent, 3)
 			ch <- cif.CIFStreamStart{Type: "stream_start", ID: "stream_123", Model: req.Model}
 			ch <- cif.CIFContentDelta{
@@ -902,7 +903,7 @@ func TestMessagesEndpointHandlesLongMixedConversation(t *testing.T) {
 	registerStubProvider(
 		t,
 		modelID,
-		func(req *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+		func(_ context.Context, req *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
 			if len(req.Messages) != 9 {
 				return nil, fmt.Errorf("expected 9 messages, got %d", len(req.Messages))
 			}
@@ -960,7 +961,7 @@ func TestChatCompletionsStreamingDoesNotFallbackForGitHubCopilotCompatMode(t *te
 		t,
 		string(providertypes.ProviderGitHubCopilot),
 		modelID,
-		func(req *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+		func(_ context.Context, req *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
 			executeCalls++
 			return &cif.CanonicalResponse{
 				ID:         "resp_unexpected_nonstream",
@@ -969,7 +970,7 @@ func TestChatCompletionsStreamingDoesNotFallbackForGitHubCopilotCompatMode(t *te
 				StopReason: cif.StopReasonEndTurn,
 			}, nil
 		},
-		func(_ *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
+		func(_ context.Context, _ *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
 			streamCalls++
 			return nil, errors.New("simulated upstream streaming failure")
 		},
@@ -1001,7 +1002,7 @@ func TestToolCallShapesAcrossChatAndMessagesEndpoints(t *testing.T) {
 	registerStubProvider(
 		t,
 		modelID,
-		func(req *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+		func(_ context.Context, req *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
 			return &cif.CanonicalResponse{
 				ID:    "resp_tool",
 				Model: req.Model,

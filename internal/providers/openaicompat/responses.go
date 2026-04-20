@@ -2,6 +2,7 @@ package openaicompat
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -333,7 +334,7 @@ func responsesUsageToCIF(usage *ResponsesUsage) *cif.CIFUsage {
 	}
 }
 
-func ExecuteResponses(url string, headers map[string]string, payload map[string]interface{}) (*cif.CanonicalResponse, error) {
+func ExecuteResponses(ctx context.Context, url string, headers map[string]string, payload map[string]interface{}) (*cif.CanonicalResponse, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("openaicompat: marshal responses request: %w", err)
@@ -341,7 +342,7 @@ func ExecuteResponses(url string, headers map[string]string, payload map[string]
 
 	log.Trace().Str("url", url).RawJSON("payload", body).Msg("outbound openaicompat responses request")
 
-	req, err := newPOSTRequest(url, headers, body, false)
+	req, err := newPOSTRequest(ctx, url, headers, body, false)
 	if err != nil {
 		return nil, fmt.Errorf("openaicompat: create responses request: %w", err)
 	}
@@ -360,7 +361,7 @@ func ExecuteResponses(url string, headers map[string]string, payload map[string]
 	return ParseResponsesResponse(&responsesResp), nil
 }
 
-func StreamResponses(url string, headers map[string]string, payload map[string]interface{}) (<-chan cif.CIFStreamEvent, error) {
+func StreamResponses(ctx context.Context, url string, headers map[string]string, payload map[string]interface{}) (<-chan cif.CIFStreamEvent, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("openaicompat: marshal responses stream request: %w", err)
@@ -368,7 +369,7 @@ func StreamResponses(url string, headers map[string]string, payload map[string]i
 
 	log.Trace().Str("url", url).RawJSON("payload", body).Msg("outbound openaicompat responses stream request")
 
-	req, err := newPOSTRequest(url, headers, body, true)
+	req, err := newPOSTRequest(ctx, url, headers, body, true)
 	if err != nil {
 		return nil, fmt.Errorf("openaicompat: create responses stream request: %w", err)
 	}

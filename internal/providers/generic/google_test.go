@@ -1,6 +1,6 @@
 package generic
-
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -625,7 +625,7 @@ func TestGoogleStreamEndToEnd(t *testing.T) {
 		},
 	}
 
-	resp, err := adapter.Execute(request)
+	resp, err := adapter.Execute(context.Background(), request)
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -736,7 +736,7 @@ func TestGoogleStreamEndToEndWithTools(t *testing.T) {
 		},
 	}
 
-	resp, err := adapter.Execute(request)
+	resp, err := adapter.Execute(context.Background(), request)
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -820,7 +820,7 @@ func TestGoogleStreamEndToEndWithSystemPrompt(t *testing.T) {
 		},
 	}
 
-	_, err := adapter.Execute(request)
+	_, err := adapter.Execute(context.Background(), request)
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -858,7 +858,7 @@ func TestGoogleExecuteRequiresAuth(t *testing.T) {
 		},
 	}
 
-	_, err := adapter.Execute(request)
+	_, err := adapter.Execute(context.Background(), request)
 	if err == nil {
 		t.Fatal("expected error when not authenticated")
 	}

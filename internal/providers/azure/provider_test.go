@@ -1,6 +1,6 @@
 package azure
-
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -469,7 +469,7 @@ func TestExecuteResponsesEndToEnd(t *testing.T) {
 		MaxTokens: ptr(100),
 	}
 
-	resp, err := ExecuteResponses(srv.URL, "test-api-key", request, "gpt-5.4")
+	resp, err := ExecuteResponses(context.Background(), srv.URL, "test-api-key", request, "gpt-5.4")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -518,7 +518,7 @@ func TestStreamResponsesEmitsEvents(t *testing.T) {
 		Messages: []cif.CIFMessage{},
 	}
 
-	ch, err := StreamResponses(srv.URL, "test-key", request, "gpt-5.4")
+	ch, err := StreamResponses(context.Background(), srv.URL, "test-key", request, "gpt-5.4")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -2,6 +2,7 @@ package alibaba
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,7 +25,7 @@ func (a *Adapter) GetProvider() types.Provider { return a.provider }
 
 func (a *Adapter) RemapModel(model string) string { return RemapModel(model) }
 
-func (a *Adapter) Execute(request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+func (a *Adapter) Execute(ctx context.Context, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
 	a.provider.ensureConfig()
 	if !IsChatCompletionsModel(a.RemapModel(request.Model)) {
 		return nil, fmt.Errorf("alibaba: model %q is realtime-only", request.Model)
@@ -33,10 +34,10 @@ func (a *Adapter) Execute(request *cif.CanonicalRequest) (*cif.CanonicalResponse
 	if err != nil {
 		return nil, err
 	}
-	return openaicompat.Execute(ChatURL(a.provider.baseURL), Headers(a.provider.token, false, a.provider.config), cr)
+	return openaicompat.Execute(ctx, ChatURL(a.provider.baseURL), Headers(a.provider.token, false, a.provider.config), cr)
 }
 
-func (a *Adapter) ExecuteStream(request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
+func (a *Adapter) ExecuteStream(ctx context.Context, request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
 	a.provider.ensureConfig()
 	if !IsChatCompletionsModel(a.RemapModel(request.Model)) {
 		return nil, fmt.Errorf("alibaba: model %q is realtime-only", request.Model)
@@ -45,7 +46,7 @@ func (a *Adapter) ExecuteStream(request *cif.CanonicalRequest) (<-chan cif.CIFSt
 	if err != nil {
 		return nil, err
 	}
-	return openaicompat.Stream(ChatURL(a.provider.baseURL), Headers(a.provider.token, true, a.provider.config), cr)
+	return openaicompat.Stream(ctx, ChatURL(a.provider.baseURL), Headers(a.provider.token, true, a.provider.config), cr)
 }
 
 // buildRequest converts a CIF request into an openaicompat.ChatRequest with

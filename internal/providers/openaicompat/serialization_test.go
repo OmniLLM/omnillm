@@ -1,6 +1,6 @@
 package openaicompat
-
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -85,7 +85,7 @@ func TestExecute_ParsesChatResponse(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	resp, err := Execute(srv.URL, map[string]string{"Authorization": "Bearer test"}, &ChatRequest{
+	resp, err := Execute(context.Background(), srv.URL, map[string]string{"Authorization": "Bearer test"}, &ChatRequest{
 		Model:    "gpt-4o",
 		Messages: []Message{{Role: "user", Content: "ping"}},
 	})
@@ -106,7 +106,7 @@ func TestExecute_ReturnsAPIErrorDetails(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := Execute(srv.URL, nil, &ChatRequest{Model: "gpt-4o"})
+	_, err := Execute(context.Background(), srv.URL, nil, &ChatRequest{Model: "gpt-4o"})
 	if err == nil || !strings.Contains(err.Error(), "502") {
 		t.Fatalf("expected wrapped API error, got %v", err)
 	}

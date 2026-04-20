@@ -189,7 +189,7 @@ func (h *chatCompletionHandler) handleChatCompletions(c *gin.Context) {
 }
 
 func handleNonStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID string, originalModel string, providerID string, startTime time.Time) error {
-	response, err := adapter.Execute(canonicalRequest)
+	response, err := adapter.Execute(c.Request.Context(), canonicalRequest)
 	if err != nil {
 		return fmt.Errorf("adapter execute failed: %w", err)
 	}
@@ -207,7 +207,7 @@ func handleNonStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, c
 }
 
 func handleStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID string, originalModel string, providerID string, startTime time.Time) error {
-	eventCh, err := adapter.ExecuteStream(canonicalRequest)
+	eventCh, err := adapter.ExecuteStream(c.Request.Context(), canonicalRequest)
 	if err != nil {
 		if shouldFallbackToNonStreaming(err) && allowStreamingFallback(canonicalRequest) {
 			log.Warn().Err(err).Str("request_id", requestID).Msg("Streaming request failed before stream start, retrying as non-streaming")

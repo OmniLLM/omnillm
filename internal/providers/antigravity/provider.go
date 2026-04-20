@@ -3,11 +3,13 @@ package antigravity
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"omnillm/internal/cif"
 	"omnillm/internal/providers/shared"
@@ -19,7 +21,18 @@ import (
 const defaultBaseURL = "https://daily-cloudcode-pa.googleapis.com"
 
 // Shared HTTP client for Antigravity (only used for streaming).
-var antigravityStreamClient = &http.Client{}
+var antigravityStreamClient = &http.Client{
+	Transport: &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   20,
+		MaxConnsPerHost:       50,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	},
+}
 
 // Models is the Antigravity model catalog.
 var Models = []types.Model{
@@ -60,7 +73,7 @@ func RemapModel(model string) string {
 }
 
 // Stream executes a streaming request to the Antigravity Cloud Code API.
-func Stream(token, baseURL, projectID string, request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
+func Stream(ctx context.Context, token, baseURL, projectID string, request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
 	if token == "" {
 		return nil, fmt.Errorf("antigravity: not authenticated (set access_token via admin UI)")
 	}
@@ -133,7 +146,7 @@ func Stream(token, baseURL, projectID string, request *cif.CanonicalRequest) (<-
 
 	log.Trace().Str("url", url).RawJSON("payload", body).Msg("outbound proxy request payload")
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -161,8 +174,8 @@ func Stream(token, baseURL, projectID string, request *cif.CanonicalRequest) (<-
 }
 
 // Execute runs a non-streaming Antigravity request (via stream collection).
-func Execute(token, baseURL, projectID string, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
-	ch, err := Stream(token, baseURL, projectID, request)
+func Execute(ctx context.Context, token, baseURL, projectID string, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+	ch, err := Stream(ctx, token, baseURL, projectID, request)
 	if err != nil {
 		return nil, err
 	}
