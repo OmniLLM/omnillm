@@ -1,6 +1,6 @@
 // Package openaicompatprovider is the "openai-compatible" provider type.
 //
-// It lets users connect OmniModel to any endpoint that speaks the OpenAI
+// It lets users connect OmniLLM to any endpoint that speaks the OpenAI
 // chat-completions wire protocol and, when available, the OpenAI Responses API
 // (Ollama, vLLM, LM Studio, llama.cpp, OpenAI, etc.)
 // by supplying just a base URL and an optional API key.
@@ -19,12 +19,12 @@ import (
 	"strings"
 	"time"
 
-	"omnimodel/internal/cif"
-	"omnimodel/internal/database"
-	"omnimodel/internal/providers/openaicompat"
-	"omnimodel/internal/providers/shared"
-	"omnimodel/internal/providers/types"
-	"omnimodel/internal/security"
+	"omnillm/internal/cif"
+	"omnillm/internal/database"
+	"omnillm/internal/providers/openaicompat"
+	"omnillm/internal/providers/shared"
+	"omnillm/internal/providers/types"
+	"omnillm/internal/security"
 
 	"github.com/rs/zerolog/log"
 )

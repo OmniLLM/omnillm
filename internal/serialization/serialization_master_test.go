@@ -3,7 +3,7 @@ package serialization
 import (
 	"testing"
 
-	"omnimodel/internal/cif"
+	"omnillm/internal/cif"
 )
 
 func TestSerializeToAnthropic_PreservesThinkingBlocks(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"omnimodel/internal/database"
+	"omnillm/internal/database"
 )
 
 func TestAlibabaGetModelsFetchesLiveModels(t *testing.T) {

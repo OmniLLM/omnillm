@@ -6,7 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 
-	"omnimodel/internal/cif"
+	"omnillm/internal/cif"
 )
 
 func captureIncomingHeaders(c *gin.Context, request *cif.CanonicalRequest) {

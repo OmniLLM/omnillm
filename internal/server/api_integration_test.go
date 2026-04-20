@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"omnimodel/internal/cif"
-	"omnimodel/internal/database"
-	providertypes "omnimodel/internal/providers/types"
-	"omnimodel/internal/registry"
+	"omnillm/internal/cif"
+	"omnillm/internal/database"
+	providertypes "omnillm/internal/providers/types"
+	"omnillm/internal/registry"
 )
 
 type stubProvider struct {

@@ -6,7 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 
-	"omnimodel/internal/database"
+	"omnillm/internal/database"
 )
 
 func SetupVirtualModelRoutes(router *gin.RouterGroup) {

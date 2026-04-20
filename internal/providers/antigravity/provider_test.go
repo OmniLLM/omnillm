@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"omnimodel/internal/cif"
+	"omnillm/internal/cif"
 )
 
 func ptr[T any](v T) *T { return &v }

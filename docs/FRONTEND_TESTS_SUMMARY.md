@@ -1,6 +1,6 @@
 # Comprehensive Frontend Test Suite Summary
 
-## Project: OmniModel Frontend Testing
+## Project: OmniLLM Frontend Testing
 
 **Date Completed:** 2026-04-10  
 **Status:** ✅ Complete
@@ -397,7 +397,7 @@ Future test coverage could include:
 
 ## Summary
 
-A **production-ready, comprehensive test suite** has been created for the OmniModel frontend with:
+A **production-ready, comprehensive test suite** has been created for the OmniLLM frontend with:
 
 - **400+ tests** covering all major pages and workflows
 - **Real-time feature testing** with EventSource and WebSocket mocks

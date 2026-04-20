@@ -10,7 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 
-	"omnimodel/internal/cif"
+	"omnillm/internal/cif"
 )
 
 func setSSEHeaders(c *gin.Context, chunked bool) {

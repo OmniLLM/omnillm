@@ -16,7 +16,7 @@ export async function startUITestServer(
   startupTimeoutMs: number = 15_000,
 ): Promise<UITestServer> {
   const port = await getAvailablePort()
-  const tempHome = await mkdtemp(path.join(os.tmpdir(), "omnimodel-ui-tests-"))
+  const tempHome = await mkdtemp(path.join(os.tmpdir(), "omnillm-ui-tests-"))
   const baseUrl = `http://127.0.0.1:${port}`
 
   const child = spawn(

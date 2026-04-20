@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"omnimodel/internal/registry"
+	"omnillm/internal/registry"
 )
 
 type capturedAlibabaChatRequest struct {

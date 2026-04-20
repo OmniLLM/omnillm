@@ -5,7 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"omnimodel/internal/registry"
+	"omnillm/internal/registry"
 )
 
 func SetupTokenRoutes(router *gin.RouterGroup) {

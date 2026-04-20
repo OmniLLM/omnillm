@@ -48,7 +48,7 @@ dangerousDescribe("Material Design UI Visual Tests", () => {
         const response = await fetch(`${FRONTEND_URL}/admin/`)
         if (response.ok) {
           const html = await response.text()
-          expect(html).toContain("OmniModel")
+          expect(html).toContain("OmniLLM")
           expect(html).toContain('id="root"')
         } else {
           console.warn(

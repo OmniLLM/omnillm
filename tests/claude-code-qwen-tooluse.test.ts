@@ -4,8 +4,8 @@ import { describe, it, expect } from "bun:test"
  * Integration test simulating Claude Code tool use with Qwen3.6-Plus
  *
  * This tests the end-to-end flow:
- * 1. Claude Code sends a tool-use request to OmniModel
- * 2. OmniModel forwards to Alibaba DashScope
+ * 1. Claude Code sends a tool-use request to OmniLLM
+ * 2. OmniLLM forwards to Alibaba DashScope
  * 3. Response includes tool calls
  */
 

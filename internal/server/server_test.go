@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"omnimodel/internal/database"
-	"omnimodel/internal/lib/ratelimit"
-	"omnimodel/internal/routes"
+	"omnillm/internal/database"
+	"omnillm/internal/lib/ratelimit"
+	"omnillm/internal/routes"
 
 	"github.com/gin-gonic/gin"
 )

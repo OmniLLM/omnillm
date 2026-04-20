@@ -1,4 +1,4 @@
-# OmniModel
+# OmniLLM
 
 <p align="center">Enterprise-ready multi-provider LLM gateway.</p>
 
@@ -13,7 +13,7 @@
 
 ---
 
-OmniModel acts as a control plane and gateway for model access. It exposes OpenAI-compatible and Anthropic-compatible APIs, centralizes provider administration, enables live backend switching, and provides a redesigned web admin console for authentication, model inspection, and runtime visibility.
+OmniLLM acts as a control plane and gateway for model access. It exposes OpenAI-compatible and Anthropic-compatible APIs, centralizes provider administration, enables live backend switching, and provides a redesigned web admin console for authentication, model inspection, and runtime visibility.
 
 Route AI traffic through a controlled internal endpoint instead of binding applications directly to individual providers.
 
@@ -34,7 +34,7 @@ Starts both backend (Go, port 5000) and frontend (Vite, port 5080). Admin UI at 
 
 ### API key setup
 
-All API routes are protected by an API key. On first start, OmniModel auto-generates a random key and persists it to `~/.config/omnimodel/api-key`. You can either set a known key upfront or use the auto-generated one.
+All API routes are protected by an API key. On first start, OmniLLM auto-generates a random key and persists it to `~/.config/omnillm/api-key`. You can either set a known key upfront or use the auto-generated one.
 
 **Option A: Set a known key (recommended)**
 
@@ -43,13 +43,13 @@ All API routes are protected by an API key. On first start, OmniModel auto-gener
 bun run omni start --api-key my-secret-key
 
 # Or via environment variable
-OMNIMODEL_API_KEY=my-secret-key bun run omni start
+OMNILLM_API_KEY=my-secret-key bun run omni start
 ```
 
 On Windows (PowerShell), set the environment variable before running:
 
 ```powershell
-$env:OMNIMODEL_API_KEY = "my-secret-key"
+$env:OMNILLM_API_KEY = "my-secret-key"
 bun run omni restart --rebuild --server-port 5000 --frontend-port 5080 -v
 ```
 
@@ -57,15 +57,15 @@ bun run omni restart --rebuild --server-port 5000 --frontend-port 5080 -v
 
 ```sh
 # macOS / Linux
-mkdir -p ~/.config/omnimodel
-echo -n "my-secret-key" > ~/.config/omnimodel/api-key
+mkdir -p ~/.config/omnillm
+echo -n "my-secret-key" > ~/.config/omnillm/api-key
 ```
 
 On Windows (PowerShell):
 
 ```powershell
-New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.config\omnimodel"
-"my-secret-key" | Set-Content -NoNewline -Path "$env:USERPROFILE\.config\omnimodel\api-key"
+New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.config\omnillm"
+"my-secret-key" | Set-Content -NoNewline -Path "$env:USERPROFILE\.config\omnillm\api-key"
 ```
 
 **Option C: Use the auto-generated key**
@@ -74,10 +74,10 @@ Start normally, then read the key from the persisted file:
 
 ```sh
 # macOS / Linux
-cat ~/.config/omnimodel/api-key
+cat ~/.config/omnillm/api-key
 
 # Windows (PowerShell)
-cat "$env:USERPROFILE\.config\omnimodel\api-key"
+cat "$env:USERPROFILE\.config\omnillm\api-key"
 ```
 
 Once you have the key, include it in API requests:
@@ -115,20 +115,20 @@ bun run omni restart --rebuild  # rebuild Go binary + frontend, then restart
 ### Run with bunx
 
 ```sh
-bunx omnimodel@latest start
+bunx omnillm@latest start
 ```
 
 ### Run with Docker
 
 ```sh
-docker build -t omnimodel .
-docker run -p 4141:4141 -v $(pwd)/proxy-data:/root/.local/share/omnimodel omnimodel
+docker build -t omnillm .
+docker run -p 4141:4141 -v $(pwd)/proxy-data:/root/.local/share/omnillm omnillm
 ```
 
 The auto-generated API key persists in the mounted volume, so restarts reuse the same key. To set a known key:
 
 ```sh
-docker run -p 4141:4141 -e OMNIMODEL_API_KEY=my-secret-key omnimodel
+docker run -p 4141:4141 -e OMNILLM_API_KEY=my-secret-key omnillm
 ```
 
 ---
@@ -183,7 +183,7 @@ New providers are registered with canonical instance IDs derived from their endp
 Clients / Agents / Internal Apps
             |
             v
-        OmniModel
+        OmniLLM
    - API compatibility layer (OpenAI + Anthropic)
    - inbound API key auth (Bearer / x-api-key / SSE query)
    - provider auth management (OAuth, API key, token)
@@ -199,15 +199,15 @@ Clients / Agents / Internal Apps
 
 ## Security
 
-OmniModel introduces several security controls to protect the gateway and upstream providers.
+OmniLLM introduces several security controls to protect the gateway and upstream providers.
 
 ### Inbound API authentication
 
 All API routes are protected by an API key. The key is resolved in this order:
 
 1. `--api-key` CLI flag
-2. `OMNIMODEL_API_KEY` environment variable
-3. Persisted file at `~/.config/omnimodel/api-key`
+2. `OMNILLM_API_KEY` environment variable
+3. Persisted file at `~/.config/omnillm/api-key`
 4. Auto-generated random key (persisted to the file above)
 
 Authentication accepts `Authorization: Bearer <key>`, `x-api-key: <key>`, or `?api_key=<key>` query parameter for SSE streams.
@@ -249,7 +249,7 @@ External config file editing (Claude Code, OpenCode, etc.) is disabled by defaul
 
 | Command | Purpose |
 |---|---|
-| `start` | Start the OmniModel gateway |
+| `start` | Start the OmniLLM gateway |
 | `auth` | Authenticate providers without starting the server |
 | `check-usage` | Print GitHub Copilot usage/quota information |
 | `debug` | Print runtime, version, and path diagnostics |
@@ -379,7 +379,7 @@ bun run start --claude-code
 
 ### Caveat: Using Claude Code with GitHub Copilot Upstream
 
-When routing Claude Code through OmniModel with GitHub Copilot as the upstream provider, **GitHub Copilot is charged per request** — not per token. Claude Code makes many small background calls (sub-agents, tool-use, haiku-class models) that silently add up.
+When routing Claude Code through OmniLLM with GitHub Copilot as the upstream provider, **GitHub Copilot is charged per request** — not per token. Claude Code makes many small background calls (sub-agents, tool-use, haiku-class models) that silently add up.
 
 Override small/fast models to a free or low-cost model:
 
@@ -420,7 +420,7 @@ Or in `.claude/settings.json`:
 
 | Symptom | Likely Cause | Action |
 |---|---|---|
-| No authenticated providers | Auth flow not completed | Run `omnimodel auth` or authenticate in admin UI |
+| No authenticated providers | Auth flow not completed | Run `omnillm auth` or authenticate in admin UI |
 | 401 / Unauthorized | Expired or invalid provider credentials, or missing inbound API key | Re-authenticate provider; include `Authorization: Bearer <api-key>` in requests |
 | No models returned | Provider auth incomplete or upstream issue | Recheck auth and provider availability |
 | Rate-limit failures | Request volume exceeds configured threshold | Increase interval or use `--wait` |

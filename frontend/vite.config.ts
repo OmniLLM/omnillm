@@ -55,6 +55,6 @@ export default defineConfig({
   },
   define: {
     __SERVER_PORT__: JSON.stringify(serverPort),
-    __API_KEY__: JSON.stringify(process.env.OMNIMODEL_API_KEY ?? ""),
+    __API_KEY__: JSON.stringify(process.env.OMNILLM_API_KEY ?? ""),
   },
 })

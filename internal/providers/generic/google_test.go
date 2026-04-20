@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"omnimodel/internal/cif"
-	"omnimodel/internal/database"
-	"omnimodel/internal/providers/types"
+	"omnillm/internal/cif"
+	"omnillm/internal/database"
+	"omnillm/internal/providers/types"
 )
 
 // ─── Google provider auth tests ───

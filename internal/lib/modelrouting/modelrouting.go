@@ -7,9 +7,9 @@ import (
 	"strings"
 	"sync"
 
-	"omnimodel/internal/database"
-	"omnimodel/internal/providers/types"
-	"omnimodel/internal/registry"
+	"omnillm/internal/database"
+	"omnillm/internal/providers/types"
+	"omnillm/internal/registry"
 
 	"github.com/rs/zerolog/log"
 )

@@ -3,7 +3,7 @@ package shared
 import (
 	"encoding/json"
 
-	"omnimodel/internal/cif"
+	"omnillm/internal/cif"
 )
 
 // StreamResponse replays a completed CIF response as a synthetic CIF stream.

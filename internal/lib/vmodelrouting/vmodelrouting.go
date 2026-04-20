@@ -5,7 +5,7 @@ import (
 	"math/rand"
 	"sync"
 
-	"omnimodel/internal/database"
+	"omnillm/internal/database"
 )
 
 // roundRobinState holds the per-virtual-model cursor for round-robin selection.

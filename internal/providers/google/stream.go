@@ -8,8 +8,8 @@ import (
 	"io"
 	"strings"
 
-	"omnimodel/internal/cif"
-	"omnimodel/internal/providers/shared"
+	"omnillm/internal/cif"
+	"omnillm/internal/providers/shared"
 
 	"github.com/rs/zerolog/log"
 )

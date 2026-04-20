@@ -198,7 +198,7 @@ function getApiKey(): string {
   }
 
   const meta = globalThis.document?.querySelector?.(
-    'meta[name="omnimodel-api-key"]',
+    'meta[name="omnillm-api-key"]',
   )
   const content = meta?.getAttribute("content")?.trim() ?? ""
   cachedApiKey =

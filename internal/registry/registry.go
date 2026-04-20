@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"sync"
 
-	"omnimodel/internal/database"
-	"omnimodel/internal/providers/types"
+	"omnillm/internal/database"
+	"omnillm/internal/providers/types"
 
 	"github.com/rs/zerolog/log"
 )

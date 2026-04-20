@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"omnimodel/internal/cif"
+	"omnillm/internal/cif"
 )
 
 // Shared HTTP client with default timeout for Responses API requests.

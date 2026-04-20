@@ -2,7 +2,7 @@
 package types
 
 import (
-	"omnimodel/internal/cif"
+	"omnillm/internal/cif"
 )
 
 type ProviderID string

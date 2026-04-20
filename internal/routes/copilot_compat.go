@@ -1,8 +1,8 @@
 package routes
 
 import (
-	"omnimodel/internal/cif"
-	"omnimodel/internal/providers/types"
+	"omnillm/internal/cif"
+	"omnillm/internal/providers/types"
 )
 
 func applyGitHubCopilotSingleUpstreamMode(provider types.Provider, request *cif.CanonicalRequest) {

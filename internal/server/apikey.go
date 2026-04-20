@@ -10,7 +10,7 @@ import (
 )
 
 const apiKeyFileName = "api-key"
-const apiKeyEnvVar = "OMNIMODEL_API_KEY"
+const apiKeyEnvVar = "OMNILLM_API_KEY"
 
 func resolveAPIKey(configDir string, explicit string) (string, error) {
 	if key := strings.TrimSpace(explicit); key != "" {

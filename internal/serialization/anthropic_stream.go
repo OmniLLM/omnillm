@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"omnimodel/internal/cif"
+	"omnillm/internal/cif"
 )
 
 // Anthropic streaming types

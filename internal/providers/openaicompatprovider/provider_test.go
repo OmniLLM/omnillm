@@ -3,7 +3,7 @@ package openaicompatprovider
 import (
 	"testing"
 
-	"omnimodel/internal/providers/types"
+	"omnillm/internal/providers/types"
 )
 
 func TestGetID(t *testing.T) {

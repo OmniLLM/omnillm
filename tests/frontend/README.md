@@ -2,7 +2,7 @@
 
 ## Overview
 
-This directory contains comprehensive tests for all frontend pages and components of the OmniModel application. The test suite provides **deep coverage** of:
+This directory contains comprehensive tests for all frontend pages and components of the OmniLLM application. The test suite provides **deep coverage** of:
 
 - ✅ All 14 frontend pages
 - ✅ Component state management

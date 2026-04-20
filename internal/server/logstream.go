@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"omnimodel/internal/routes"
+	"omnillm/internal/routes"
 )
 
 type sseLogWriter struct {

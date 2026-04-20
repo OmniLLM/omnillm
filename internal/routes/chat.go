@@ -9,13 +9,13 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 
-	"omnimodel/internal/cif"
-	"omnimodel/internal/ingestion"
-	"omnimodel/internal/lib/approval"
-	"omnimodel/internal/lib/modelrouting"
-	"omnimodel/internal/lib/ratelimit"
-	"omnimodel/internal/providers/types"
-	"omnimodel/internal/serialization"
+	"omnillm/internal/cif"
+	"omnillm/internal/ingestion"
+	"omnillm/internal/lib/approval"
+	"omnillm/internal/lib/modelrouting"
+	"omnillm/internal/lib/ratelimit"
+	"omnillm/internal/providers/types"
+	"omnillm/internal/serialization"
 )
 
 var (

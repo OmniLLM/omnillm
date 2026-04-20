@@ -60,7 +60,7 @@ describe("Material Design UI Browser Tests", () => {
       expect(ok).toBe(true)
 
       // Check for basic structure (this is the dev server template)
-      expect(html).toContain("OmniModel Admin") // Title from HTML template
+      expect(html).toContain("OmniLLM Admin") // Title from HTML template
       expect(html).toContain('id="root"') // React mount point
       expect(html).toContain("main.tsx") // Main React entry point
 
@@ -183,7 +183,7 @@ describe("Material Design UI Browser Tests", () => {
       const expectedElements = [
         "header", // Should have header
         "main", // Should have main content
-        "OmniModel", // App title
+        "OmniLLM", // App title
         "Material Design", // Should mention Material Design when toggled
       ]
 

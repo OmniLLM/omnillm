@@ -6,7 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 
-	"omnimodel/internal/registry"
+	"omnillm/internal/registry"
 )
 
 func SetupEmbeddingRoutes(router *gin.RouterGroup) {

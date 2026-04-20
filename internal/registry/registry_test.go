@@ -4,8 +4,8 @@ import (
 	"os"
 	"testing"
 
-	"omnimodel/internal/database"
-	providertypes "omnimodel/internal/providers/types"
+	"omnillm/internal/database"
+	providertypes "omnillm/internal/providers/types"
 )
 
 type testProvider struct {

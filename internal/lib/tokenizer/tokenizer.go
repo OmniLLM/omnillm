@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"omnimodel/internal/providers/types"
+	"omnillm/internal/providers/types"
 
 	"github.com/rs/zerolog/log"
 )

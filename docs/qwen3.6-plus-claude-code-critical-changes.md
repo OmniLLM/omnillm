@@ -2,7 +2,7 @@
 
 ## Context
 
-Claude Code sends requests to omnimodel via the Anthropic `/v1/messages` API (always streaming). When the upstream provider is Qwen3.6-plus on Alibaba DashScope, the request must flow: Anthropic format → CIF → OpenAI-compatible format → DashScope → response back through CIF → Anthropic format.
+Claude Code sends requests to omnillm via the Anthropic `/v1/messages` API (always streaming). When the upstream provider is Qwen3.6-plus on Alibaba DashScope, the request must flow: Anthropic format → CIF → OpenAI-compatible format → DashScope → response back through CIF → Anthropic format.
 
 Prior to commit `dfa3cec5e2c574707d1a2c9b5d8873195ff58bcf`, this path was broken. The changes below (spanning commits `49f2351` through `69f1619`) fixed it.
 

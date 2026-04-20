@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// omni-dev.ts — Comprehensive OmniModel Development Manager
+// omni-dev.ts — Comprehensive OmniLLM Development Manager
 // Manages both frontend and backend services with start/stop/status operations
 
 import consola from "consola"
@@ -103,7 +103,7 @@ const follow = values["follow"]
 
 function showHelp() {
   console.log(`
-🚀 OmniModel Development Manager
+🚀 OmniLLM Development Manager
 
 USAGE:
   bun run omni-dev.ts <command> [options]
@@ -256,10 +256,10 @@ function matchesProcess(cmd: string, keywords: Array<string>): boolean {
 async function findMatchingPids(): Promise<Array<number>> {
   const processes = await listProcesses()
 
-  // Keywords chosen to uniquely identify OmniModel dev processes
+  // Keywords chosen to uniquely identify OmniLLM dev processes
   // Use path-separator-agnostic keywords (avoid / vs \ issues on Windows)
   const patterns: Array<Array<string>> = [
-    ["omnimodel", "start", "--port"], // Go binary
+    ["omnillm", "start", "--port"], // Go binary
     ["vite.config.ts", "--port"], // Frontend Vite (matches forward or backslash paths)
   ]
 
@@ -590,6 +590,7 @@ function createLoggedProcess(
     GO_PORT: serverPort,
     SERVER_PORT: serverPort,
     FRONTEND_PORT: frontendPort,
+    OMNIMODEL_API_KEY: "",
   }
 
   const logFd = openSync(LOG_FILE, "a")
@@ -625,7 +626,7 @@ async function startServices() {
     }
   }
 
-  consola.info("🚀 Starting OmniModel development environment...")
+  consola.info("🚀 Starting OmniLLM development environment...")
   consola.info(`   🔥 Backend (Go): http://localhost:${serverPort}`)
   consola.info(`   🌐 Frontend: http://localhost:${frontendPort}`)
   consola.info(`   📱 Admin UI: http://localhost:${frontendPort}/admin/`)
@@ -655,11 +656,11 @@ async function startServices() {
 
   // Build Go backend: build locally first, then copy to ~/.local/bin
   const isWindows = process.platform === "win32"
-  const localBin = isWindows ? "omnimodel.exe" : "omnimodel"
+  const localBin = isWindows ? "omnillm.exe" : "omnillm"
   const installPath =
     isWindows ?
-      `${process.env.USERPROFILE}/.local/bin/omnimodel.exe`
-    : `${homedir()}/.local/bin/omnimodel`
+      `${process.env.USERPROFILE}/.local/bin/omnillm.exe`
+    : `${homedir()}/.local/bin/omnillm`
 
   consola.info("🔨 Building Golang backend...")
   const goExe =
@@ -766,7 +767,7 @@ async function stopServices() {
     }
   }
 
-  // Then find any stray OmniModel processes by command signature
+  // Then find any stray OmniLLM processes by command signature
   const matchingPids = await findMatchingPids()
   const extraPids = matchingPids.filter((pid) => !killed.has(pid))
 
@@ -794,7 +795,7 @@ async function stopServices() {
 async function showStatus() {
   const pids = loadPids()
 
-  consola.info("📊 OmniModel Service Status")
+  consola.info("📊 OmniLLM Service Status")
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
   if (!pids) {
@@ -996,11 +997,11 @@ if (values.help || command === "help") {
       if (rebuild) {
         // Rebuild Go backend: build locally first, then copy to ~/.local/bin
         const isWindows = process.platform === "win32"
-        const localBin = isWindows ? "omnimodel.exe" : "omnimodel"
+        const localBin = isWindows ? "omnillm.exe" : "omnillm"
         const installPath =
           isWindows ?
-            `${process.env.USERPROFILE}/.local/bin/omnimodel.exe`
-          : `${homedir()}/.local/bin/omnimodel`
+            `${process.env.USERPROFILE}/.local/bin/omnillm.exe`
+          : `${homedir()}/.local/bin/omnillm`
         consola.info("🔨 Rebuilding Golang backend...")
         const goExe =
           process.platform === "win32" ?

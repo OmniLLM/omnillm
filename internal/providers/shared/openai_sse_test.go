@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"omnimodel/internal/cif"
+	"omnillm/internal/cif"
 )
 
 // sseBody wraps a string as an io.ReadCloser for use in ParseOpenAISSE tests.

@@ -2,7 +2,7 @@
 
 ## Summary
 
-A **production-ready, deeply comprehensive test suite** has been successfully created for the OmniModel frontend application covering **all 14+ frontend pages** with **271 passing tests**.
+A **production-ready, deeply comprehensive test suite** has been successfully created for the OmniLLM frontend application covering **all 14+ frontend pages** with **271 passing tests**.
 
 ### Quick Facts
 - ✅ **271 passing tests** across 6 test files

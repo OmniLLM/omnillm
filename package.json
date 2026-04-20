@@ -1,5 +1,5 @@
 {
-  "name": "omnimodel",
+  "name": "omnillm",
   "version": "0.0.1",
   "description": "Multi-provider LLM gateway with OpenAI/Anthropic-compatible APIs",
   "keywords": [
@@ -7,17 +7,17 @@
     "github-copilot",
     "openai-compatible"
   ],
-  "homepage": "https://github.com/zhujian0805/OmniModel",
-  "bugs": "https://github.com/zhujian0805/OmniModel/issues",
+  "homepage": "https://github.com/zhujian0805/OmniLLM",
+  "bugs": "https://github.com/zhujian0805/OmniLLM/issues",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/zhujian0805/OmniModel.git"
+    "url": "git+https://github.com/zhujian0805/OmniLLM.git"
   },
   "author": "Erick Christian <erickchristian48@gmail.com>",
   "type": "module",
   "scripts": {
     "build": "vite build --config frontend/vite.config.ts",
-    "build:go": "go build -o ~/.local/bin/omnimodel main.go",
+    "build:go": "go build -o ~/.local/bin/omnillm main.go",
     "dev": "bun run dev.ts",
     "dev:frontend": "vite --config frontend/vite.config.ts",
     "knip": "knip-bun",

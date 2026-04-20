@@ -3,7 +3,7 @@ package generic
 import (
 	"testing"
 
-	"omnimodel/internal/cif"
+	"omnillm/internal/cif"
 )
 
 func TestBuildOpenAIPayloadIncludesSystemPrompt(t *testing.T) {

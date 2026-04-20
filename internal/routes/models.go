@@ -6,8 +6,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 
-	"omnimodel/internal/database"
-	"omnimodel/internal/registry"
+	"omnillm/internal/database"
+	"omnillm/internal/registry"
 )
 
 func SetupModelRoutes(router *gin.RouterGroup) {

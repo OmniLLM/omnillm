@@ -3,7 +3,7 @@ package ingestion
 import (
 	"testing"
 
-	"omnimodel/internal/cif"
+	"omnillm/internal/cif"
 )
 
 // ─── ParseOpenAIChatCompletions ───

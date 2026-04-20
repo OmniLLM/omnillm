@@ -1,9 +1,9 @@
 package routes
 
 import (
-	"omnimodel/internal/database"
-	"omnimodel/internal/lib/modelrouting"
-	"omnimodel/internal/lib/vmodelrouting"
+	"omnillm/internal/database"
+	"omnillm/internal/lib/modelrouting"
+	"omnillm/internal/lib/vmodelrouting"
 
 	"github.com/rs/zerolog/log"
 )

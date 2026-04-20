@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"omnimodel/internal/cif"
+	"omnillm/internal/cif"
 
 	"github.com/rs/zerolog/log"
 )

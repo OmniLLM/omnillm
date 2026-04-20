@@ -20,10 +20,10 @@ pages/index.html
 pages/admin/
 
 # Go binaries
-omnimodel
-omnimodel.exe
+omnillm
+omnillm.exe
 
-# OmniModel dev manager files
+# OmniLLM dev manager files
 .omni-dev.pid
 .omni-dev.log
 

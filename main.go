@@ -5,11 +5,11 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"omnimodel/internal/commands"
+	"omnillm/internal/commands"
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "omnimodel",
+	Use:   "omnillm",
 	Short: "A wrapper around GitHub Copilot API to make it OpenAI compatible",
 	Long:  "A wrapper around GitHub Copilot API to make it OpenAI compatible, making it usable for other tools.",
 }

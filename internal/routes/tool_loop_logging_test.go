@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"omnimodel/internal/cif"
+	"omnillm/internal/cif"
 )
 
 func TestExtractLatestRawAnthropicToolResultEntriesUsesMostRecentUserToolResults(t *testing.T) {

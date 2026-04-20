@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"omnimodel/internal/providers/openaicompatprovider"
-	providertypes "omnimodel/internal/providers/types"
-	"omnimodel/internal/registry"
+	"omnillm/internal/providers/openaicompatprovider"
+	providertypes "omnillm/internal/providers/types"
+	"omnillm/internal/registry"
 )
 
 type capturedOpenAICompatRequest struct {

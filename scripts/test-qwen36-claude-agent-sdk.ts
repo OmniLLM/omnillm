@@ -261,20 +261,20 @@ function printSummary(summary: RunSummary): void {
 }
 
 async function main(): Promise<void> {
-  const baseUrl = process.env.OMNIMODEL_CLAUDE_BASE_URL ?? DEFAULT_BASE_URL
-  const model = process.env.OMNIMODEL_CLAUDE_MODEL ?? DEFAULT_MODEL
+  const baseUrl = process.env.OMNILLM_CLAUDE_BASE_URL ?? DEFAULT_BASE_URL
+  const model = process.env.OMNILLM_CLAUDE_MODEL ?? DEFAULT_MODEL
   const apiKey =
-    process.env.OMNIMODEL_CLAUDE_API_KEY ?? "sk-omnimodel-local-test"
-  const prompt = process.env.OMNIMODEL_CLAUDE_PROMPT ?? DEFAULT_PROMPT
+    process.env.OMNILLM_CLAUDE_API_KEY ?? "sk-omnillm-local-test"
+  const prompt = process.env.OMNILLM_CLAUDE_PROMPT ?? DEFAULT_PROMPT
   const timeoutMs = parsePositiveInt(
-    process.env.OMNIMODEL_CLAUDE_TIMEOUT_MS,
+    process.env.OMNILLM_CLAUDE_TIMEOUT_MS,
     DEFAULT_TIMEOUT_MS,
   )
   const maxTurns = parsePositiveInt(
-    process.env.OMNIMODEL_CLAUDE_MAX_TURNS,
+    process.env.OMNILLM_CLAUDE_MAX_TURNS,
     DEFAULT_MAX_TURNS,
   )
-  const allowedTools = parseToolList(process.env.OMNIMODEL_CLAUDE_ALLOWED_TOOLS)
+  const allowedTools = parseToolList(process.env.OMNILLM_CLAUDE_ALLOWED_TOOLS)
   const explicitlyAllowedToolNames = new Set(allowedTools)
 
   console.log(
@@ -312,7 +312,7 @@ async function main(): Promise<void> {
           ...process.env,
           ANTHROPIC_API_KEY: apiKey,
           ANTHROPIC_BASE_URL: baseUrl,
-          CLAUDE_AGENT_SDK_CLIENT_APP: "omnimodel-qwen36-live-check/1.0.0",
+          CLAUDE_AGENT_SDK_CLIENT_APP: "omnillm-qwen36-live-check/1.0.0",
         },
         includePartialMessages: true,
         maxTurns,

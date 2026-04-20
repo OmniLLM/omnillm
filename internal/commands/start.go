@@ -5,7 +5,7 @@ import (
 	"strconv"
 
 	"github.com/spf13/cobra"
-	"omnimodel/internal/server"
+	"omnillm/internal/server"
 )
 
 var StartCmd = &cobra.Command{

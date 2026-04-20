@@ -14,15 +14,15 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
-	"omnimodel/internal/database"
-	"omnimodel/internal/lib/ratelimit"
-	alibabapkg "omnimodel/internal/providers/alibaba"
-	"omnimodel/internal/providers/copilot"
-	"omnimodel/internal/providers/generic"
-	openaicompatprovider "omnimodel/internal/providers/openaicompatprovider"
-	"omnimodel/internal/providers/types"
-	"omnimodel/internal/registry"
-	"omnimodel/internal/routes"
+	"omnillm/internal/database"
+	"omnillm/internal/lib/ratelimit"
+	alibabapkg "omnillm/internal/providers/alibaba"
+	"omnillm/internal/providers/copilot"
+	"omnillm/internal/providers/generic"
+	openaicompatprovider "omnillm/internal/providers/openaicompatprovider"
+	"omnillm/internal/providers/types"
+	"omnillm/internal/registry"
+	"omnillm/internal/routes"
 )
 
 type StartOptions struct {
@@ -52,7 +52,7 @@ func RunServer(options StartOptions) error {
 	if err != nil {
 		return fmt.Errorf("failed to get home directory: %w", err)
 	}
-	configDir := filepath.Join(homeDir, ".config", "omnimodel")
+	configDir := filepath.Join(homeDir, ".config", "omnillm")
 
 	if err := database.InitializeDatabase(configDir); err != nil {
 		return fmt.Errorf("failed to initialize database: %w", err)
@@ -103,7 +103,7 @@ func RunServer(options StartOptions) error {
 	log.Info().
 		Str("url", serverURL).
 		Str("admin", adminURL).
-		Msg("OmniModel server starting")
+		Msg("OmniLLM server starting")
 
 	log.Info().Str("api_key_path", filepath.Join(configDir, apiKeyFileName)).Msg("Inbound API authentication enabled")
 
@@ -165,7 +165,7 @@ func buildRouter(port int, apiKey string) *gin.Engine {
 	r.GET("/", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"status":  "healthy",
-			"message": "OmniModel server is running",
+			"message": "OmniLLM server is running",
 			"version": routes.GetVersion(),
 		})
 	})

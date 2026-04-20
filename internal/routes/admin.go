@@ -16,15 +16,15 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
-	"omnimodel/internal/database"
-	alibabapkg "omnimodel/internal/providers/alibaba"
-	"omnimodel/internal/providers/copilot"
-	"omnimodel/internal/providers/generic"
-	"omnimodel/internal/providers/shared"
-	openaicompatprovider "omnimodel/internal/providers/openaicompatprovider"
-	"omnimodel/internal/providers/types"
-	"omnimodel/internal/registry"
-	ghservice "omnimodel/internal/services/github"
+	"omnillm/internal/database"
+	alibabapkg "omnillm/internal/providers/alibaba"
+	"omnillm/internal/providers/copilot"
+	"omnillm/internal/providers/generic"
+	"omnillm/internal/providers/shared"
+	openaicompatprovider "omnillm/internal/providers/openaicompatprovider"
+	"omnillm/internal/providers/types"
+	"omnillm/internal/registry"
+	ghservice "omnillm/internal/services/github"
 )
 
 // Log subscriber for SSE streaming

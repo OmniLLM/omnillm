@@ -8,8 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"omnimodel/internal/cif"
-	"omnimodel/internal/providers/shared"
+	"omnillm/internal/cif"
+	"omnillm/internal/providers/shared"
 )
 
 func TestAdapterUpstreamAPISelection(t *testing.T) {

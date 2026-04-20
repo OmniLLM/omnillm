@@ -8,11 +8,11 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 
-	"omnimodel/internal/database"
-	"omnimodel/internal/providers/copilot"
-	"omnimodel/internal/providers/types"
-	"omnimodel/internal/registry"
-	ghservice "omnimodel/internal/services/github"
+	"omnillm/internal/database"
+	"omnillm/internal/providers/copilot"
+	"omnillm/internal/providers/types"
+	"omnillm/internal/registry"
+	ghservice "omnillm/internal/services/github"
 )
 
 var AuthCmd = &cobra.Command{
@@ -25,7 +25,7 @@ var AuthCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get home directory: %w", err)
 		}
-		configDir := filepath.Join(homeDir, ".config", "omnimodel")
+		configDir := filepath.Join(homeDir, ".config", "omnillm")
 		if err := database.InitializeDatabase(configDir); err != nil {
 			return fmt.Errorf("failed to initialize database: %w", err)
 		}
@@ -103,7 +103,7 @@ var AuthCmd = &cobra.Command{
 
 		fmt.Println()
 		fmt.Printf("Provider '%s' is ready. Start the server with:\n", instanceID)
-		fmt.Println("  omnimodel start")
+		fmt.Println("  omnillm start")
 		fmt.Println()
 
 		return nil

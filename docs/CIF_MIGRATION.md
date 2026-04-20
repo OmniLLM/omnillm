@@ -2,7 +2,7 @@
 
 ## Overview
 
-The omnimodel has been migrated to use a **Canonical Internal Format (CIF)** that sits between all inbound API formats and all provider implementations. This replaces the previous N×M translation matrix with an N+M adapter system.
+The omnillm has been migrated to use a **Canonical Internal Format (CIF)** that sits between all inbound API formats and all provider implementations. This replaces the previous N×M translation matrix with an N+M adapter system.
 
 ## Architecture
 

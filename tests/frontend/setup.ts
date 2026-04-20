@@ -386,7 +386,7 @@ export function setupTestEnvironment() {
   setupStorageMocks(globalThis)
   ;(globalThis as any).document = {
     querySelector: (selector: string) => {
-      if (selector === 'meta[name="omnimodel-api-key"]') {
+      if (selector === 'meta[name="omnillm-api-key"]') {
         return {
           getAttribute: (name: string) => (name === "content" ? "" : null),
         }

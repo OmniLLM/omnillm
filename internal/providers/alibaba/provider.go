@@ -21,18 +21,18 @@ import (
 	"net/http"
 	"strings"
 
-	"omnimodel/internal/cif"
-	"omnimodel/internal/database"
-	"omnimodel/internal/providers/openaicompat"
-	"omnimodel/internal/providers/shared"
-	"omnimodel/internal/providers/types"
+	"omnillm/internal/cif"
+	"omnillm/internal/database"
+	"omnillm/internal/providers/openaicompat"
+	"omnillm/internal/providers/shared"
+	"omnillm/internal/providers/types"
 
 	"github.com/rs/zerolog/log"
 )
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const UserAgent = "OmniModel/1.0"
+const UserAgent = "OmniLLM/1.0"
 
 // API mode constant for OpenAI-compatible DashScope endpoints.
 const AlibabaAPIModeOpenAICompatible = "openai-compatible"

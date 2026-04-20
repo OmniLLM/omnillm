@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"omnimodel/internal/cif"
-	ghservice "omnimodel/internal/services/github"
+	"omnillm/internal/cif"
+	ghservice "omnillm/internal/services/github"
 )
 
 func TestCopilotAdapterExecute_UsesResponsesAPIForGPT54Models(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"omnimodel/internal/cif"
+	"omnillm/internal/cif"
 
 	"github.com/rs/zerolog/log"
 )

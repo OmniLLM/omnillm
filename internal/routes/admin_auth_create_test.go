@@ -13,8 +13,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"omnimodel/internal/database"
-	"omnimodel/internal/registry"
+	"omnillm/internal/database"
+	"omnillm/internal/registry"
 )
 
 func TestMain(m *testing.M) {

@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"omnimodel/internal/cif"
-	"omnimodel/internal/database"
-	"omnimodel/internal/providers/shared"
-	"omnimodel/internal/providers/types"
+	"omnillm/internal/cif"
+	"omnillm/internal/database"
+	"omnillm/internal/providers/shared"
+	"omnillm/internal/providers/types"
 
 	"github.com/rs/zerolog/log"
 )

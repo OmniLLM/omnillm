@@ -34,7 +34,7 @@ describe("Material UI Verification", () => {
       expect(response.ok).toBe(true)
 
       const html = await response.text()
-      expect(html).toContain("OmniModel Admin")
+      expect(html).toContain("OmniLLM Admin")
       expect(html).toContain('id="root"')
       expect(html).toContain("main.tsx")
       console.log("✅ Frontend is loading correctly")

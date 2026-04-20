@@ -3,7 +3,7 @@ package tokenizer
 import (
 	"testing"
 
-	"omnimodel/internal/providers/types"
+	"omnillm/internal/providers/types"
 )
 
 // ─── GetTokenizerFromModel ───

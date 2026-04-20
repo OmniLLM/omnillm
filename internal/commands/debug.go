@@ -8,14 +8,14 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omnimodel/internal/database"
+	"omnillm/internal/database"
 )
 
 var DebugCmd = &cobra.Command{
 	Use:   "debug",
 	Short: "Print debug information about the runtime and configuration",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println("OmniModel Debug Info")
+		fmt.Println("OmniLLM Debug Info")
 		fmt.Println("════════════════════")
 		fmt.Println()
 
@@ -31,7 +31,7 @@ var DebugCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get home directory: %w", err)
 		}
-		configDir := filepath.Join(homeDir, ".local", "share", "omnimodel")
+		configDir := filepath.Join(homeDir, ".local", "share", "omnillm")
 		dbPath := filepath.Join(configDir, "database.sqlite")
 
 		fmt.Println("Paths:")
@@ -61,7 +61,7 @@ var DebugCmd = &cobra.Command{
 		} else {
 			fmt.Println("Tokens:")
 			if len(tokens) == 0 {
-				fmt.Println("  No tokens stored. Run 'omnimodel auth' to authenticate.")
+				fmt.Println("  No tokens stored. Run 'omnillm auth' to authenticate.")
 			}
 			for _, t := range tokens {
 				fmt.Printf("  Instance: %s (provider: %s)\n", t.InstanceID, t.ProviderID)

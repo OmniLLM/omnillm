@@ -238,7 +238,7 @@ export default function AppComponent() {
                       lineHeight: 1,
                     }}
                   >
-                    OmniModel
+                    OmniLLM
                   </div>
                   <div
                     style={{

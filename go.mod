@@ -1,4 +1,4 @@
-module omnimodel
+module omnillm
 
 go 1.23
 

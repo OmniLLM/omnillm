@@ -4,10 +4,10 @@ import (
 	"os"
 	"testing"
 
-	alibabapkg "omnimodel/internal/providers/alibaba"
-	"omnimodel/internal/database"
-	"omnimodel/internal/providers/types"
-	"omnimodel/internal/registry"
+	alibabapkg "omnillm/internal/providers/alibaba"
+	"omnillm/internal/database"
+	"omnillm/internal/providers/types"
+	"omnillm/internal/registry"
 )
 
 // TestMain initializes a temp SQLite database so the functions that call

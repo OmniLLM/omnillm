@@ -3,7 +3,7 @@ package serialization
 import (
 	"testing"
 
-	"omnimodel/internal/cif"
+	"omnillm/internal/cif"
 )
 
 // ─── SerializeToOpenAI ───

@@ -8,8 +8,8 @@ import (
 	"os"
 	"testing"
 
-	"omnimodel/internal/database"
-	"omnimodel/internal/providers/types"
+	"omnillm/internal/database"
+	"omnillm/internal/providers/types"
 )
 
 func TestMain(m *testing.M) {

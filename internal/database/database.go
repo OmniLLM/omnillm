@@ -1,4 +1,4 @@
-// Package database provides SQLite-based persistence for OmniModel
+// Package database provides SQLite-based persistence for OmniLLM
 package database
 
 import (

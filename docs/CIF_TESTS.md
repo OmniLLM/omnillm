@@ -2,7 +2,7 @@
 
 ## Comprehensive Testing Implementation for Canonical Internal Format (CIF) Refactor
 
-This document summarizes the extensive test coverage implemented for the CIF (Canonical Internal Format) refactor of the omnimodel.
+This document summarizes the extensive test coverage implemented for the CIF (Canonical Internal Format) refactor of the omnillm.
 
 ## Test Files Created
 

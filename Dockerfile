@@ -6,7 +6,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o omnimodel main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o omnillm main.go
 
 # ── Build stage: build frontend assets ─────────────────────────────────────
 FROM oven/bun:1.2.19-alpine AS frontend-builder
@@ -24,7 +24,7 @@ WORKDIR /app
 
 RUN apk add --no-cache ca-certificates
 
-COPY --from=go-builder /app/omnimodel ./omnimodel
+COPY --from=go-builder /app/omnillm ./omnillm
 COPY --from=frontend-builder /app/pages ./pages
 
 EXPOSE 5002

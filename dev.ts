@@ -149,8 +149,8 @@ const bunExe = process.execPath
 const isWindows = process.platform === "win32"
 const binaryPath =
   isWindows ?
-    `${process.env.USERPROFILE}/.local/bin/omnimodel.exe`
-  : `${homedir()}/.local/bin/omnimodel`
+    `${process.env.USERPROFILE}/.local/bin/omnillm.exe`
+  : `${homedir()}/.local/bin/omnillm`
 
 const server = run("go-server", "31", binaryPath, [
   "start",

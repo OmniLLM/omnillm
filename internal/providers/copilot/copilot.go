@@ -16,14 +16,14 @@ import (
 	"strings"
 	"time"
 
-	"omnimodel/internal/cif"
-	"omnimodel/internal/database"
-	"omnimodel/internal/ingestion"
-	"omnimodel/internal/lib/modelrouting"
-	"omnimodel/internal/providers/shared"
-	"omnimodel/internal/providers/types"
-	"omnimodel/internal/serialization"
-	ghservice "omnimodel/internal/services/github"
+	"omnillm/internal/cif"
+	"omnillm/internal/database"
+	"omnillm/internal/ingestion"
+	"omnillm/internal/lib/modelrouting"
+	"omnillm/internal/providers/shared"
+	"omnillm/internal/providers/types"
+	"omnillm/internal/serialization"
+	ghservice "omnillm/internal/services/github"
 
 	"github.com/rs/zerolog/log"
 )

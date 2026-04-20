@@ -3,7 +3,7 @@ package ingestion
 import (
 	"testing"
 
-	"omnimodel/internal/cif"
+	"omnillm/internal/cif"
 )
 
 func TestParseOpenAI_MergesSystemMessagesAndNormalizesToolChoice(t *testing.T) {
