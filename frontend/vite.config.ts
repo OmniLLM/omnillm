@@ -17,7 +17,8 @@ const useProxy = isDev && process.env.DISABLE_PROXY !== "true"
 const proxyTarget = {
   target: serverBase,
   changeOrigin: true,
-  configure: (proxy: import("http-proxy").Server) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  configure: (proxy: any) => {
     proxy.on(
       "error",
       (

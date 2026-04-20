@@ -2689,7 +2689,9 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
             setDroidConfig({
               ...parsed,
               customModels: parsed.customModels ?? [],
-              providers: parsed.providers ?? { default: {} },
+              providers: parsed.providers ?? {
+                default: { baseUrl: "", apiKey: "" },
+              },
               features: parsed.features ?? {},
               logging: parsed.logging ?? {},
               ui: parsed.ui ?? {},
@@ -2700,7 +2702,7 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
             // Create empty config so structured editor shows
             setDroidConfig({
               customModels: [],
-              providers: { default: {} },
+              providers: { default: { baseUrl: "", apiKey: "" } },
               features: {},
               logging: {},
               ui: {},

@@ -728,17 +728,18 @@ function _ModelsDialog({
     <>
       <button className="btn btn-ghost btn-sm" onClick={handleOpen}>
         Models
-        {provider.totalModelCount !== null && provider.totalModelCount > 0 && (
-          <span
-            style={{
-              color: "var(--color-blue)",
-              fontSize: 11,
-              fontWeight: 600,
-            }}
-          >
-            {provider.enabledModelCount}/{provider.totalModelCount}
-          </span>
-        )}
+        {provider.totalModelCount !== undefined
+          && provider.totalModelCount > 0 && (
+            <span
+              style={{
+                color: "var(--color-blue)",
+                fontSize: 11,
+                fontWeight: 600,
+              }}
+            >
+              {provider.enabledModelCount}/{provider.totalModelCount}
+            </span>
+          )}
       </button>
 
       {open && (
@@ -1390,18 +1391,19 @@ function ModelsMenuItem({
     <>
       <button className="btn btn-ghost btn-sm" onClick={handleOpen}>
         Models
-        {provider.totalModelCount !== null && provider.totalModelCount > 0 && (
-          <span
-            style={{
-              color: "var(--color-blue)",
-              fontSize: 11,
-              fontWeight: 600,
-              marginLeft: 4,
-            }}
-          >
-            {provider.enabledModelCount}/{provider.totalModelCount}
-          </span>
-        )}
+        {provider.totalModelCount !== undefined
+          && provider.totalModelCount > 0 && (
+            <span
+              style={{
+                color: "var(--color-blue)",
+                fontSize: 11,
+                fontWeight: 600,
+                marginLeft: 4,
+              }}
+            >
+              {provider.enabledModelCount}/{provider.totalModelCount}
+            </span>
+          )}
       </button>
 
       {open && (
@@ -2213,7 +2215,7 @@ function ProviderCard({
 
         {/* Model progress */}
         {provider.authStatus === "authenticated"
-          && provider.totalModelCount !== null
+          && provider.totalModelCount !== undefined
           && provider.totalModelCount > 0 && (
             <div style={{ marginBottom: 14 }}>
               <div
