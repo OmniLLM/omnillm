@@ -1,4 +1,5 @@
 package openaicompatprovider
+
 import (
 	"context"
 	"encoding/json"
@@ -6,10 +7,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"testing"
-
 	"omnillm/internal/cif"
 	"omnillm/internal/providers/shared"
+	"testing"
 )
 
 func TestAdapterUpstreamAPISelection(t *testing.T) {

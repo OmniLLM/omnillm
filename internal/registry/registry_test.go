@@ -1,10 +1,10 @@
 package registry
 
 import (
+	"omnillm/internal/database"
 	"os"
 	"testing"
 
-	"omnillm/internal/database"
 	providertypes "omnillm/internal/providers/types"
 )
 
@@ -14,19 +14,24 @@ type testProvider struct {
 	name       string
 }
 
-func (p *testProvider) GetID() string { return p.id }
-func (p *testProvider) GetInstanceID() string { return p.instanceID }
-func (p *testProvider) GetName() string { return p.name }
+func (p *testProvider) GetID() string                                { return p.id }
+func (p *testProvider) GetInstanceID() string                        { return p.instanceID }
+func (p *testProvider) GetName() string                              { return p.name }
 func (p *testProvider) SetupAuth(_ *providertypes.AuthOptions) error { return nil }
-func (p *testProvider) GetToken() string { return "" }
-func (p *testProvider) RefreshToken() error { return nil }
-func (p *testProvider) GetBaseURL() string { return "" }
-func (p *testProvider) GetHeaders(_ bool) map[string]string { return nil }
-func (p *testProvider) GetModels() (*providertypes.ModelsResponse, error) { return &providertypes.ModelsResponse{}, nil }
-func (p *testProvider) CreateChatCompletions(_ map[string]any) (map[string]any, error) { return nil, nil }
+func (p *testProvider) GetToken() string                             { return "" }
+func (p *testProvider) RefreshToken() error                          { return nil }
+func (p *testProvider) GetBaseURL() string                           { return "" }
+func (p *testProvider) GetHeaders(_ bool) map[string]string          { return nil }
+func (p *testProvider) GetModels() (*providertypes.ModelsResponse, error) {
+	return &providertypes.ModelsResponse{}, nil
+}
+
+func (p *testProvider) CreateChatCompletions(_ map[string]any) (map[string]any, error) {
+	return nil, nil
+}
 func (p *testProvider) CreateEmbeddings(_ map[string]any) (map[string]any, error) { return nil, nil }
-func (p *testProvider) GetUsage() (map[string]any, error) { return nil, nil }
-func (p *testProvider) GetAdapter() providertypes.ProviderAdapter { return nil }
+func (p *testProvider) GetUsage() (map[string]any, error)                         { return nil, nil }
+func (p *testProvider) GetAdapter() providertypes.ProviderAdapter                 { return nil }
 
 func TestMain(m *testing.M) {
 	tmpDir, err := os.MkdirTemp("", "registry-test-*")

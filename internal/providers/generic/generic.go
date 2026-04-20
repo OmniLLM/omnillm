@@ -10,19 +10,19 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"omnillm/internal/cif"
+	"omnillm/internal/database"
+	"omnillm/internal/providers/shared"
+	"omnillm/internal/providers/types"
 	"strings"
 	"sync"
 	"time"
 
-	"omnillm/internal/cif"
-	"omnillm/internal/database"
 	alibabapkg "omnillm/internal/providers/alibaba"
 	antigravitypkg "omnillm/internal/providers/antigravity"
 	azurepkg "omnillm/internal/providers/azure"
 	googlepkg "omnillm/internal/providers/google"
 	kimipkg "omnillm/internal/providers/kimi"
-	"omnillm/internal/providers/shared"
-	"omnillm/internal/providers/types"
 
 	"github.com/rs/zerolog/log"
 )
@@ -164,7 +164,6 @@ func (p *GenericProvider) loadAlibabaTokenFromDB() error {
 func (p *GenericProvider) SaveAlibabaOAuthToken(td *alibabapkg.TokenData) (newInstanceID string, err error) {
 	return "", fmt.Errorf("oauth authentication is no longer supported for Alibaba DashScope - please use API key authentication")
 }
-
 
 func (p *GenericProvider) setupAzureAuth(options *types.AuthOptions) error {
 	token, endpoint, cfg, err := azurepkg.SetupAuth(p.instanceID, options)
@@ -832,7 +831,8 @@ func antigravityStopReason(reason string) cif.CIFStopReason {
 func parseOpenAISSE(body interface {
 	Read([]byte) (int, error)
 	Close() error
-}, eventCh chan cif.CIFStreamEvent) {
+}, eventCh chan cif.CIFStreamEvent,
+) {
 	shared.ParseOpenAISSE(body, eventCh)
 }
 
@@ -840,7 +840,8 @@ func parseOpenAISSE(body interface {
 func parseGoogleGeminiSSE(body interface {
 	Read([]byte) (int, error)
 	Close() error
-}, eventCh chan cif.CIFStreamEvent) {
+}, eventCh chan cif.CIFStreamEvent,
+) {
 	googlepkg.ParseGeminiSSE(body, eventCh)
 }
 
@@ -848,7 +849,8 @@ func parseGoogleGeminiSSE(body interface {
 func parseAntigravitySSE(body interface {
 	Read([]byte) (int, error)
 	Close() error
-}, eventCh chan cif.CIFStreamEvent) {
+}, eventCh chan cif.CIFStreamEvent,
+) {
 	antigravitypkg.ParseAntigravitySSE(body, eventCh)
 }
 
@@ -894,7 +896,6 @@ func ensureAlibabaBaseURL(raw string) string {
 	return alibabapkg.EnsureBaseURL(raw)
 }
 
-
 func (p *GenericProvider) detectRegion() string {
 	if strings.Contains(strings.ToLower(p.instanceID), "global") {
 		return "global"
@@ -904,7 +905,6 @@ func (p *GenericProvider) detectRegion() string {
 	}
 	return "china"
 }
-
 
 // alibabaHeaders wraps the alibaba package header builder.
 func (p *GenericProvider) alibabaHeaders(stream bool) map[string]string {

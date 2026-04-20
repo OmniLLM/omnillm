@@ -1,9 +1,8 @@
 package openaicompatprovider
 
 import (
-	"testing"
-
 	"omnillm/internal/providers/types"
+	"testing"
 )
 
 func TestGetID(t *testing.T) {

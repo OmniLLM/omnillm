@@ -2,10 +2,9 @@ package routes
 
 import (
 	"net/http"
+	"omnillm/internal/registry"
 
 	"github.com/gin-gonic/gin"
-
-	"omnillm/internal/registry"
 )
 
 func SetupTokenRoutes(router *gin.RouterGroup) {

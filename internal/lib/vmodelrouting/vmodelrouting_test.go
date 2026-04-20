@@ -1,9 +1,8 @@
 package vmodelrouting
 
 import (
-	"testing"
-
 	"omnillm/internal/database"
+	"testing"
 )
 
 func resetRoundRobinState() {

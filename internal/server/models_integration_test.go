@@ -3,18 +3,18 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"omnillm/internal/database"
 	"testing"
 
-	"omnillm/internal/database"
 	providertypes "omnillm/internal/providers/types"
 )
 
 func TestModelsEndpointIncludesEnabledVirtualModels(t *testing.T) {
 	registerStubModelsProvider(t, []providertypes.Model{
 		{
-			ID:       "provider-model",
-			Name:     "Provider Model",
-			Provider: "stub-provider",
+			ID:        "provider-model",
+			Name:      "Provider Model",
+			Provider:  "stub-provider",
 			MaxTokens: 8192,
 		},
 	}, true)

@@ -2,11 +2,10 @@ package routes
 
 import (
 	"net/http"
+	"omnillm/internal/database"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
-
-	"omnillm/internal/database"
 )
 
 func SetupVirtualModelRoutes(router *gin.RouterGroup) {

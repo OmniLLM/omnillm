@@ -2,11 +2,10 @@ package routes
 
 import (
 	"net/http"
+	"omnillm/internal/registry"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
-
-	"omnillm/internal/registry"
 )
 
 func SetupEmbeddingRoutes(router *gin.RouterGroup) {

@@ -3,12 +3,11 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"omnillm/internal/routes"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
-
-	"omnillm/internal/routes"
 )
 
 type sseLogWriter struct {
@@ -58,7 +57,7 @@ var preferredLogFieldOrder = []string{
 	"verbose",
 }
 
-func formatBroadcastLogLine(source string, raw string) string {
+func formatBroadcastLogLine(source, raw string) string {
 	if source == "" {
 		source = "backend"
 	}

@@ -8,10 +8,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"omnillm/internal/cif"
 	"strings"
 	"time"
-
-	"omnillm/internal/cif"
 )
 
 // Shared HTTP client with default timeout for Responses API requests.

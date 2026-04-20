@@ -8,10 +8,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
-
 	"omnillm/internal/cif"
 	"omnillm/internal/providers/shared"
+	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"

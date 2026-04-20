@@ -9,10 +9,12 @@ import (
 	"strings"
 )
 
-const apiKeyFileName = "api-key"
-const apiKeyEnvVar = "OMNILLM_API_KEY"
+const (
+	apiKeyFileName = "api-key"
+	apiKeyEnvVar   = "OMNILLM_API_KEY"
+)
 
-func resolveAPIKey(configDir string, explicit string) (string, error) {
+func resolveAPIKey(configDir, explicit string) (string, error) {
 	if key := strings.TrimSpace(explicit); key != "" {
 		return key, nil
 	}

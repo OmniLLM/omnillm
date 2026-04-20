@@ -4,13 +4,12 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"omnillm/internal/cif"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
-
-	"omnillm/internal/cif"
 )
 
 func setSSEHeaders(c *gin.Context, chunked bool) {

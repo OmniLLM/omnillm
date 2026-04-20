@@ -1,9 +1,8 @@
 package serialization
 
 import (
-	"testing"
-
 	"omnillm/internal/cif"
+	"testing"
 )
 
 // ─── SerializeToOpenAI ───

@@ -3,18 +3,17 @@ package serialization
 import (
 	"encoding/json"
 	"fmt"
-	"time"
-
 	"omnillm/internal/cif"
+	"time"
 )
 
 type ResponsesResponse struct {
-	ID        string                 `json:"id"`
-	Object    string                 `json:"object"`
-	Model     string                 `json:"model"`
-	Output    []ResponsesOutputItem  `json:"output"`
-	Usage     *ResponsesUsage        `json:"usage,omitempty"`
-	CreatedAt int64                  `json:"created_at,omitempty"`
+	ID        string                `json:"id"`
+	Object    string                `json:"object"`
+	Model     string                `json:"model"`
+	Output    []ResponsesOutputItem `json:"output"`
+	Usage     *ResponsesUsage       `json:"usage,omitempty"`
+	CreatedAt int64                 `json:"created_at,omitempty"`
 }
 
 type ResponsesOutputItem struct {
@@ -95,12 +94,12 @@ func SerializeToResponses(response *cif.CanonicalResponse) (*ResponsesResponse, 
 }
 
 type ResponsesStreamState struct {
-	ResponseID        string
-	Model             string
-	CurrentItemID     string
-	CurrentToolItemID string
+	ResponseID         string
+	Model              string
+	CurrentItemID      string
+	CurrentToolItemID  string
 	CurrentContentText string
-	MessageItemAdded  bool
+	MessageItemAdded   bool
 }
 
 func CreateResponsesStreamState() *ResponsesStreamState {

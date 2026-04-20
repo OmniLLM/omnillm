@@ -3,7 +3,6 @@ package serialization
 import (
 	"encoding/json"
 	"fmt"
-
 	"omnillm/internal/cif"
 
 	"github.com/rs/zerolog/log"
@@ -99,14 +98,14 @@ func SerializeToAnthropicWithSuppression(response *cif.CanonicalResponse, suppre
 }
 
 type AnthropicStreamState struct {
-	MessageStartSent        bool
-	NextContentBlockIndex   int
-	ContentBlockOpen        bool
-	CurrentBlockProviderIdx int
+	MessageStartSent         bool
+	NextContentBlockIndex    int
+	ContentBlockOpen         bool
+	CurrentBlockProviderIdx  int
 	CurrentBlockAnthropicIdx int
-	CurrentBlockType        string
-	SuppressThinkingBlocks  bool
-	SuppressedProviderIdx   int
+	CurrentBlockType         string
+	SuppressThinkingBlocks   bool
+	SuppressedProviderIdx    int
 }
 
 func CreateAnthropicStreamState() *AnthropicStreamState {

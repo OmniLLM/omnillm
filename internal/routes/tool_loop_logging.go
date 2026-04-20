@@ -2,15 +2,16 @@ package routes
 
 import (
 	"encoding/json"
-	"strings"
-
 	"omnillm/internal/cif"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 )
 
-const toolLoopLogValueLimit = 400
-const anthropicAgentToolName = "Agent"
+const (
+	toolLoopLogValueLimit  = 400
+	anthropicAgentToolName = "Agent"
+)
 
 type toolLoopResultLogEntry struct {
 	MessageIndex  int
@@ -429,7 +430,7 @@ func logAnthropicToolLoopRequest(requestID string, request *cif.CanonicalRequest
 	logAnthropicAgentGuardrailRequest(requestID, request)
 }
 
-func logAnthropicToolLoopResponse(requestID string, originalModel string, modelUsed string, providerID string, stream bool, entries []toolLoopCallLogEntry) {
+func logAnthropicToolLoopResponse(requestID, originalModel, modelUsed, providerID string, stream bool, entries []toolLoopCallLogEntry) {
 	for _, entry := range entries {
 		log.Debug().
 			Str("request_id", requestID).
@@ -507,7 +508,7 @@ func logAnthropicAgentGuardrailRequest(requestID string, request *cif.CanonicalR
 	}
 }
 
-func logAnthropicAgentGuardrailResponse(requestID string, originalModel string, modelUsed string, providerID string, stream bool, entries []toolLoopCallLogEntry) {
+func logAnthropicAgentGuardrailResponse(requestID, originalModel, modelUsed, providerID string, stream bool, entries []toolLoopCallLogEntry) {
 	for _, entry := range filterToolCallEntriesByName(entries, anthropicAgentToolName) {
 		log.Debug().
 			Str("request_id", requestID).

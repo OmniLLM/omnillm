@@ -13,10 +13,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"regexp"
-	"strings"
-	"time"
-
 	"omnillm/internal/cif"
 	"omnillm/internal/database"
 	"omnillm/internal/ingestion"
@@ -24,6 +20,10 @@ import (
 	"omnillm/internal/providers/shared"
 	"omnillm/internal/providers/types"
 	"omnillm/internal/serialization"
+	"regexp"
+	"strings"
+	"time"
+
 	ghservice "omnillm/internal/services/github"
 
 	"github.com/rs/zerolog/log"
@@ -73,9 +73,11 @@ type CopilotAdapter struct {
 	provider *GitHubCopilotProvider
 }
 
-const copilotResponsesMinOutputTokens = 16
-const copilotMaxUserIDLength = 64
-const copilotMaxToolNameLength = 64
+const (
+	copilotResponsesMinOutputTokens = 16
+	copilotMaxUserIDLength          = 64
+	copilotMaxToolNameLength        = 64
+)
 
 var copilotToolNamePattern = regexp.MustCompile(`[^A-Za-z0-9_-]`)
 
@@ -409,7 +411,7 @@ func (p *GitHubCopilotProvider) GetModels() (*types.ModelsResponse, error) {
 			req.Header.Set(k, v)
 		}
 
-			client := copilotHTTPClient
+		client := copilotHTTPClient
 		resp, err := client.Do(req)
 		if err == nil {
 			defer resp.Body.Close()

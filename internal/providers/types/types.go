@@ -3,20 +3,19 @@ package types
 
 import (
 	"context"
-
 	"omnillm/internal/cif"
 )
 
 type ProviderID string
 
 const (
-	ProviderGitHubCopilot      ProviderID = "github-copilot"
-	ProviderAntigravity        ProviderID = "antigravity"
-	ProviderAlibaba            ProviderID = "alibaba"
-	ProviderAzureOpenAI        ProviderID = "azure-openai"
-	ProviderGoogle             ProviderID = "google"
-	ProviderKimi               ProviderID = "kimi"
-	ProviderOpenAICompatible   ProviderID = "openai-compatible"
+	ProviderGitHubCopilot    ProviderID = "github-copilot"
+	ProviderAntigravity      ProviderID = "antigravity"
+	ProviderAlibaba          ProviderID = "alibaba"
+	ProviderAzureOpenAI      ProviderID = "azure-openai"
+	ProviderGoogle           ProviderID = "google"
+	ProviderKimi             ProviderID = "kimi"
+	ProviderOpenAICompatible ProviderID = "openai-compatible"
 )
 
 type AuthOptions struct {

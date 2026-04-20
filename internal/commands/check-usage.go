@@ -3,12 +3,12 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"omnillm/internal/database"
 	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
 
-	"omnillm/internal/database"
 	ghservice "omnillm/internal/services/github"
 )
 

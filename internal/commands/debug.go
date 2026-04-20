@@ -2,13 +2,12 @@ package commands
 
 import (
 	"fmt"
+	"omnillm/internal/database"
 	"os"
 	"path/filepath"
 	"runtime"
 
 	"github.com/spf13/cobra"
-
-	"omnillm/internal/database"
 )
 
 var DebugCmd = &cobra.Command{

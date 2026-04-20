@@ -3,9 +3,8 @@ package tokenizer
 
 import (
 	"encoding/json"
-	"strings"
-
 	"omnillm/internal/providers/types"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 )
@@ -30,7 +29,7 @@ type Message struct {
 }
 
 type Tool struct {
-	Type     string      `json:"type"`
+	Type     string       `json:"type"`
 	Function ToolFunction `json:"function"`
 }
 

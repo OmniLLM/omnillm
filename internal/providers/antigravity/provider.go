@@ -8,12 +8,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
-	"time"
-
 	"omnillm/internal/cif"
 	"omnillm/internal/providers/shared"
 	"omnillm/internal/providers/types"
+	"strings"
+	"time"
 
 	"github.com/rs/zerolog/log"
 )

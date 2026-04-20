@@ -3,15 +3,14 @@ package shared
 
 import (
 	"bufio"
-	"sort"
 	"encoding/json"
 	"fmt"
 	"io"
 	"math/rand"
+	"omnillm/internal/cif"
+	"sort"
 	"strings"
 	"time"
-
-	"omnillm/internal/cif"
 
 	"github.com/rs/zerolog/log"
 )

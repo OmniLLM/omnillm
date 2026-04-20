@@ -7,14 +7,13 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"omnillm/internal/database"
+	"omnillm/internal/registry"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"omnillm/internal/database"
-	"omnillm/internal/registry"
 )
 
 func TestMain(m *testing.M) {

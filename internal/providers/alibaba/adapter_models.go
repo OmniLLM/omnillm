@@ -7,11 +7,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
-
 	"omnillm/internal/cif"
 	"omnillm/internal/providers/openaicompat"
 	"omnillm/internal/providers/types"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 )

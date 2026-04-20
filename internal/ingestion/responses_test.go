@@ -2,9 +2,8 @@ package ingestion
 
 import (
 	"encoding/json"
-	"testing"
-
 	"omnillm/internal/cif"
+	"testing"
 )
 
 func mustRawR(t *testing.T, v any) json.RawMessage {

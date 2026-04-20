@@ -5,17 +5,16 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
-	"time"
-
-	"github.com/gin-gonic/gin"
-	"github.com/rs/zerolog/log"
-
 	"omnillm/internal/cif"
 	"omnillm/internal/ingestion"
 	"omnillm/internal/lib/modelrouting"
 	"omnillm/internal/providers/types"
 	"omnillm/internal/serialization"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog/log"
 )
 
 func SetupResponseRoutes(router *gin.RouterGroup) {
@@ -138,7 +137,7 @@ func handleResponses(c *gin.Context) {
 	writeProviderFailure(c, "server_error", lastErr)
 }
 
-func handleResponsesNonStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID string, originalModel string, providerID string, startTime time.Time) error {
+func handleResponsesNonStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID, originalModel, providerID string, startTime time.Time) error {
 	response, err := adapter.Execute(c.Request.Context(), canonicalRequest)
 	if err != nil {
 		return fmt.Errorf("adapter execute failed: %w", err)
@@ -155,7 +154,7 @@ func handleResponsesNonStreamingResponse(c *gin.Context, adapter types.ProviderA
 	return nil
 }
 
-func handleResponsesStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID string, originalModel string, providerID string, startTime time.Time) error {
+func handleResponsesStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID, originalModel, providerID string, startTime time.Time) error {
 	eventCh, err := adapter.ExecuteStream(c.Request.Context(), canonicalRequest)
 	if err != nil {
 		if shouldFallbackToNonStreaming(err) {

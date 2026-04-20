@@ -1,9 +1,8 @@
 package shared
 
 import (
-	"testing"
-
 	"omnillm/internal/cif"
+	"testing"
 )
 
 func TestCIFMessagesToOpenAI_ConvertsMixedMessageTypes(t *testing.T) {
@@ -103,11 +102,11 @@ func TestOpenAIRespToCIF_ConvertsTextToolCallsAndUsage(t *testing.T) {
 
 func TestNormalizeOpenAICompatibleAPIFormat(t *testing.T) {
 	cases := map[string]string{
-		"responses":         "responses",
-		"openai_responses":  "responses",
-		"chat":              "chat.completions",
-		"chat_completions":  "chat.completions",
-		"unknown":           "",
+		"responses":        "responses",
+		"openai_responses": "responses",
+		"chat":             "chat.completions",
+		"chat_completions": "chat.completions",
+		"unknown":          "",
 	}
 	for input, want := range cases {
 		if got := NormalizeOpenAICompatibleAPIFormat(input); got != want {

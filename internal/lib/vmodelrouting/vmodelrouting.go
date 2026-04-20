@@ -5,9 +5,8 @@ import (
 	// math/rand/v2 (Go 1.22+) uses a lock-free per-goroutine PCG source,
 	// eliminating the global mutex contention of math/rand under concurrent load.
 	"math/rand/v2"
-	"sync"
-
 	"omnillm/internal/database"
+	"sync"
 )
 
 // roundRobinState holds the per-virtual-model cursor for round-robin selection.

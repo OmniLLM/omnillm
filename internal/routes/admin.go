@@ -8,6 +8,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"omnillm/internal/database"
+	"omnillm/internal/lib/ratelimit"
+	"omnillm/internal/providers/copilot"
+	"omnillm/internal/providers/generic"
+	"omnillm/internal/providers/shared"
+	"omnillm/internal/providers/types"
+	"omnillm/internal/registry"
 	"os"
 	"strings"
 	"sync"
@@ -18,15 +25,10 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
-	"omnillm/internal/database"
-	"omnillm/internal/lib/ratelimit"
 	alibabapkg "omnillm/internal/providers/alibaba"
-	"omnillm/internal/providers/copilot"
-	"omnillm/internal/providers/generic"
-	"omnillm/internal/providers/shared"
+
 	openaicompatprovider "omnillm/internal/providers/openaicompatprovider"
-	"omnillm/internal/providers/types"
-	"omnillm/internal/registry"
+
 	ghservice "omnillm/internal/services/github"
 )
 

@@ -1,16 +1,16 @@
 package generic
+
 import (
 	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
-	"testing"
-
 	"omnillm/internal/cif"
 	"omnillm/internal/database"
 	"omnillm/internal/providers/types"
+	"strings"
+	"testing"
 )
 
 // ─── Google provider auth tests ───
@@ -106,22 +106,22 @@ func TestGoogleGetModelsFetchesFromAPI(t *testing.T) {
 		resp := map[string]interface{}{
 			"models": []map[string]interface{}{
 				{
-					"name":             "models/gemini-2.5-flash",
-					"displayName":      "Gemini 2.5 Flash",
-					"outputTokenLimit": 65536,
+					"name":                       "models/gemini-2.5-flash",
+					"displayName":                "Gemini 2.5 Flash",
+					"outputTokenLimit":           65536,
 					"supportedGenerationMethods": []string{"generateContent", "countTokens"},
 				},
 				{
-					"name":             "models/gemini-2.0-flash",
-					"displayName":      "Gemini 2.0 Flash",
-					"outputTokenLimit": 8192,
+					"name":                       "models/gemini-2.0-flash",
+					"displayName":                "Gemini 2.0 Flash",
+					"outputTokenLimit":           8192,
 					"supportedGenerationMethods": []string{"generateContent"},
 				},
 				{
 					// TTS: must be filtered out
-					"name":             "models/gemini-2.5-flash-preview-tts",
-					"displayName":      "TTS",
-					"outputTokenLimit": 16000,
+					"name":                       "models/gemini-2.5-flash-preview-tts",
+					"displayName":                "TTS",
+					"outputTokenLimit":           16000,
 					"supportedGenerationMethods": []string{"generateAudio"},
 				},
 			},
@@ -971,9 +971,9 @@ func TestFetchGoogleModelsStripsModelsPrefix(t *testing.T) {
 		resp := map[string]interface{}{
 			"models": []map[string]interface{}{
 				{
-					"name":             "models/gemini-2.0-flash",
-					"displayName":      "Gemini 2.0 Flash",
-					"outputTokenLimit": 8192,
+					"name":                       "models/gemini-2.0-flash",
+					"displayName":                "Gemini 2.0 Flash",
+					"outputTokenLimit":           8192,
 					"supportedGenerationMethods": []string{"generateContent"},
 				},
 			},
@@ -1013,9 +1013,9 @@ func TestFetchGoogleModelsDefaultsMaxTokensWhenZero(t *testing.T) {
 		resp := map[string]interface{}{
 			"models": []map[string]interface{}{
 				{
-					"name":             "models/gemini-1.5-flash",
-					"displayName":      "Gemini 1.5 Flash",
-					"outputTokenLimit": 0, // missing / zero
+					"name":                       "models/gemini-1.5-flash",
+					"displayName":                "Gemini 1.5 Flash",
+					"outputTokenLimit":           0, // missing / zero
 					"supportedGenerationMethods": []string{"generateContent"},
 				},
 			},

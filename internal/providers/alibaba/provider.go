@@ -3,12 +3,11 @@ package alibaba
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
-	"sync"
-
 	"omnillm/internal/database"
 	"omnillm/internal/providers/shared"
 	"omnillm/internal/providers/types"
+	"strings"
+	"sync"
 
 	"github.com/rs/zerolog/log"
 )
@@ -53,9 +52,9 @@ func NewProvider(instanceID, name string) *Provider {
 	}
 }
 
-func (p *Provider) GetID() string         { return "alibaba" }
-func (p *Provider) GetInstanceID() string { return p.instanceID }
-func (p *Provider) GetName() string       { return p.name }
+func (p *Provider) GetID() string           { return "alibaba" }
+func (p *Provider) GetInstanceID() string   { return p.instanceID }
+func (p *Provider) GetName() string         { return p.name }
 func (p *Provider) SetInstanceID(id string) { p.instanceID = id }
 
 // SetupAuth handles API-key authentication and persists credentials.
@@ -125,9 +124,11 @@ func (p *Provider) GetModels() (*types.ModelsResponse, error) {
 func (p *Provider) CreateChatCompletions(payload map[string]interface{}) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("alibaba: use the adapter for chat completions")
 }
+
 func (p *Provider) CreateEmbeddings(payload map[string]interface{}) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("alibaba: embeddings not implemented")
 }
+
 func (p *Provider) GetUsage() (map[string]interface{}, error) {
 	return map[string]interface{}{}, nil
 }

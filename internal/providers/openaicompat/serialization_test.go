@@ -1,13 +1,13 @@
 package openaicompat
+
 import (
 	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"omnillm/internal/cif"
 	"strings"
 	"testing"
-
-	"omnillm/internal/cif"
 )
 
 func TestBuildChatRequest_AppliesDefaultsToolsAndSystemPrompt(t *testing.T) {

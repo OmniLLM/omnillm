@@ -16,16 +16,15 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"regexp"
-	"strings"
-	"time"
-
 	"omnillm/internal/cif"
 	"omnillm/internal/database"
 	"omnillm/internal/providers/openaicompat"
 	"omnillm/internal/providers/shared"
 	"omnillm/internal/providers/types"
 	"omnillm/internal/security"
+	"regexp"
+	"strings"
+	"time"
 
 	"github.com/rs/zerolog/log"
 )
@@ -190,9 +189,11 @@ func (p *Provider) GetModels() (*types.ModelsResponse, error) {
 func (p *Provider) CreateChatCompletions(payload map[string]interface{}) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("openai-compatible: use the adapter for chat completions")
 }
+
 func (p *Provider) CreateEmbeddings(payload map[string]interface{}) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("openai-compatible: embeddings not implemented")
 }
+
 func (p *Provider) GetUsage() (map[string]interface{}, error) {
 	return map[string]interface{}{}, nil
 }
@@ -330,7 +331,7 @@ func (a *Adapter) forceChatCompletions(request *cif.CanonicalRequest) bool {
 		*request.Extensions.ForceChatCompletions
 }
 
-func dashScopeChatExtras(baseURL string, model string, request *cif.CanonicalRequest) map[string]interface{} {
+func dashScopeChatExtras(baseURL, model string, request *cif.CanonicalRequest) map[string]interface{} {
 	if !isDashScopeBaseURL(baseURL) || !isDashScopeReasoningModel(model) || request == nil {
 		return nil
 	}

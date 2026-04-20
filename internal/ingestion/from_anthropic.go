@@ -3,9 +3,8 @@ package ingestion
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
-
 	"omnillm/internal/cif"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 )

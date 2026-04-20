@@ -6,10 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"strings"
-
 	"omnillm/internal/cif"
 	"omnillm/internal/providers/shared"
+	"strings"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -444,7 +443,7 @@ func ParseResponsesSSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 	}
 }
 
-func handleResponsesSSEEvent(eventType string, data string, state *responsesStreamState, eventCh chan cif.CIFStreamEvent) {
+func handleResponsesSSEEvent(eventType, data string, state *responsesStreamState, eventCh chan cif.CIFStreamEvent) {
 	if data == "" {
 		return
 	}

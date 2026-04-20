@@ -13,7 +13,7 @@ type resolvedModelAttempt struct {
 	NormalizedModel string
 }
 
-func resolveRequestedModel(requestID string, requestedModel string) (string, string) {
+func resolveRequestedModel(requestID, requestedModel string) (string, string) {
 	attempts := resolveRequestedModels(requestID, requestedModel)
 	if len(attempts) == 0 {
 		normalizedModel := modelrouting.NormalizeModelName(requestedModel)
@@ -22,7 +22,7 @@ func resolveRequestedModel(requestID string, requestedModel string) (string, str
 	return attempts[0].RequestedModel, attempts[0].NormalizedModel
 }
 
-func resolveRequestedModels(requestID string, requestedModel string) []resolvedModelAttempt {
+func resolveRequestedModels(requestID, requestedModel string) []resolvedModelAttempt {
 	normalizedModel := modelrouting.NormalizeModelName(requestedModel)
 
 	vmodelStore := database.NewVirtualModelStore()

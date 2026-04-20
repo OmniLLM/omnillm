@@ -1,13 +1,13 @@
 package modelrouting
 
 import (
+	"omnillm/internal/database"
+	"omnillm/internal/providers/types"
+	"omnillm/internal/registry"
 	"os"
 	"testing"
 
 	alibabapkg "omnillm/internal/providers/alibaba"
-	"omnillm/internal/database"
-	"omnillm/internal/providers/types"
-	"omnillm/internal/registry"
 )
 
 // TestMain initializes a temp SQLite database so the functions that call
@@ -47,9 +47,11 @@ func (p *mockProvider) GetModels() (*types.ModelsResponse, error) {
 	p.fetchCount++
 	return p.models, p.fetchErr
 }
+
 func (p *mockProvider) CreateChatCompletions(_ map[string]interface{}) (map[string]interface{}, error) {
 	return nil, nil
 }
+
 func (p *mockProvider) CreateEmbeddings(_ map[string]interface{}) (map[string]interface{}, error) {
 	return nil, nil
 }

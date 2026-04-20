@@ -2,12 +2,11 @@ package routes
 
 import (
 	"net/http"
+	"omnillm/internal/cif"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-
-	"omnillm/internal/cif"
 )
 
 func captureIncomingHeaders(c *gin.Context, request *cif.CanonicalRequest) {

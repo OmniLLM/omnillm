@@ -8,19 +8,18 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"omnillm/internal/cif"
+	"omnillm/internal/database"
+	"omnillm/internal/registry"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"omnillm/internal/cif"
-	"omnillm/internal/database"
 	providertypes "omnillm/internal/providers/types"
-	"omnillm/internal/registry"
 )
 
 var stubProviderCounter atomic.Int64
-
 
 type stubProvider struct {
 	id         string
@@ -183,7 +182,7 @@ func registerStubProviderWithType(
 	return instanceID
 }
 
-func postJSON(t *testing.T, url string, body string, headers map[string]string) *http.Response {
+func postJSON(t *testing.T, url, body string, headers map[string]string) *http.Response {
 	t.Helper()
 
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBufferString(body))
@@ -313,6 +312,7 @@ func TestAnthropicMessagesRoute_NonStreamingThinkingSuppression(t *testing.T) {
 		}
 	})
 }
+
 func TestModelsEndpointReturnsOnlyActiveProviderModels(t *testing.T) {
 	activeInstanceID := registerStubModelsProvider(t, []providertypes.Model{
 		{

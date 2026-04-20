@@ -7,11 +7,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
-	"time"
-
 	"omnillm/internal/cif"
 	"omnillm/internal/providers/shared"
+	"strings"
+	"time"
 )
 
 // Shared HTTP clients: one for normal requests with timeout, one for streaming.

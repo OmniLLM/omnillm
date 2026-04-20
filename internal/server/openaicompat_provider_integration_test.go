@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"omnillm/internal/providers/openaicompatprovider"
+	"omnillm/internal/registry"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"omnillm/internal/providers/openaicompatprovider"
 	providertypes "omnillm/internal/providers/types"
-	"omnillm/internal/registry"
 )
 
 type capturedOpenAICompatRequest struct {
@@ -152,7 +152,7 @@ func (u *fakeOpenAICompatUpstream) chatRequestCount() int {
 	return len(u.chatRequests)
 }
 
-func registerOpenAICompatibleProvider(t *testing.T, upstreamBaseURL string, apiKey string, modelID string) string {
+func registerOpenAICompatibleProvider(t *testing.T, upstreamBaseURL, apiKey, modelID string) string {
 	t.Helper()
 
 	instanceID := fmt.Sprintf("openai-compatible-test-%d", time.Now().UnixNano())

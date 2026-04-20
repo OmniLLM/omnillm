@@ -4,11 +4,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
-
-	"github.com/gin-gonic/gin"
-	"github.com/rs/zerolog/log"
-
 	"omnillm/internal/cif"
 	"omnillm/internal/ingestion"
 	"omnillm/internal/lib/approval"
@@ -16,6 +11,10 @@ import (
 	"omnillm/internal/lib/ratelimit"
 	"omnillm/internal/providers/types"
 	"omnillm/internal/serialization"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog/log"
 )
 
 var modelCache = modelrouting.NewModelCache()
@@ -180,7 +179,7 @@ func (h *chatCompletionHandler) handleChatCompletions(c *gin.Context) {
 	writeProviderFailure(c, "provider_error", lastErr)
 }
 
-func handleNonStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID string, originalModel string, providerID string, startTime time.Time) error {
+func handleNonStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID, originalModel, providerID string, startTime time.Time) error {
 	response, err := adapter.Execute(c.Request.Context(), canonicalRequest)
 	if err != nil {
 		return fmt.Errorf("adapter execute failed: %w", err)
@@ -198,7 +197,7 @@ func handleNonStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, c
 	return nil
 }
 
-func handleStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID string, originalModel string, providerID string, startTime time.Time) error {
+func handleStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID, originalModel, providerID string, startTime time.Time) error {
 	eventCh, err := adapter.ExecuteStream(c.Request.Context(), canonicalRequest)
 	if err != nil {
 		if shouldFallbackToNonStreaming(err) && allowStreamingFallback(canonicalRequest) {

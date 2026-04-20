@@ -13,10 +13,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"strings"
-
 	"omnillm/internal/cif"
 	"omnillm/internal/providers/shared"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 )

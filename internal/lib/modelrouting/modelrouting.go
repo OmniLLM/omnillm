@@ -3,13 +3,12 @@ package modelrouting
 
 import (
 	"fmt"
-	"sort"
-	"strings"
-	"sync"
-
 	"omnillm/internal/database"
 	"omnillm/internal/providers/types"
 	"omnillm/internal/registry"
+	"sort"
+	"strings"
+	"sync"
 
 	"github.com/rs/zerolog/log"
 )
@@ -21,7 +20,7 @@ type ResolvedModelRoute struct {
 }
 
 type ModelCache struct {
-	mu    sync.RWMutex
+	mu     sync.RWMutex
 	models map[string]*types.ModelsResponse
 }
 
@@ -119,7 +118,7 @@ func SortProvidersByPriority(providers []types.Provider) []types.Provider {
 	return sorted
 }
 
-func ResolveProvidersForModel(requestedModel string, normalizedModel string, cache *ModelCache) (*ResolvedModelRoute, error) {
+func ResolveProvidersForModel(requestedModel, normalizedModel string, cache *ModelCache) (*ResolvedModelRoute, error) {
 	reg := registry.GetProviderRegistry()
 	activeProviders := reg.GetActiveProviders()
 

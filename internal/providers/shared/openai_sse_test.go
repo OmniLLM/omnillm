@@ -2,10 +2,9 @@ package shared
 
 import (
 	"io"
+	"omnillm/internal/cif"
 	"strings"
 	"testing"
-
-	"omnillm/internal/cif"
 )
 
 // sseBody wraps a string as an io.ReadCloser for use in ParseOpenAISSE tests.
@@ -246,7 +245,6 @@ data: [DONE]
 		t.Fatalf("expected signature sig-123, got %#v", thinking.Signature)
 	}
 }
-
 
 // TestParseOpenAISSE_ToolCallDeltaEvents verifies that tool call chunks are
 // correctly emitted as CIFContentDelta events with CIFToolCallPart blocks.

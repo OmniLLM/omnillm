@@ -2,7 +2,6 @@ package shared
 
 import (
 	"encoding/json"
-
 	"omnillm/internal/cif"
 )
 

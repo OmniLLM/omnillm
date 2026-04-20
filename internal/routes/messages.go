@@ -5,17 +5,16 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
-	"time"
-
-	"github.com/gin-gonic/gin"
-	"github.com/rs/zerolog/log"
-
 	"omnillm/internal/cif"
 	"omnillm/internal/ingestion"
 	"omnillm/internal/lib/modelrouting"
 	"omnillm/internal/providers/types"
 	"omnillm/internal/serialization"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog/log"
 )
 
 func SetupMessageRoutes(router *gin.RouterGroup) {
@@ -27,7 +26,7 @@ type alibabaModeProvider interface {
 	AlibabaAPIMode() string
 }
 
-func upstreamAPIForProvider(providerID string, model string) string {
+func upstreamAPIForProvider(providerID, model string) string {
 	if providerID == "azure-openai" && strings.Contains(strings.ToLower(model), "gpt-5.4") {
 		return "responses"
 	}
@@ -158,7 +157,7 @@ func handleMessages(c *gin.Context) {
 	writeProviderFailure(c, "api_error", lastErr)
 }
 
-func handleAnthropicNonStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID string, originalModel string, providerID string, startTime time.Time) error {
+func handleAnthropicNonStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID, originalModel, providerID string, startTime time.Time) error {
 	response, err := adapter.Execute(c.Request.Context(), canonicalRequest)
 	if err != nil {
 		return fmt.Errorf("adapter execute failed: %w", err)
@@ -198,7 +197,7 @@ func handleAnthropicNonStreamingResponse(c *gin.Context, adapter types.ProviderA
 	return nil
 }
 
-func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID string, originalModel string, providerID string, startTime time.Time) error {
+func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID, originalModel, providerID string, startTime time.Time) error {
 	eventCh, err := adapter.ExecuteStream(c.Request.Context(), canonicalRequest)
 	if err != nil {
 		if shouldFallbackToNonStreaming(err) && allowStreamingFallback(canonicalRequest) {

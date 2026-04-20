@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
+	"omnillm/internal/commands"
 	"os"
 
 	"github.com/spf13/cobra"
-	"omnillm/internal/commands"
 )
 
 var rootCmd = &cobra.Command{

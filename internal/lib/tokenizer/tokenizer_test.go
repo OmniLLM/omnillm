@@ -1,9 +1,8 @@
 package tokenizer
 
 import (
-	"testing"
-
 	"omnillm/internal/providers/types"
+	"testing"
 )
 
 // ─── GetTokenizerFromModel ───

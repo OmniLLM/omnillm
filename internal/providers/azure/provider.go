@@ -2,10 +2,9 @@ package azure
 
 import (
 	"fmt"
-	"strings"
-
 	"omnillm/internal/database"
 	"omnillm/internal/providers/types"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 )

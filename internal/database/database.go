@@ -149,7 +149,7 @@ var globalDB *Database
 
 func InitializeDatabase(configDir string) error {
 	// Ensure config directory exists
-	if err := os.MkdirAll(configDir, 0700); err != nil {
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
@@ -928,7 +928,7 @@ func (cs *ProviderModelsCacheStore) Get(instanceID string, ttl time.Duration) (*
 }
 
 // Save stores the model list in the cache.
-func (cs *ProviderModelsCacheStore) Save(instanceID string, modelsData string) error {
+func (cs *ProviderModelsCacheStore) Save(instanceID, modelsData string) error {
 	_, err := cs.db.db.Exec(`
 		INSERT INTO provider_models_cache (instance_id, models_data, cached_at)
 		VALUES (?, ?, datetime('now'))

@@ -6,6 +6,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"omnillm/internal/database"
+	"omnillm/internal/lib/ratelimit"
+	"omnillm/internal/providers/copilot"
+	"omnillm/internal/providers/generic"
+	"omnillm/internal/providers/types"
+	"omnillm/internal/registry"
+	"omnillm/internal/routes"
 	"os"
 	"path/filepath"
 	"time"
@@ -15,15 +22,9 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
-	"omnillm/internal/database"
-	"omnillm/internal/lib/ratelimit"
 	alibabapkg "omnillm/internal/providers/alibaba"
-	"omnillm/internal/providers/copilot"
-	"omnillm/internal/providers/generic"
+
 	openaicompatprovider "omnillm/internal/providers/openaicompatprovider"
-	"omnillm/internal/providers/types"
-	"omnillm/internal/registry"
-	"omnillm/internal/routes"
 )
 
 type StartOptions struct {

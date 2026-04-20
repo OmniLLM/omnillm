@@ -2,10 +2,9 @@ package google
 
 import (
 	"io"
+	"omnillm/internal/cif"
 	"strings"
 	"testing"
-
-	"omnillm/internal/cif"
 )
 
 func sseBody(s string) io.ReadCloser {

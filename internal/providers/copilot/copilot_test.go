@@ -1,15 +1,16 @@
 package copilot
+
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"omnillm/internal/cif"
 	"strings"
 	"testing"
 	"time"
 
-	"omnillm/internal/cif"
 	ghservice "omnillm/internal/services/github"
 )
 

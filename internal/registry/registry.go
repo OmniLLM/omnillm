@@ -4,10 +4,9 @@ package registry
 import (
 	"encoding/json"
 	"fmt"
-	"sync"
-
 	"omnillm/internal/database"
 	"omnillm/internal/providers/types"
+	"sync"
 
 	"github.com/rs/zerolog/log"
 )
@@ -21,8 +20,10 @@ type ProviderRegistry struct {
 	instanceStore   *database.ProviderInstanceStore
 }
 
-var globalRegistry *ProviderRegistry
-var once sync.Once
+var (
+	globalRegistry *ProviderRegistry
+	once           sync.Once
+)
 
 func GetProviderRegistry() *ProviderRegistry {
 	once.Do(func() {

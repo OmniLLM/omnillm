@@ -3,9 +3,8 @@ package serialization
 import (
 	"encoding/json"
 	"fmt"
-	"time"
-
 	"omnillm/internal/cif"
+	"time"
 
 	"github.com/rs/zerolog/log"
 )

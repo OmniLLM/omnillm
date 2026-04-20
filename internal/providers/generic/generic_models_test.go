@@ -3,9 +3,8 @@ package generic
 import (
 	"net/http"
 	"net/http/httptest"
-	"testing"
-
 	"omnillm/internal/database"
+	"testing"
 )
 
 func TestAlibabaGetModelsFetchesLiveModels(t *testing.T) {
@@ -110,4 +109,3 @@ func TestAlibabaApplyConfigUsesCodingPlanDefaults(t *testing.T) {
 		t.Fatalf("expected coding plan global base URL, got %q", provider.baseURL)
 	}
 }
-

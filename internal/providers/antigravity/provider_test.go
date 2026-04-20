@@ -3,10 +3,9 @@ package antigravity
 import (
 	"encoding/json"
 	"fmt"
+	"omnillm/internal/cif"
 	"strings"
 	"testing"
-
-	"omnillm/internal/cif"
 )
 
 func ptr[T any](v T) *T { return &v }

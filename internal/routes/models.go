@@ -1,13 +1,12 @@
 package routes
 
 import (
+	"omnillm/internal/database"
+	"omnillm/internal/registry"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
-
-	"omnillm/internal/database"
-	"omnillm/internal/registry"
 )
 
 func SetupModelRoutes(router *gin.RouterGroup) {

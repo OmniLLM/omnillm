@@ -1,9 +1,8 @@
 package generic
 
 import (
-	"testing"
-
 	"omnillm/internal/cif"
+	"testing"
 )
 
 func TestBuildOpenAIPayloadIncludesSystemPrompt(t *testing.T) {

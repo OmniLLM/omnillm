@@ -2,16 +2,16 @@ package commands
 
 import (
 	"fmt"
+	"omnillm/internal/database"
+	"omnillm/internal/providers/copilot"
+	"omnillm/internal/providers/types"
+	"omnillm/internal/registry"
 	"os"
 	"path/filepath"
 
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 
-	"omnillm/internal/database"
-	"omnillm/internal/providers/copilot"
-	"omnillm/internal/providers/types"
-	"omnillm/internal/registry"
 	ghservice "omnillm/internal/services/github"
 )
 

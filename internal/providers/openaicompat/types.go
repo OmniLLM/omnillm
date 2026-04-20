@@ -34,11 +34,11 @@ type StreamOptions struct {
 
 // Message is one conversation turn (system / user / assistant / tool).
 type Message struct {
-	Role             string       `json:"role"`
-	Content          interface{}  `json:"content"`                    // string or []ContentPart
-	ToolCalls        []ToolCall   `json:"tool_calls,omitempty"`
-	ToolCallID       string       `json:"tool_call_id,omitempty"`
-	ReasoningContent string       `json:"reasoning_content,omitempty"` // Qwen3 / o1-style
+	Role             string      `json:"role"`
+	Content          interface{} `json:"content"` // string or []ContentPart
+	ToolCalls        []ToolCall  `json:"tool_calls,omitempty"`
+	ToolCallID       string      `json:"tool_call_id,omitempty"`
+	ReasoningContent string      `json:"reasoning_content,omitempty"` // Qwen3 / o1-style
 }
 
 // ContentPart is one element of a multipart content array.
@@ -107,10 +107,10 @@ type Usage struct {
 
 // StreamChunk is one SSE data payload in a streaming response.
 type StreamChunk struct {
-	ID      string        `json:"id"`
-	Model   string        `json:"model"`
+	ID      string         `json:"id"`
+	Model   string         `json:"model"`
 	Choices []StreamChoice `json:"choices"`
-	Usage   *Usage        `json:"usage,omitempty"`
+	Usage   *Usage         `json:"usage,omitempty"`
 }
 
 // StreamChoice is one streaming candidate within a chunk.

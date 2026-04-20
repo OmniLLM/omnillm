@@ -4,10 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"omnillm/internal/routes"
 	"path/filepath"
 	"testing"
-
-	"omnillm/internal/routes"
 )
 
 func TestConfigFilesEndpointListsConfiguredEntries(t *testing.T) {

@@ -7,12 +7,11 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"omnillm/internal/registry"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"omnillm/internal/registry"
 )
 
 type capturedAlibabaChatRequest struct {
@@ -261,7 +260,7 @@ func parseSSEBody(t *testing.T, body string) []parsedSSEEvent {
 	return events
 }
 
-func createAndActivateAlibabaProvider(t *testing.T, backendURL string, upstreamBaseURL string) (string, string) {
+func createAndActivateAlibabaProvider(t *testing.T, backendURL, upstreamBaseURL string) (string, string) {
 	t.Helper()
 
 	apiKey := fmt.Sprintf("sk-qwen-%d", time.Now().UnixNano())

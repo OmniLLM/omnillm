@@ -5,11 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"testing"
-
 	"omnillm/internal/database"
 	"omnillm/internal/providers/types"
+	"os"
+	"testing"
 )
 
 func TestMain(m *testing.M) {

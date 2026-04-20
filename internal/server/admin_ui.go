@@ -1,8 +1,8 @@
 package server
 
 import (
-	"html"
 	"fmt"
+	"html"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -32,7 +32,7 @@ func renderAdminIndex(apiKey string) string {
 	return injectAPIKeyMeta(string(content), apiKey)
 }
 
-func injectAPIKeyMeta(pageHTML string, apiKey string) string {
+func injectAPIKeyMeta(pageHTML, apiKey string) string {
 	metaTag := fmt.Sprintf(`<meta name="omnillm-api-key" content="%s" />`, html.EscapeString(apiKey))
 	if strings.Contains(pageHTML, `<meta name="omnillm-api-key"`) {
 		return strings.Replace(
