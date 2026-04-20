@@ -277,23 +277,32 @@ func (p *GenericProvider) GetBaseURL() string {
 	return p.baseURL
 }
 
+func (p *GenericProvider) loadConfigRecord() (map[string]interface{}, error) {
+	configStore := database.NewProviderConfigStore()
+	record, err := configStore.Get(p.instanceID)
+	if err != nil || record == nil {
+		return nil, err
+	}
+
+	var config map[string]interface{}
+	if err := json.Unmarshal([]byte(record.ConfigData), &config); err != nil {
+		return nil, err
+	}
+	return config, nil
+}
+
 func (p *GenericProvider) loadConfigFromDB() {
 	// sync.Once guarantees this runs exactly once across concurrent goroutines,
 	// replacing the racy if p.configLoaded { return } pattern.
 	p.configOnce.Do(func() {
-		configStore := database.NewProviderConfigStore()
-		record, err := configStore.Get(p.instanceID)
-		if err != nil || record == nil {
+		config, err := p.loadConfigRecord()
+		if err != nil {
+			log.Warn().Err(err).Str("provider", p.instanceID).Msg("Failed to load provider config")
 			return
 		}
-
-		var config map[string]interface{}
-		if err := json.Unmarshal([]byte(record.ConfigData), &config); err != nil {
-			log.Warn().Err(err).Str("provider", p.instanceID).Msg("Failed to parse provider config")
-			return
+		if config != nil {
+			p.applyConfig(config)
 		}
-
-		p.applyConfig(config)
 	})
 }
 
@@ -323,6 +332,26 @@ func (p *GenericProvider) applyConfig(config map[string]interface{}) {
 	case "kimi":
 		p.baseURL = kimipkg.NormalizeBaseURL(p.config)
 	}
+}
+
+func sanitizeTokenConfig(tokenData map[string]interface{}) map[string]interface{} {
+	if len(tokenData) == 0 {
+		return nil
+	}
+
+	filtered := make(map[string]interface{}, len(tokenData))
+	for key, value := range tokenData {
+		switch key {
+		case "token", "api_key", "apiKey", "access_token", "github_token", "copilot_token", "refresh_token", "refreshToken", "id_token", "idToken", "expires_at", "expiresAt", "expiry", "expiry_date":
+			continue
+		default:
+			filtered[key] = value
+		}
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	return filtered
 }
 
 // ─── Headers ──────────────────────────────────────────────────────────────────
@@ -421,8 +450,17 @@ func (p *GenericProvider) LoadFromDB() error {
 			}
 		}
 
-		p.applyConfig(tokenData)
-		p.loadConfigFromDB()
+		// Token records may also carry non-secret config (e.g. auth_type,
+		// base_url, resource_url). Filter out credential fields before merging
+		// into p.config so downstream config consumers only see real config keys.
+		p.applyConfig(sanitizeTokenConfig(tokenData))
+		config, err := p.loadConfigRecord()
+		if err != nil {
+			log.Warn().Err(err).Str("provider", p.instanceID).Msg("Failed to load provider config during startup")
+		} else if config != nil {
+			p.applyConfig(config)
+		}
+		p.configOnce.Do(func() {})
 
 		if p.id == "alibaba" && p.token != "" {
 			p.name = alibabapkg.APIKeyProviderName(p.config)
