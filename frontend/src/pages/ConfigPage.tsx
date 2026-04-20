@@ -176,8 +176,8 @@ interface DroidConfig {
   customModels?: Array<DroidModel>
   providers?: {
     default?: {
-      baseUrl: string
-      apiKey: string
+      baseUrl?: string
+      apiKey?: string
       timeout?: number
       retryAttempts?: number
       backoffMultiplier?: number
@@ -279,13 +279,15 @@ function parseTOML(text: string): CodexConfig {
         .replace("model_providers.", "")
         .replaceAll(/^["']|["']$/g, "")
       if (result.model_providers?.[name])
-        (result.model_providers[name] as Record<string, string>)[key] = s
+        (result.model_providers[name] as unknown as Record<string, string>)[
+          key
+        ] = s
     } else if (currentSection.startsWith("profiles.")) {
       const name = currentSection
         .replace("profiles.", "")
         .replaceAll(/^["']|["']$/g, "")
       if (result.profiles?.[name])
-        (result.profiles[name] as Record<string, string>)[key] = s
+        (result.profiles[name] as unknown as Record<string, string>)[key] = s
     } else if (currentSection.startsWith("projects.")) {
       const name = currentSection
         .replace("projects.", "")
@@ -1882,7 +1884,7 @@ function AMPEditor({
                   {label}
                 </span>
                 <input
-                  value={(provider as Record<string, string>)[key]}
+                  value={(provider as unknown as Record<string, string>)[key]}
                   onChange={(e) =>
                     onChange({
                       ...config,
@@ -1979,7 +1981,7 @@ function AMPEditor({
                   {label}
                 </span>
                 <input
-                  value={(model as Record<string, string>)[key]}
+                  value={(model as unknown as Record<string, string>)[key]}
                   onChange={(e) =>
                     onChange({
                       ...config,
@@ -2302,7 +2304,7 @@ function DroidEditor({
                   {label}
                 </span>
                 <input
-                  value={(model as Record<string, string>)[key]}
+                  value={(model as unknown as Record<string, string>)[key]}
                   onChange={(e) =>
                     onChange({
                       ...config,
@@ -2374,7 +2376,9 @@ function DroidEditor({
                     step={step}
                     min={min}
                     max={max}
-                    value={(model as Record<string, number>)[key] ?? 0}
+                    value={
+                      (model as unknown as Record<string, number>)[key] ?? 0
+                    }
                     onChange={(e) =>
                       onChange({
                         ...config,

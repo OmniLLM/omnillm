@@ -8,12 +8,25 @@
  * 2. Run this test: bun test tests/verify-material-ui.test.ts
  */
 
-import { describe, test, expect } from "bun:test"
+import { describe, test, expect, beforeAll } from "bun:test"
 
 const API_BASE = "http://localhost:4141"
 const FRONTEND_BASE = "http://localhost:5175"
 
-describe("Material UI Verification", () => {
+// These are manual integration tests that require a running dev server.
+// Run: bun run dev  (then)  bun test tests/verify-material-ui.test.ts
+// Skip in CI or when no server is running.
+let serverAvailable = false
+try {
+  const resp = await fetch(`${API_BASE}/api/admin/status`, { signal: AbortSignal.timeout(2000) })
+  serverAvailable = resp.ok
+} catch {
+  // server not running
+}
+
+const describeIntegration = serverAvailable ? describe : describe.skip
+
+describeIntegration("Material UI Verification", () => {
   test("✅ API server should be accessible", async () => {
     try {
       const response = await fetch(`${API_BASE}/api/admin/status`)

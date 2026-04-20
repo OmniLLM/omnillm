@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-argument,@typescript-eslint/no-unsafe-assignment,@typescript-eslint/no-unsafe-member-access,@typescript-eslint/no-unsafe-return,@typescript-eslint/no-unnecessary-condition,@typescript-eslint/no-floating-promises,no-nested-ternary,@typescript-eslint/restrict-template-expressions */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access,@typescript-eslint/no-unsafe-return,@typescript-eslint/no-unnecessary-condition,@typescript-eslint/no-floating-promises,no-nested-ternary,@typescript-eslint/restrict-template-expressions */
 import {
   Send as SendIcon,
   Bot,
@@ -18,6 +18,7 @@ import {
   getChatSession,
   createChatSession,
   addChatMessage,
+  type ModelInfo,
   deleteChatSession,
   deleteAllChatSessions,
   type ChatMessage,
