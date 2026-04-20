@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,6 +17,9 @@ import (
 	providertypes "omnillm/internal/providers/types"
 	"omnillm/internal/registry"
 )
+
+var stubProviderCounter atomic.Int64
+
 
 type stubProvider struct {
 	id         string
@@ -94,7 +98,7 @@ func registerStubModelsProvider(
 ) string {
 	t.Helper()
 
-	instanceID := fmt.Sprintf("stub-models-%d", time.Now().UnixNano())
+	instanceID := fmt.Sprintf("stub-models-%d-%d", time.Now().UnixNano(), stubProviderCounter.Add(1))
 	provider := &stubProvider{
 		id:         "stub-provider",
 		instanceID: instanceID,
@@ -140,7 +144,7 @@ func registerStubProviderWithType(
 ) string {
 	t.Helper()
 
-	instanceID := fmt.Sprintf("stub-%d", time.Now().UnixNano())
+	instanceID := fmt.Sprintf("stub-%d-%d", time.Now().UnixNano(), stubProviderCounter.Add(1))
 	provider := &stubProvider{
 		id:         providerID,
 		instanceID: instanceID,

@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -76,10 +77,10 @@ func (h *chatCompletionHandler) handleChatCompletions(c *gin.Context) {
 		}
 	}
 
-	// Parse request as generic map for ingestion
-	var payload map[string]interface{}
-	if err := c.ShouldBindJSON(&payload); err != nil {
-		log.Error().Err(err).Str("request_id", requestIDStr).Msg("Failed to parse request")
+	// Parse request body and convert to CIF
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		log.Error().Err(err).Str("request_id", requestIDStr).Msg("Failed to read request body")
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": gin.H{
 				"message": "Invalid request format",
@@ -89,8 +90,17 @@ func (h *chatCompletionHandler) handleChatCompletions(c *gin.Context) {
 		return
 	}
 
-	// Convert to CIF
-	canonicalRequest, err := ingestion.ParseOpenAIChatCompletions(payload)
+	if !json.Valid(body) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": gin.H{
+				"message": "Invalid request format",
+				"type":    "invalid_request_error",
+			},
+		})
+		return
+	}
+
+	canonicalRequest, err := ingestion.ParseOpenAIChatCompletions(body)
 	if err != nil {
 		log.Error().Err(err).Str("request_id", requestIDStr).Msg("Failed to parse OpenAI request")
 		c.JSON(http.StatusBadRequest, gin.H{

@@ -59,14 +59,9 @@ type AnthropicMessagesRequest struct {
 }
 
 // ParseAnthropicMessages converts Anthropic messages format to CIF
-func ParseAnthropicMessages(payload map[string]interface{}) (*cif.CanonicalRequest, error) {
-	jsonBytes, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal payload: %w", err)
-	}
-
+func ParseAnthropicMessages(raw json.RawMessage) (*cif.CanonicalRequest, error) {
 	var req AnthropicMessagesRequest
-	if err := json.Unmarshal(jsonBytes, &req); err != nil {
+	if err := json.Unmarshal(raw, &req); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal Anthropic request: %w", err)
 	}
 

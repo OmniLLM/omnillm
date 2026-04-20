@@ -250,6 +250,11 @@ func setupLogging(verbose bool) {
 }
 
 func registerDefaultProviders(reg *registry.ProviderRegistry, options StartOptions) error {
+	// Skip if providers are already registered in memory (e.g., by tests)
+	if len(reg.ListProviders()) > 0 {
+		return nil
+	}
+
 	// Try to load saved provider instances from the database
 	instanceStore := database.NewProviderInstanceStore()
 	instances, err := instanceStore.GetAll()

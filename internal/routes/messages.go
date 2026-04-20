@@ -39,9 +39,10 @@ func handleMessages(c *gin.Context) {
 	requestIDStr := fmt.Sprintf("%v", requestID)
 	startTime := time.Now()
 
-	// Parse request as generic map for ingestion
-	var payload map[string]interface{}
-	if err := c.ShouldBindJSON(&payload); err != nil {
+	// Parse request body and convert to CIF
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		log.Error().Err(err).Str("request_id", requestIDStr).Msg("Failed to read request body")
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": gin.H{
 				"message": "Invalid request format",
@@ -51,10 +52,23 @@ func handleMessages(c *gin.Context) {
 		return
 	}
 
-	logRawAnthropicToolLoopPayload(requestIDStr, payload)
+	if !json.Valid(body) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": gin.H{
+				"message": "Invalid request format",
+				"type":    "invalid_request_error",
+			},
+		})
+		return
+	}
+
+	// Parse into map for tool loop logging
+	var payloadMap map[string]interface{}
+	_ = json.Unmarshal(body, &payloadMap)
+	logRawAnthropicToolLoopPayload(requestIDStr, payloadMap)
 
 	// Convert Anthropic format to CIF
-	canonicalRequest, err := ingestion.ParseAnthropicMessages(payload)
+	canonicalRequest, err := ingestion.ParseAnthropicMessages(body)
 	if err != nil {
 		log.Error().Err(err).Str("request_id", requestIDStr).Msg("Failed to parse Anthropic request")
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -299,8 +313,8 @@ func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 }
 
 func handleCountTokens(c *gin.Context) {
-	var payload map[string]interface{}
-	if err := c.ShouldBindJSON(&payload); err != nil {
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": gin.H{
 				"message": "Invalid request format",
@@ -310,7 +324,7 @@ func handleCountTokens(c *gin.Context) {
 		return
 	}
 
-	canonicalRequest, err := ingestion.ParseAnthropicMessages(payload)
+	canonicalRequest, err := ingestion.ParseAnthropicMessages(body)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": gin.H{

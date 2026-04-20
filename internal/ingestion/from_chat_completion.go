@@ -67,14 +67,9 @@ type OpenAIChatCompletionRequest struct {
 }
 
 // ParseOpenAIChatCompletions converts OpenAI chat completions format to CIF
-func ParseOpenAIChatCompletions(payload map[string]interface{}) (*cif.CanonicalRequest, error) {
-	jsonBytes, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal payload: %w", err)
-	}
-
+func ParseOpenAIChatCompletions(raw json.RawMessage) (*cif.CanonicalRequest, error) {
 	var req OpenAIChatCompletionRequest
-	if err := json.Unmarshal(jsonBytes, &req); err != nil {
+	if err := json.Unmarshal(raw, &req); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal OpenAI request: %w", err)
 	}
 

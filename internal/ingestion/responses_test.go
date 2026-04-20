@@ -1,10 +1,17 @@
 package ingestion
 
 import (
+	"encoding/json"
 	"testing"
 
 	"omnillm/internal/cif"
 )
+
+func mustRawR(t *testing.T, v any) json.RawMessage {
+	t.Helper()
+	b, _ := json.Marshal(v)
+	return b
+}
 
 func TestParseResponsesPayload_TranslatesInstructionsMessagesAndTools(t *testing.T) {
 	stream := true
@@ -53,7 +60,7 @@ func TestParseResponsesPayload_TranslatesInstructionsMessagesAndTools(t *testing
 		},
 	}
 
-	req, err := ParseResponsesPayload(payload)
+	req, err := ParseResponsesPayload(mustRawR(t, payload))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -108,10 +115,10 @@ func TestParseResponsesPayload_TranslatesInstructionsMessagesAndTools(t *testing
 }
 
 func TestParseResponsesPayload_AcceptsStringInput(t *testing.T) {
-	req, err := ParseResponsesPayload(map[string]interface{}{
+	req, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
 		"model": "gpt-5.4-mini",
 		"input": "Hello from responses",
-	})
+	}))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -129,7 +136,7 @@ func TestParseResponsesPayload_AcceptsStringInput(t *testing.T) {
 }
 
 func TestParseResponsesPayload_AcceptsDeveloperRole(t *testing.T) {
-	req, err := ParseResponsesPayload(map[string]interface{}{
+	req, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
 		"model": "gpt-5.4-mini",
 		"input": []interface{}{
 			map[string]interface{}{
@@ -143,7 +150,7 @@ func TestParseResponsesPayload_AcceptsDeveloperRole(t *testing.T) {
 				"content": "Hello",
 			},
 		},
-	})
+	}))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -168,7 +175,7 @@ func TestParseResponsesPayload_AcceptsDeveloperRole(t *testing.T) {
 }
 
 func TestParseResponsesPayload_RejectsUnknownContentBlockType(t *testing.T) {
-	_, err := ParseResponsesPayload(map[string]interface{}{
+	_, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
 		"model": "gpt-5.4-mini",
 		"input": []interface{}{
 			map[string]interface{}{
@@ -179,14 +186,14 @@ func TestParseResponsesPayload_RejectsUnknownContentBlockType(t *testing.T) {
 				},
 			},
 		},
-	})
+	}))
 	if err == nil {
 		t.Fatal("expected unknown content block type to fail")
 	}
 }
 
 func TestParseResponsesPayload_FunctionCallOutputBecomesToolResult(t *testing.T) {
-	req, err := ParseResponsesPayload(map[string]interface{}{
+	req, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
 		"model": "gpt-5.4-mini",
 		"input": []interface{}{
 			map[string]interface{}{
@@ -196,7 +203,7 @@ func TestParseResponsesPayload_FunctionCallOutputBecomesToolResult(t *testing.T)
 				"output":  "Sunny",
 			},
 		},
-	})
+	}))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -217,7 +224,7 @@ func TestParseResponsesPayload_FunctionCallOutputBecomesToolResult(t *testing.T)
 }
 
 func TestParseResponsesPayload_FunctionCallRequiresIdentifier(t *testing.T) {
-	_, err := ParseResponsesPayload(map[string]interface{}{
+	_, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
 		"model": "gpt-5.4-mini",
 		"input": []interface{}{
 			map[string]interface{}{
@@ -226,7 +233,7 @@ func TestParseResponsesPayload_FunctionCallRequiresIdentifier(t *testing.T) {
 				"arguments": `{"location":"Boston"}`,
 			},
 		},
-	})
+	}))
 	if err == nil {
 		t.Fatal("expected missing function_call id to fail")
 	}

@@ -47,14 +47,9 @@ type InputContentBlock struct {
 }
 
 // ParseResponsesPayload converts Responses API payload to CIF
-func ParseResponsesPayload(payload map[string]interface{}) (*cif.CanonicalRequest, error) {
-	jsonBytes, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal payload: %w", err)
-	}
-
+func ParseResponsesPayload(raw json.RawMessage) (*cif.CanonicalRequest, error) {
 	var req ResponsesPayload
-	if err := json.Unmarshal(jsonBytes, &req); err != nil {
+	if err := json.Unmarshal(raw, &req); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal Responses request: %w", err)
 	}
 

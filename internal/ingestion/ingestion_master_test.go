@@ -1,10 +1,17 @@
 package ingestion
 
 import (
+	"encoding/json"
 	"testing"
 
 	"omnillm/internal/cif"
 )
+
+func mustRawM(t *testing.T, v any) json.RawMessage {
+	t.Helper()
+	b, _ := json.Marshal(v)
+	return b
+}
 
 func TestParseOpenAI_MergesSystemMessagesAndNormalizesToolChoice(t *testing.T) {
 	stream := true
@@ -37,7 +44,7 @@ func TestParseOpenAI_MergesSystemMessagesAndNormalizesToolChoice(t *testing.T) {
 		"user":   "user123",
 	}
 
-	req, err := ParseOpenAIChatCompletions(payload)
+	req, err := ParseOpenAIChatCompletions(mustRawM(t, payload))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -93,7 +100,7 @@ func TestParseOpenAI_PreservesMalformedToolArgumentsAndToolResults(t *testing.T)
 		},
 	}
 
-	req, err := ParseOpenAIChatCompletions(payload)
+	req, err := ParseOpenAIChatCompletions(mustRawM(t, payload))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -149,7 +156,7 @@ func TestParseOpenAI_DataURIImageContent(t *testing.T) {
 		},
 	}
 
-	req, err := ParseOpenAIChatCompletions(payload)
+	req, err := ParseOpenAIChatCompletions(mustRawM(t, payload))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -188,7 +195,7 @@ func TestParseAnthropic_NormalizesSystemMetadataAndToolChoice(t *testing.T) {
 		"tool_choice":    map[string]interface{}{"type": "auto"},
 	}
 
-	req, err := ParseAnthropicMessages(payload)
+	req, err := ParseAnthropicMessages(mustRawM(t, payload))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -260,7 +267,7 @@ func TestParseAnthropic_PreservesThinkingToolResultsAndNormalizesSchemas(t *test
 		"tool_choice": map[string]interface{}{"type": "tool", "name": "get_weather"},
 	}
 
-	req, err := ParseAnthropicMessages(payload)
+	req, err := ParseAnthropicMessages(mustRawM(t, payload))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

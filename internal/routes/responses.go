@@ -26,8 +26,20 @@ func handleResponses(c *gin.Context) {
 	requestIDStr := fmt.Sprintf("%v", requestID)
 	startTime := time.Now()
 
-	var payload map[string]interface{}
-	if err := c.ShouldBindJSON(&payload); err != nil {
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		log.Error().Err(err).Str("request_id", requestIDStr).Msg("Failed to read request body")
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": gin.H{
+				"message": "Invalid request format",
+				"type":    "invalid_request_error",
+			},
+		})
+		return
+	}
+
+	// Validate JSON syntax before parsing
+	if !json.Valid(body) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": gin.H{
 				"message": "Invalid request format",
@@ -38,7 +50,7 @@ func handleResponses(c *gin.Context) {
 	}
 
 	// Convert Responses API format to CIF
-	canonicalRequest, err := ingestion.ParseResponsesPayload(payload)
+	canonicalRequest, err := ingestion.ParseResponsesPayload(body)
 	if err != nil {
 		log.Error().Err(err).Str("request_id", requestIDStr).Msg("Failed to parse Responses API request")
 		c.JSON(http.StatusBadRequest, gin.H{
