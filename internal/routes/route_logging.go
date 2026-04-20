@@ -4,13 +4,14 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
 	"omnillm/internal/cif"
 )
 
 func captureIncomingHeaders(c *gin.Context, request *cif.CanonicalRequest) {
-	if request == nil {
+	if request == nil || log.Logger.GetLevel() > zerolog.DebugLevel {
 		return
 	}
 	request.IncomingHeaders = make(map[string]string)
@@ -49,7 +50,7 @@ func logRequestReceived(requestID, apiShape string, request *cif.CanonicalReques
 func writeProviderFailure(c *gin.Context, defaultType string, lastErr error) {
 	errMsg := "All providers failed"
 	if lastErr != nil {
-		errMsg = "All providers failed. Last error: " + lastErr.Error()
+		log.Error().Err(lastErr).Msg("Provider failure details")
 	}
 	c.JSON(providerFailureStatus(lastErr), gin.H{
 		"error": gin.H{
@@ -60,9 +61,10 @@ func writeProviderFailure(c *gin.Context, defaultType string, lastErr error) {
 }
 
 func writeResolveProvidersError(c *gin.Context, err error, errorType string) {
+	log.Error().Err(err).Msg("Failed to resolve providers")
 	c.JSON(http.StatusInternalServerError, gin.H{
 		"error": gin.H{
-			"message": "Failed to resolve providers: " + err.Error(),
+			"message": "Failed to resolve providers",
 			"type":    errorType,
 		},
 	})

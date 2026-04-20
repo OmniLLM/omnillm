@@ -35,13 +35,17 @@ func upstreamAPIForProvider(providerID string, model string) string {
 }
 
 func handleMessages(c *gin.Context) {
+	// Type assertion is zero-allocation vs fmt.Sprintf("%v", requestID)
 	requestID, _ := c.Get("request_id")
-	requestIDStr := fmt.Sprintf("%v", requestID)
+	requestIDStr, _ := requestID.(string)
 	startTime := time.Now()
 
-	// Parse request as generic map for ingestion
-	var payload map[string]interface{}
-	if err := c.ShouldBindJSON(&payload); err != nil {
+	// Parse request body and convert to CIF.
+	// json.Valid is omitted: ParseAnthropicMessages calls json.Unmarshal which
+	// already validates syntax and returns a clear error, avoiding a double parse pass.
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		log.Error().Err(err).Str("request_id", requestIDStr).Msg("Failed to read request body")
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": gin.H{
 				"message": "Invalid request format",
@@ -51,20 +55,24 @@ func handleMessages(c *gin.Context) {
 		return
 	}
 
-	logRawAnthropicToolLoopPayload(requestIDStr, payload)
-
-	// Convert Anthropic format to CIF
-	canonicalRequest, err := ingestion.ParseAnthropicMessages(payload)
+	// Convert Anthropic format to CIF first, then extract the map for tool loop
+	// logging from the structured request — avoids a second json.Unmarshal pass.
+	canonicalRequest, err := ingestion.ParseAnthropicMessages(body)
 	if err != nil {
 		log.Error().Err(err).Str("request_id", requestIDStr).Msg("Failed to parse Anthropic request")
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": gin.H{
-				"message": fmt.Sprintf("Failed to parse request: %v", err),
+				"message": parseRequestMessage(err),
 				"type":    "invalid_request_error",
 			},
 		})
 		return
 	}
+
+	// Parse into map for tool loop logging (lazy: only if logger is active)
+	var payloadMap map[string]interface{}
+	_ = json.Unmarshal(body, &payloadMap)
+	logRawAnthropicToolLoopPayload(requestIDStr, payloadMap)
 
 	originalModel := prepareCanonicalRequest(c, canonicalRequest, "anthropic")
 	logAnthropicToolLoopRequest(requestIDStr, canonicalRequest)
@@ -151,7 +159,7 @@ func handleMessages(c *gin.Context) {
 }
 
 func handleAnthropicNonStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID string, originalModel string, providerID string, startTime time.Time) error {
-	response, err := adapter.Execute(canonicalRequest)
+	response, err := adapter.Execute(c.Request.Context(), canonicalRequest)
 	if err != nil {
 		return fmt.Errorf("adapter execute failed: %w", err)
 	}
@@ -191,7 +199,7 @@ func handleAnthropicNonStreamingResponse(c *gin.Context, adapter types.ProviderA
 }
 
 func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID string, originalModel string, providerID string, startTime time.Time) error {
-	eventCh, err := adapter.ExecuteStream(canonicalRequest)
+	eventCh, err := adapter.ExecuteStream(c.Request.Context(), canonicalRequest)
 	if err != nil {
 		if shouldFallbackToNonStreaming(err) && allowStreamingFallback(canonicalRequest) {
 			log.Warn().Err(err).Str("request_id", requestID).Msg("Streaming request failed before stream start, retrying as non-streaming")
@@ -299,8 +307,8 @@ func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 }
 
 func handleCountTokens(c *gin.Context) {
-	var payload map[string]interface{}
-	if err := c.ShouldBindJSON(&payload); err != nil {
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": gin.H{
 				"message": "Invalid request format",
@@ -310,7 +318,7 @@ func handleCountTokens(c *gin.Context) {
 		return
 	}
 
-	canonicalRequest, err := ingestion.ParseAnthropicMessages(payload)
+	canonicalRequest, err := ingestion.ParseAnthropicMessages(body)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": gin.H{

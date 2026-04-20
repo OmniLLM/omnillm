@@ -87,8 +87,88 @@ func TestSerializeToResponses_SerializesMessageAndFunctionCallOutput(t *testing.
 	if out.Output[1].Arguments != `{"location":"Boston"}` {
 		t.Fatalf("unexpected function call arguments: %q", out.Output[1].Arguments)
 	}
-	if out.Usage == nil || out.Usage.InputTokens != 9 || out.Usage.OutputTokens != 12 {
+	if out.Usage == nil || out.Usage.InputTokens != 9 || out.Usage.OutputTokens != 12 || out.Usage.TotalTokens != 21 {
 		t.Fatalf("unexpected usage payload: %#v", out.Usage)
+	}
+}
+
+func TestConvertCIFEventToResponsesSSE_IncludesTotalTokensInCompletedUsage(t *testing.T) {
+	state := CreateResponsesStreamState()
+
+	events, err := ConvertCIFEventToResponsesSSE(cif.CIFStreamEnd{
+		Type: "stream_end",
+		Usage: &cif.CIFUsage{
+			InputTokens:  7,
+			OutputTokens: 3,
+		},
+	}, state)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	response, ok := events[0]["response"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("unexpected response payload: %#v", events[0])
+	}
+	usage, ok := response["usage"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected usage payload, got %#v", response)
+	}
+	if usage["input_tokens"] != 7 || usage["output_tokens"] != 3 || usage["total_tokens"] != 10 {
+		t.Fatalf("unexpected usage payload: %#v", usage)
+	}
+}
+
+func TestConvertCIFEventToResponsesSSE_EmitsMessageLifecycle(t *testing.T) {
+	state := CreateResponsesStreamState()
+
+	startEvents, err := ConvertCIFEventToResponsesSSE(cif.CIFStreamStart{
+		Type:  "stream_start",
+		ID:    "resp_stream",
+		Model: "gpt-5.4-mini",
+	}, state)
+	if err != nil {
+		t.Fatalf("unexpected start error: %v", err)
+	}
+	deltaEvents, err := ConvertCIFEventToResponsesSSE(cif.CIFContentDelta{
+		Type:         "content_delta",
+		Index:        0,
+		ContentBlock: cif.CIFTextPart{Type: "text", Text: ""},
+		Delta:        cif.TextDelta{Type: "text_delta", Text: "pong"},
+	}, state)
+	if err != nil {
+		t.Fatalf("unexpected delta error: %v", err)
+	}
+	stopEvents, err := ConvertCIFEventToResponsesSSE(cif.CIFContentBlockStop{Type: "content_block_stop"}, state)
+	if err != nil {
+		t.Fatalf("unexpected stop error: %v", err)
+	}
+
+	if len(startEvents) != 1 {
+		t.Fatalf("expected 1 start event, got %d", len(startEvents))
+	}
+	if len(deltaEvents) != 3 {
+		t.Fatalf("expected 3 delta events, got %d", len(deltaEvents))
+	}
+	if deltaEvents[0]["type"] != "response.output_item.added" {
+		t.Fatalf("unexpected first delta event: %#v", deltaEvents[0])
+	}
+	if deltaEvents[1]["type"] != "response.content_block.added" {
+		t.Fatalf("unexpected second delta event: %#v", deltaEvents[1])
+	}
+	if deltaEvents[2]["type"] != "response.output_text.delta" {
+		t.Fatalf("unexpected third delta event: %#v", deltaEvents[2])
+	}
+	if len(stopEvents) != 2 {
+		t.Fatalf("expected 2 stop events, got %d", len(stopEvents))
+	}
+	if stopEvents[0]["type"] != "response.output_text.done" {
+		t.Fatalf("unexpected stop event: %#v", stopEvents[0])
+	}
+	if stopEvents[1]["type"] != "response.output_item.done" {
+		t.Fatalf("unexpected final stop event: %#v", stopEvents[1])
 	}
 }
 

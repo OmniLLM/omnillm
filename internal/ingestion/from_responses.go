@@ -47,14 +47,9 @@ type InputContentBlock struct {
 }
 
 // ParseResponsesPayload converts Responses API payload to CIF
-func ParseResponsesPayload(payload map[string]interface{}) (*cif.CanonicalRequest, error) {
-	jsonBytes, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal payload: %w", err)
-	}
-
+func ParseResponsesPayload(raw json.RawMessage) (*cif.CanonicalRequest, error) {
 	var req ResponsesPayload
-	if err := json.Unmarshal(jsonBytes, &req); err != nil {
+	if err := json.Unmarshal(raw, &req); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal Responses request: %w", err)
 	}
 
@@ -118,7 +113,7 @@ func translateResponsesInput(input interface{}) ([]cif.CIFMessage, error) {
 			if err := json.Unmarshal(itemBytes, &inputItem); err != nil {
 				continue
 			}
-			msgs, err := translateInputItem(inputItem, itemMap)
+			msgs, err := translateInputItem(inputItem)
 			if err != nil {
 				return nil, err
 			}
@@ -130,7 +125,7 @@ func translateResponsesInput(input interface{}) ([]cif.CIFMessage, error) {
 	}
 }
 
-func translateInputItem(item InputItem, raw map[string]interface{}) ([]cif.CIFMessage, error) {
+func translateInputItem(item InputItem) ([]cif.CIFMessage, error) {
 	switch item.Type {
 	case "message":
 		content, err := translateInputContent(item.Content)
@@ -139,7 +134,7 @@ func translateInputItem(item InputItem, raw map[string]interface{}) ([]cif.CIFMe
 		}
 
 		switch item.Role {
-		case "system":
+		case "system", "developer":
 			text := extractInputText(item.Content)
 			return []cif.CIFMessage{
 				cif.CIFSystemMessage{Role: "system", Content: text},
@@ -310,3 +305,4 @@ func translateResponsesToolChoice(toolChoice interface{}) interface{} {
 		return nil
 	}
 }
+

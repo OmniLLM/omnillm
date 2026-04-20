@@ -13,7 +13,7 @@ type RateLimiter struct {
 	mu              sync.Mutex
 	intervalSeconds int
 	waitOnLimit     bool
-	lastRequestTime *time.Time
+	nextAllowedTime time.Time
 }
 
 func NewRateLimiter(intervalSeconds int, waitOnLimit bool) *RateLimiter {
@@ -28,35 +28,28 @@ func (rl *RateLimiter) CheckAndWait() error {
 		return nil
 	}
 
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
-
-	now := time.Now()
-
-	if rl.lastRequestTime == nil {
-		rl.lastRequestTime = &now
-		return nil
-	}
-
-	elapsed := now.Sub(*rl.lastRequestTime)
 	requiredInterval := time.Duration(rl.intervalSeconds) * time.Second
 
-	if elapsed >= requiredInterval {
-		rl.lastRequestTime = &now
+	rl.mu.Lock()
+	now := time.Now()
+
+	if rl.nextAllowedTime.IsZero() || !now.Before(rl.nextAllowedTime) {
+		rl.nextAllowedTime = now.Add(requiredInterval)
+		rl.mu.Unlock()
 		return nil
 	}
 
-	waitTime := requiredInterval - elapsed
-
+	waitTime := rl.nextAllowedTime.Sub(now)
 	if !rl.waitOnLimit {
+		rl.mu.Unlock()
 		log.Warn().
-			Float64("elapsed_seconds", elapsed.Seconds()).
+			Float64("wait_seconds", waitTime.Seconds()).
 			Float64("required_seconds", requiredInterval.Seconds()).
 			Msg("Rate limit exceeded")
 		return fmt.Errorf("rate limit exceeded. Need to wait %v more", waitTime)
 	}
 
-	// Release lock while sleeping to not block other goroutines
+	rl.nextAllowedTime = rl.nextAllowedTime.Add(requiredInterval)
 	rl.mu.Unlock()
 
 	log.Warn().
@@ -64,10 +57,6 @@ func (rl *RateLimiter) CheckAndWait() error {
 		Msg("Rate limit reached. Waiting before proceeding...")
 
 	time.Sleep(waitTime)
-
-	rl.mu.Lock()
-	nowAfterWait := time.Now()
-	rl.lastRequestTime = &nowAfterWait
 
 	log.Info().Msg("Rate limit wait completed, proceeding with request")
 	return nil

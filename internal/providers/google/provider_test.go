@@ -1,6 +1,6 @@
 package google
-
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -432,7 +432,7 @@ func TestExecuteEndToEnd(t *testing.T) {
 		},
 	}
 
-	resp, err := Execute("test-api-key", srv.URL, request)
+	resp, err := Execute(context.Background(), "test-api-key", srv.URL, request)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -457,7 +457,7 @@ func TestExecuteRequiresAuth(t *testing.T) {
 		Model:    "gemini-2.5-flash",
 		Messages: []cif.CIFMessage{},
 	}
-	_, err := Execute("", "https://example.com", request)
+	_, err := Execute(context.Background(), "", "https://example.com", request)
 	if err == nil {
 		t.Error("expected error for empty token")
 	}

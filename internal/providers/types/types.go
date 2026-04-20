@@ -2,6 +2,8 @@
 package types
 
 import (
+	"context"
+
 	"omnillm/internal/cif"
 )
 
@@ -49,8 +51,8 @@ type ModelsResponse struct {
 
 type ProviderAdapter interface {
 	GetProvider() Provider
-	Execute(request *cif.CanonicalRequest) (*cif.CanonicalResponse, error)
-	ExecuteStream(request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error)
+	Execute(ctx context.Context, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error)
+	ExecuteStream(ctx context.Context, request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error)
 	RemapModel(canonicalModel string) string
 }
 

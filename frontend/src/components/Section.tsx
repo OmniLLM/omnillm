@@ -1,27 +1,21 @@
-import { ChevronDown, ChevronRight } from "lucide-react"
-import { CSSProperties, useState } from "react"
+import { ReactNode } from "react"
 
 interface SectionProps {
   title: string
-  icon?: React.ElementType
   count?: number
-  children: React.ReactNode
+  children: ReactNode
   defaultOpen?: boolean
 }
 
 export function Section({
   title,
-  icon: Icon,
   count,
   children,
   defaultOpen = true,
 }: SectionProps) {
-  const [open, setOpen] = useState(defaultOpen)
-
   return (
     <div style={{ marginBottom: 12 }}>
-      <button
-        onClick={() => setOpen(!open)}
+      <div
         style={{
           display: "flex",
           alignItems: "center",
@@ -30,20 +24,14 @@ export function Section({
           padding: "9px 12px",
           background: "var(--color-surface)",
           border: "1px solid var(--color-separator)",
-          borderRadius: "var(--radius-md)",
-          borderBottomLeftRadius: open ? 0 : "var(--radius-md)",
-          borderBottomRightRadius: open ? 0 : "var(--radius-md)",
+          borderRadius: 8,
+          borderBottomLeftRadius: defaultOpen ? 0 : 8,
+          borderBottomRightRadius: defaultOpen ? 0 : 8,
           color: "var(--color-text)",
           fontSize: 12,
           fontWeight: 600,
-          cursor: "pointer",
-          textAlign: "left",
         }}
       >
-        {Icon && <Icon size={13} style={{ color: "var(--color-blue)" }} />}
-        {open ?
-          <ChevronDown size={13} />
-        : <ChevronRight size={13} />}
         {title}
         {count !== undefined && (
           <span
@@ -60,15 +48,15 @@ export function Section({
             {count}
           </span>
         )}
-      </button>
-      {open && (
+      </div>
+      {defaultOpen && (
         <div
           style={{
             padding: 14,
             border: "1px solid var(--color-separator)",
             borderTop: "none",
-            borderBottomLeftRadius: "var(--radius-md)",
-            borderBottomRightRadius: "var(--radius-md)",
+            borderBottomLeftRadius: 8,
+            borderBottomRightRadius: 8,
             background: "var(--color-bg-elevated)",
           }}
         >

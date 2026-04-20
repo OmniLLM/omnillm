@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -22,12 +23,14 @@ func SetupResponseRoutes(router *gin.RouterGroup) {
 }
 
 func handleResponses(c *gin.Context) {
+	// Type assertion is zero-allocation vs fmt.Sprintf("%v", requestID)
 	requestID, _ := c.Get("request_id")
-	requestIDStr := fmt.Sprintf("%v", requestID)
+	requestIDStr, _ := requestID.(string)
 	startTime := time.Now()
 
-	var payload map[string]interface{}
-	if err := c.ShouldBindJSON(&payload); err != nil {
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		log.Error().Err(err).Str("request_id", requestIDStr).Msg("Failed to read request body")
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": gin.H{
 				"message": "Invalid request format",
@@ -37,13 +40,15 @@ func handleResponses(c *gin.Context) {
 		return
 	}
 
-	// Convert Responses API format to CIF
-	canonicalRequest, err := ingestion.ParseResponsesPayload(payload)
+	// Convert Responses API format to CIF.
+	// json.Valid is omitted: ParseResponsesPayload calls json.Unmarshal which
+	// already validates syntax and returns a clear error, avoiding a double parse pass.
+	canonicalRequest, err := ingestion.ParseResponsesPayload(body)
 	if err != nil {
 		log.Error().Err(err).Str("request_id", requestIDStr).Msg("Failed to parse Responses API request")
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": gin.H{
-				"message": fmt.Sprintf("Failed to parse request: %v", err),
+				"message": parseRequestMessage(err),
 				"type":    "invalid_request_error",
 			},
 		})
@@ -134,7 +139,7 @@ func handleResponses(c *gin.Context) {
 }
 
 func handleResponsesNonStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID string, originalModel string, providerID string, startTime time.Time) error {
-	response, err := adapter.Execute(canonicalRequest)
+	response, err := adapter.Execute(c.Request.Context(), canonicalRequest)
 	if err != nil {
 		return fmt.Errorf("adapter execute failed: %w", err)
 	}
@@ -151,7 +156,7 @@ func handleResponsesNonStreamingResponse(c *gin.Context, adapter types.ProviderA
 }
 
 func handleResponsesStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID string, originalModel string, providerID string, startTime time.Time) error {
-	eventCh, err := adapter.ExecuteStream(canonicalRequest)
+	eventCh, err := adapter.ExecuteStream(c.Request.Context(), canonicalRequest)
 	if err != nil {
 		if shouldFallbackToNonStreaming(err) {
 			log.Warn().Err(err).Str("request_id", requestID).Msg("Streaming request failed before stream start, retrying as non-streaming")
@@ -163,65 +168,74 @@ func handleResponsesStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 
 	setSSEHeaders(c, false)
 
-	wrappedCh := wrapStreamWithContext(c.Request.Context().Done(), eventCh)
-
 	state := serialization.CreateResponsesStreamState()
 	flusher, _ := c.Writer.(http.Flusher)
 	modelUsed := canonicalRequest.Model
+	ctx := c.Request.Context()
 
 	c.Stream(func(w io.Writer) bool {
-		event, ok := <-wrappedCh
-		if !ok {
+		select {
+		case <-ctx.Done():
 			return false
-		}
+		case event, ok := <-eventCh:
+			if !ok {
+				return false
+			}
 
-		responsesEvents, err := serialization.ConvertCIFEventToResponsesSSE(event, state)
-		if err != nil {
-			log.Error().Err(err).Str("request_id", requestID).Msg("Failed to convert CIF event to Responses SSE")
-			return false
-		}
-
-		for _, evt := range responsesEvents {
-			eventType, _ := evt["type"].(string)
-			jsonBytes, err := json.Marshal(evt)
+			responsesEvents, err := serialization.ConvertCIFEventToResponsesSSE(event, state)
 			if err != nil {
-				continue
-			}
-			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", eventType, string(jsonBytes))
-		}
-
-		if flusher != nil {
-			flusher.Flush()
-		}
-
-		if endEvt, isEnd := event.(cif.CIFStreamEnd); isEnd {
-			inputTokens := 0
-			outputTokens := 0
-			if endEvt.Usage != nil {
-				inputTokens = endEvt.Usage.InputTokens
-				outputTokens = endEvt.Usage.OutputTokens
+				log.Error().Err(err).Str("request_id", requestID).Msg("Failed to convert CIF event to Responses SSE")
+				return false
 			}
 
-			log.Info().
-				Str("request_id", requestID).
-				Str("api_shape", "responses").
-				Str("model_requested", originalModel).
-				Str("model_used", modelUsed).
-				Str("provider", providerID).
-				Str("stop_reason", string(endEvt.StopReason)).
-				Bool("stream", true).
-				Int("input_tokens", inputTokens).
-				Int("output_tokens", outputTokens).
-				Int64("latency_ms", time.Since(startTime).Milliseconds()).
-				Msg("\x1b[32m<--\x1b[0m RESPONSE stream")
-			return false
-		}
+			var sb strings.Builder
+			for _, evt := range responsesEvents {
+				eventType, _ := evt["type"].(string)
+				jsonBytes, err := json.Marshal(evt)
+				if err != nil {
+					continue
+				}
+				sb.WriteString("event: ")
+				sb.WriteString(eventType)
+				sb.WriteString("\ndata: ")
+				sb.Write(jsonBytes)
+				sb.WriteString("\n\n")
+			}
+			io.WriteString(w, sb.String())
 
-		if _, isErr := event.(cif.CIFStreamError); isErr {
-			return false
-		}
+			if flusher != nil {
+				flusher.Flush()
+			}
 
-		return true
+			if endEvt, isEnd := event.(cif.CIFStreamEnd); isEnd {
+				inputTokens := 0
+				outputTokens := 0
+				if endEvt.Usage != nil {
+					inputTokens = endEvt.Usage.InputTokens
+					outputTokens = endEvt.Usage.OutputTokens
+				}
+
+				log.Info().
+					Str("request_id", requestID).
+					Str("api_shape", "responses").
+					Str("model_requested", originalModel).
+					Str("model_used", modelUsed).
+					Str("provider", providerID).
+					Str("stop_reason", string(endEvt.StopReason)).
+					Bool("stream", true).
+					Int("input_tokens", inputTokens).
+					Int("output_tokens", outputTokens).
+					Int64("latency_ms", time.Since(startTime).Milliseconds()).
+					Msg("\x1b[32m<--\x1b[0m RESPONSE stream")
+				return false
+			}
+
+			if _, isErr := event.(cif.CIFStreamError); isErr {
+				return false
+			}
+
+			return true
+		}
 	})
 
 	return nil

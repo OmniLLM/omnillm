@@ -1,6 +1,6 @@
 package copilot
-
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -61,7 +61,7 @@ func TestCopilotAdapterExecute_UsesResponsesAPIForGPT54Models(t *testing.T) {
 
 	systemPrompt := "Be terse."
 	maxTokens := 32
-	response, err := adapter.Execute(&cif.CanonicalRequest{
+	response, err := adapter.Execute(context.Background(), &cif.CanonicalRequest{
 		Model:        "gpt-5.4-mini",
 		SystemPrompt: &systemPrompt,
 		Messages: []cif.CIFMessage{
@@ -164,7 +164,7 @@ func TestCopilotAdapterExecute_SendsModernCopilotHeadersForChatCompletions(t *te
 	adapter := provider.GetAdapter().(*CopilotAdapter)
 
 	imageData := "ZmFrZS1pbWFnZS1ieXRlcw=="
-	_, err := adapter.Execute(&cif.CanonicalRequest{
+	_, err := adapter.Execute(context.Background(), &cif.CanonicalRequest{
 		Model: "claude-haiku-4.5",
 		Messages: []cif.CIFMessage{
 			cif.CIFUserMessage{
@@ -253,7 +253,7 @@ func TestCopilotAdapterExecute_SendsAgentInitiatorHeadersForResponses(t *testing
 	provider.token = "test-token"
 	adapter := provider.GetAdapter().(*CopilotAdapter)
 
-	_, err := adapter.Execute(&cif.CanonicalRequest{
+	_, err := adapter.Execute(context.Background(), &cif.CanonicalRequest{
 		Model: "gpt-5.4",
 		Messages: []cif.CIFMessage{
 			cif.CIFAssistantMessage{
@@ -379,7 +379,7 @@ func TestCopilotAdapterExecute_ClampsResponsesMaxOutputTokens(t *testing.T) {
 	adapter := provider.GetAdapter().(*CopilotAdapter)
 
 	maxTokens := 1
-	_, err := adapter.Execute(&cif.CanonicalRequest{
+	_, err := adapter.Execute(context.Background(), &cif.CanonicalRequest{
 		Model: "gpt-5.4",
 		Messages: []cif.CIFMessage{
 			cif.CIFUserMessage{
@@ -437,7 +437,7 @@ func TestCopilotAdapterExecute_ClampsUserIDForCopilotLimits(t *testing.T) {
 	adapter := provider.GetAdapter().(*CopilotAdapter)
 
 	longUserID := strings.Repeat("user-", 30)
-	_, err := adapter.Execute(&cif.CanonicalRequest{
+	_, err := adapter.Execute(context.Background(), &cif.CanonicalRequest{
 		Model: "gpt-5.4",
 		Messages: []cif.CIFMessage{
 			cif.CIFUserMessage{
@@ -498,7 +498,7 @@ func TestCopilotAdapterExecute_TranslatesSpecificToolChoiceForChatCompletions(t 
 	provider.token = "test-token"
 	adapter := provider.GetAdapter().(*CopilotAdapter)
 
-	_, err := adapter.Execute(&cif.CanonicalRequest{
+	_, err := adapter.Execute(context.Background(), &cif.CanonicalRequest{
 		Model: "claude-haiku-4.5",
 		Messages: []cif.CIFMessage{
 			cif.CIFUserMessage{
@@ -583,7 +583,7 @@ func TestCopilotAdapterExecute_FallsBackToResponsesWhenChatCompletionsIsUnsuppor
 	provider.token = "test-token"
 	adapter := provider.GetAdapter().(*CopilotAdapter)
 
-	response, err := adapter.Execute(&cif.CanonicalRequest{
+	response, err := adapter.Execute(context.Background(), &cif.CanonicalRequest{
 		Model: "future-copilot-model",
 		Messages: []cif.CIFMessage{
 			cif.CIFUserMessage{
@@ -643,7 +643,7 @@ func TestCopilotAdapterExecute_ForceChatCompletionsSkipsResponsesFallback(t *tes
 	adapter := provider.GetAdapter().(*CopilotAdapter)
 
 	forceChatCompletions := true
-	_, err := adapter.Execute(&cif.CanonicalRequest{
+	_, err := adapter.Execute(context.Background(), &cif.CanonicalRequest{
 		Model: "future-copilot-model",
 		Messages: []cif.CIFMessage{
 			cif.CIFUserMessage{
@@ -723,7 +723,7 @@ data: {"id":"chatcmpl_refresh","model":"claude-haiku-4.5","choices":[{"index":0,
 	}
 
 	adapter := provider.GetAdapter().(*CopilotAdapter)
-	eventCh, err := adapter.ExecuteStream(&cif.CanonicalRequest{
+	eventCh, err := adapter.ExecuteStream(context.Background(), &cif.CanonicalRequest{
 		Model: "claude-haiku-4.5",
 		Messages: []cif.CIFMessage{
 			cif.CIFUserMessage{
@@ -805,7 +805,7 @@ func TestCopilotAdapterExecuteStream_DisableAuthRetryMakesSingleAttempt(t *testi
 	adapter := provider.GetAdapter().(*CopilotAdapter)
 	forceChatCompletions := true
 	disableAuthRetry := true
-	_, err := adapter.ExecuteStream(&cif.CanonicalRequest{
+	_, err := adapter.ExecuteStream(context.Background(), &cif.CanonicalRequest{
 		Model: "claude-haiku-4.5",
 		Messages: []cif.CIFMessage{
 			cif.CIFUserMessage{
@@ -859,7 +859,7 @@ data: {"response":{"id":"resp_stream","model":"gpt-5.4-mini-2026-03-17","status"
 	provider.token = "test-token"
 	adapter := provider.GetAdapter().(*CopilotAdapter)
 
-	eventCh, err := adapter.ExecuteStream(&cif.CanonicalRequest{
+	eventCh, err := adapter.ExecuteStream(context.Background(), &cif.CanonicalRequest{
 		Model: "gpt-5.4-mini",
 		Messages: []cif.CIFMessage{
 			cif.CIFUserMessage{
@@ -987,7 +987,7 @@ func TestCopilotAdapterExecute_AliasesLongToolNamesForChatCompletions(t *testing
 	adapter := provider.GetAdapter().(*CopilotAdapter)
 
 	originalToolName := "mcp__extremely_long_server_name_that_keeps_going__tool_name_that_is_also_long"
-	response, err := adapter.Execute(&cif.CanonicalRequest{
+	response, err := adapter.Execute(context.Background(), &cif.CanonicalRequest{
 		Model: "claude-haiku-4.5",
 		Messages: []cif.CIFMessage{
 			cif.CIFUserMessage{
@@ -1093,7 +1093,7 @@ func TestCopilotAdapterExecute_AliasesLongToolNamesForResponsesAPI(t *testing.T)
 	adapter := provider.GetAdapter().(*CopilotAdapter)
 
 	originalToolName := "mcp__extremely_long_server_name_that_keeps_going__tool_name_that_is_also_long"
-	response, err := adapter.Execute(&cif.CanonicalRequest{
+	response, err := adapter.Execute(context.Background(), &cif.CanonicalRequest{
 		Model: "gpt-5.4",
 		Messages: []cif.CIFMessage{
 			cif.CIFUserMessage{
@@ -1175,7 +1175,7 @@ func TestCopilotAdapterExecute_NormalizesResponsesToolCallIDs(t *testing.T) {
 	provider.token = "test-token"
 	adapter := provider.GetAdapter().(*CopilotAdapter)
 
-	_, err := adapter.Execute(&cif.CanonicalRequest{
+	_, err := adapter.Execute(context.Background(), &cif.CanonicalRequest{
 		Model: "gpt-5.4-mini",
 		Messages: []cif.CIFMessage{
 			cif.CIFAssistantMessage{
@@ -1282,7 +1282,7 @@ data: {"id":"chatcmpl_stream_long_tool","model":"claude-haiku-4.5","choices":[{"
 	provider.token = "test-token"
 	adapter := provider.GetAdapter().(*CopilotAdapter)
 
-	eventCh, err := adapter.ExecuteStream(&cif.CanonicalRequest{
+	eventCh, err := adapter.ExecuteStream(context.Background(), &cif.CanonicalRequest{
 		Model: "claude-haiku-4.5",
 		Messages: []cif.CIFMessage{
 			cif.CIFUserMessage{

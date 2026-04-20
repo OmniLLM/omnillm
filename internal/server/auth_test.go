@@ -32,7 +32,7 @@ func TestAuthMiddlewareRejectsMissingToken(t *testing.T) {
 	}
 }
 
-func TestAuthMiddlewareAllowsSSEQueryToken(t *testing.T) {
+func TestAuthMiddlewareRejectsSSEQueryToken(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(newAuthConfig("secret").middleware())
@@ -45,7 +45,8 @@ func TestAuthMiddlewareAllowsSSEQueryToken(t *testing.T) {
 	resp := httptest.NewRecorder()
 	r.ServeHTTP(resp, req)
 
-	if resp.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", resp.Code)
+	// Query parameter auth is no longer accepted to prevent credential leakage in logs
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", resp.Code)
 	}
 }

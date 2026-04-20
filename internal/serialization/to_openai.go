@@ -1,4 +1,3 @@
-// Package serialization provides conversion from CIF to various API formats
 package serialization
 
 import (
@@ -67,36 +66,8 @@ type OpenAIUsage struct {
 	TotalTokens      int `json:"total_tokens"`
 }
 
-// Anthropic format structures
-type AnthropicResponse struct {
-	ID           string                  `json:"id"`
-	Type         string                  `json:"type"`
-	Role         string                  `json:"role"`
-	Model        string                  `json:"model"`
-	Content      []AnthropicContentBlock `json:"content"`
-	StopReason   *string                 `json:"stop_reason,omitempty"`
-	StopSequence *string                 `json:"stop_sequence,omitempty"`
-	Usage        *AnthropicUsage         `json:"usage,omitempty"`
-}
-
-type AnthropicContentBlock struct {
-	Type      string                 `json:"type"`
-	Text      string                 `json:"text,omitempty"`
-	Thinking  string                 `json:"thinking,omitempty"`
-	Signature *string                `json:"signature,omitempty"`
-	ID        string                 `json:"id,omitempty"`
-	Name      string                 `json:"name,omitempty"`
-	Input     map[string]interface{} `json:"input,omitempty"`
-}
-
-type AnthropicUsage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
-}
-
 // SerializeToOpenAI converts a CIF response to OpenAI format
 func SerializeToOpenAI(response *cif.CanonicalResponse) (*OpenAIResponse, error) {
-	// Build content string and tool calls from CIF content parts
 	var contentText string
 	var toolCalls []OpenAIToolCall
 
@@ -122,7 +93,6 @@ func SerializeToOpenAI(response *cif.CanonicalResponse) (*OpenAIResponse, error)
 		}
 	}
 
-	// Convert stop reason
 	finishReason := convertStopReasonToOpenAI(response.StopReason)
 
 	choice := OpenAIChoice{
@@ -133,12 +103,10 @@ func SerializeToOpenAI(response *cif.CanonicalResponse) (*OpenAIResponse, error)
 		FinishReason: finishReason,
 	}
 
-	// Set content if there's text
 	if contentText != "" {
 		choice.Message.Content = &contentText
 	}
 
-	// Set tool calls if any
 	if len(toolCalls) > 0 {
 		choice.Message.ToolCalls = toolCalls
 	}
@@ -151,7 +119,6 @@ func SerializeToOpenAI(response *cif.CanonicalResponse) (*OpenAIResponse, error)
 		Choices: []OpenAIChoice{choice},
 	}
 
-	// Convert usage if present
 	if response.Usage != nil {
 		openaiResp.Usage = &OpenAIUsage{
 			PromptTokens:     response.Usage.InputTokens,
@@ -169,73 +136,6 @@ func SerializeToOpenAI(response *cif.CanonicalResponse) (*OpenAIResponse, error)
 	return openaiResp, nil
 }
 
-// SerializeToAnthropic converts a CIF response to Anthropic format
-func SerializeToAnthropic(response *cif.CanonicalResponse) (*AnthropicResponse, error) {
-	return SerializeToAnthropicWithSuppression(response, false)
-}
-
-// SerializeToAnthropicWithSuppression converts a CIF response to Anthropic format
-// and optionally suppresses thinking blocks for clients that did not opt in.
-func SerializeToAnthropicWithSuppression(response *cif.CanonicalResponse, suppressThinking bool) (*AnthropicResponse, error) {
-	var content []AnthropicContentBlock
-
-	for _, part := range response.Content {
-		switch p := part.(type) {
-		case cif.CIFTextPart:
-			content = append(content, AnthropicContentBlock{
-				Type: "text",
-				Text: p.Text,
-			})
-		case cif.CIFToolCallPart:
-			content = append(content, AnthropicContentBlock{
-				Type:  "tool_use",
-				ID:    p.ToolCallID,
-				Name:  p.ToolName,
-				Input: p.ToolArguments,
-			})
-		case cif.CIFThinkingPart:
-			if suppressThinking {
-				continue
-			}
-			content = append(content, AnthropicContentBlock{
-				Type:      "thinking",
-				Thinking:  p.Thinking,
-				Signature: p.Signature,
-			})
-		}
-	}
-
-	stopReason := convertStopReasonToAnthropic(response.StopReason)
-
-	anthropicResp := &AnthropicResponse{
-		ID:           response.ID,
-		Type:         "message",
-		Role:         "assistant",
-		Model:        response.Model,
-		Content:      content,
-		StopReason:   stopReason,
-		StopSequence: response.StopSequence,
-	}
-
-	// Convert usage if present
-	if response.Usage != nil {
-		anthropicResp.Usage = &AnthropicUsage{
-			InputTokens:  response.Usage.InputTokens,
-			OutputTokens: response.Usage.OutputTokens,
-		}
-	}
-
-	log.Debug().
-		Str("id", response.ID).
-		Str("model", response.Model).
-		Str("stop_reason", *stopReason).
-		Bool("suppress_thinking", suppressThinking).
-		Msg("Converted CIF response to Anthropic format")
-
-	return anthropicResp, nil
-}
-
-// Streaming support structures
 type OpenAIStreamChunk struct {
 	ID                string         `json:"id"`
 	Object            string         `json:"object"`
@@ -263,7 +163,6 @@ func CreateOpenAIStreamState() *OpenAIStreamState {
 	}
 }
 
-// ConvertCIFEventToOpenAISSE converts CIF stream events to OpenAI SSE format
 func ConvertCIFEventToOpenAISSE(event cif.CIFStreamEvent, state *OpenAIStreamState) (string, error) {
 	switch e := event.(type) {
 	case cif.CIFStreamStart:
@@ -283,7 +182,6 @@ func ConvertCIFEventToOpenAISSE(event cif.CIFStreamEvent, state *OpenAIStreamSta
 		return formatSSEData(chunk)
 
 	case cif.CIFContentDelta:
-		// Handle new content blocks (e.g., new tool call start)
 		if e.ContentBlock != nil {
 			switch cb := e.ContentBlock.(type) {
 			case cif.CIFToolCallPart:
@@ -319,7 +217,6 @@ func ConvertCIFEventToOpenAISSE(event cif.CIFStreamEvent, state *OpenAIStreamSta
 		case cif.TextDelta:
 			delta.Content = &d.Text
 		case cif.ThinkingDelta:
-			// OpenAI doesn't have native thinking; include as text
 			delta.Content = &d.Thinking
 		case cif.ToolArgumentsDelta:
 			delta.ToolCalls = []OpenAIToolCallDelta{{
@@ -345,7 +242,6 @@ func ConvertCIFEventToOpenAISSE(event cif.CIFStreamEvent, state *OpenAIStreamSta
 		return formatSSEData(chunk)
 
 	case cif.CIFContentBlockStop:
-		// No specific action for OpenAI format
 		return "", nil
 
 	case cif.CIFStreamEnd:
@@ -367,7 +263,6 @@ func ConvertCIFEventToOpenAISSE(event cif.CIFStreamEvent, state *OpenAIStreamSta
 			return "", err
 		}
 
-		// Add usage chunk if present
 		if e.Usage != nil {
 			usageChunk := map[string]interface{}{
 				"id":      state.ID,
@@ -388,7 +283,6 @@ func ConvertCIFEventToOpenAISSE(event cif.CIFStreamEvent, state *OpenAIStreamSta
 			sseData += usageSSE
 		}
 
-		// Add [DONE] marker
 		sseData += "data: [DONE]\n\n"
 		return sseData, nil
 
@@ -433,25 +327,4 @@ func convertStopReasonToOpenAI(reason cif.CIFStopReason) *string {
 		openaiReason = "stop"
 	}
 	return &openaiReason
-}
-
-func convertStopReasonToAnthropic(reason cif.CIFStopReason) *string {
-	var anthropicReason string
-	switch reason {
-	case cif.StopReasonEndTurn:
-		anthropicReason = "end_turn"
-	case cif.StopReasonMaxTokens:
-		anthropicReason = "max_tokens"
-	case cif.StopReasonToolUse:
-		anthropicReason = "tool_use"
-	case cif.StopReasonStopSequence:
-		anthropicReason = "stop_sequence"
-	case cif.StopReasonContentFilter:
-		anthropicReason = "content_filter"
-	case cif.StopReasonError:
-		anthropicReason = "error"
-	default:
-		anthropicReason = "end_turn"
-	}
-	return &anthropicReason
 }

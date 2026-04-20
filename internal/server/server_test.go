@@ -29,16 +29,16 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
-	// Configure routes with a no-op rate limiter
-	rl := ratelimit.NewRateLimiter(0, false)
-	routes.ConfigureChatCompletionOptions(rl, false)
-
 	os.Exit(m.Run())
 }
 
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	r := buildRouter(0, "test-api-key")
+	chatOptions := routes.ChatCompletionOptions{
+		RateLimiter:    ratelimit.NewRateLimiter(0, false),
+		ManualApproval: false,
+	}
+	r := buildRouter(0, "test-api-key", chatOptions)
 	return httptest.NewServer(r)
 }
 
@@ -257,6 +257,40 @@ func TestProtectedRoutesRequireAuth(t *testing.T) {
 	if resp.StatusCode != http.StatusUnauthorized {
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("expected 401, got %d: %s", resp.StatusCode, string(body))
+	}
+}
+
+func TestResponsesRouteRejectsInvalidJSON(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	resp := postJSON(t, srv.URL+"/v1/responses", `{"model":`, nil)
+	body := readBody(t, resp)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", resp.StatusCode, body)
+	}
+	if !strings.Contains(body, "Invalid request format") {
+		t.Fatalf("unexpected body: %s", body)
+	}
+}
+
+func TestResponsesRouteRequiresAuth(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/v1/responses", strings.NewReader(`{"model":"gpt-5.4-mini","input":"hi"}`))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	body := readBody(t, resp)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d: %s", resp.StatusCode, body)
 	}
 }
 

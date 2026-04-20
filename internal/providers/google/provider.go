@@ -23,8 +23,31 @@ const defaultBaseURL = "https://generativelanguage.googleapis.com"
 
 // Shared HTTP clients: one for normal requests with timeout, one for streaming.
 var (
-	googleHTTPClient   = &http.Client{Timeout: 120 * time.Second}
-	googleStreamClient = &http.Client{}
+	googleHTTPClient = &http.Client{
+		Timeout: 120 * time.Second,
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   20,
+			MaxConnsPerHost:       50,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		},
+	}
+	googleStreamClient = &http.Client{
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   20,
+			MaxConnsPerHost:       50,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		},
+	}
 )
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
@@ -212,7 +235,7 @@ func BuildPayload(model string, request *cif.CanonicalRequest) map[string]interf
 // ─── Stream ───────────────────────────────────────────────────────────────────
 
 // Stream executes a streaming request to the Gemini API and returns a CIF event channel.
-func Stream(token, baseURL string, request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
+func Stream(ctx context.Context, token, baseURL string, request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
 	if token == "" {
 		return nil, fmt.Errorf("google: not authenticated (set API key via admin UI)")
 	}
@@ -273,7 +296,7 @@ func Stream(token, baseURL string, request *cif.CanonicalRequest) (<-chan cif.CI
 
 	url := StreamURL(baseURL, model)
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(payload))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(payload))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -300,8 +323,8 @@ func Stream(token, baseURL string, request *cif.CanonicalRequest) (<-chan cif.CI
 }
 
 // Execute runs a non-streaming request (implemented via streaming + collection).
-func Execute(token, baseURL string, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
-	ch, err := Stream(token, baseURL, request)
+func Execute(ctx context.Context, token, baseURL string, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+	ch, err := Stream(ctx, token, baseURL, request)
 	if err != nil {
 		return nil, err
 	}

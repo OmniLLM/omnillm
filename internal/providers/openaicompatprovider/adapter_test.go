@@ -1,6 +1,6 @@
 package openaicompatprovider
-
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -118,7 +118,7 @@ func TestAdapterExecute_ChatCompletionsTranslatesAnthropicStyleCIF(t *testing.T)
 	p.configLoaded = true
 
 	adapter := p.GetAdapter().(*Adapter)
-	resp, err := adapter.Execute(sampleToolLoopRequest("anthropic"))
+	resp, err := adapter.Execute(context.Background(), sampleToolLoopRequest("anthropic"))
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -173,7 +173,7 @@ func TestAdapterExecute_ResponsesTranslatesAnthropicStyleCIF(t *testing.T) {
 	p.configLoaded = true
 
 	adapter := p.GetAdapter().(*Adapter)
-	resp, err := adapter.Execute(sampleToolLoopRequest("anthropic"))
+	resp, err := adapter.Execute(context.Background(), sampleToolLoopRequest("anthropic"))
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -227,7 +227,7 @@ func TestAdapterExecuteStream_ResponsesParsesSSE(t *testing.T) {
 	p.configLoaded = true
 
 	adapter := p.GetAdapter().(*Adapter)
-	eventCh, err := adapter.ExecuteStream(sampleToolLoopRequest("responses"))
+	eventCh, err := adapter.ExecuteStream(context.Background(), sampleToolLoopRequest("responses"))
 	if err != nil {
 		t.Fatalf("ExecuteStream() error = %v", err)
 	}
@@ -270,7 +270,7 @@ func TestAdapterExecuteStream_AnthropicRequestsBufferCompletedResponse(t *testin
 	p.configLoaded = true
 
 	adapter := p.GetAdapter().(*Adapter)
-	eventCh, err := adapter.ExecuteStream(&cif.CanonicalRequest{
+	eventCh, err := adapter.ExecuteStream(context.Background(), &cif.CanonicalRequest{
 		Model: "llama3",
 		Messages: []cif.CIFMessage{
 			cif.CIFUserMessage{

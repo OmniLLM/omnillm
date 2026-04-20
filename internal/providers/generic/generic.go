@@ -5,11 +5,13 @@ package generic
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"omnillm/internal/cif"
@@ -62,13 +64,15 @@ const alibabaUserAgent = alibabapkg.UserAgent
 // The struct fields are kept identical to the original to preserve backward compatibility
 // for callers that use *GenericProvider type assertions (e.g., admin.go).
 type GenericProvider struct {
-	id           string
-	instanceID   string
-	name         string
-	token        string
-	baseURL      string
-	config       map[string]interface{}
-	configLoaded bool
+	id         string
+	instanceID string
+	name       string
+	token      string
+	baseURL    string
+	config     map[string]interface{}
+	// configOnce ensures config is loaded from the database exactly once,
+	// even under concurrent requests.  Replaces the racy configLoaded bool.
+	configOnce sync.Once
 }
 
 // GenericAdapter wraps GenericProvider for the ProviderAdapter interface.
@@ -273,25 +277,33 @@ func (p *GenericProvider) GetBaseURL() string {
 	return p.baseURL
 }
 
-func (p *GenericProvider) loadConfigFromDB() {
-	if p.configLoaded {
-		return
-	}
+func (p *GenericProvider) loadConfigRecord() (map[string]interface{}, error) {
 	configStore := database.NewProviderConfigStore()
 	record, err := configStore.Get(p.instanceID)
 	if err != nil || record == nil {
-		p.configLoaded = true
-		return
+		return nil, err
 	}
 
 	var config map[string]interface{}
 	if err := json.Unmarshal([]byte(record.ConfigData), &config); err != nil {
-		log.Warn().Err(err).Str("provider", p.instanceID).Msg("Failed to parse provider config")
-		return
+		return nil, err
 	}
+	return config, nil
+}
 
-	p.applyConfig(config)
-	p.configLoaded = true
+func (p *GenericProvider) loadConfigFromDB() {
+	// sync.Once guarantees this runs exactly once across concurrent goroutines,
+	// replacing the racy if p.configLoaded { return } pattern.
+	p.configOnce.Do(func() {
+		config, err := p.loadConfigRecord()
+		if err != nil {
+			log.Warn().Err(err).Str("provider", p.instanceID).Msg("Failed to load provider config")
+			return
+		}
+		if config != nil {
+			p.applyConfig(config)
+		}
+	})
 }
 
 func (p *GenericProvider) applyConfig(config map[string]interface{}) {
@@ -320,6 +332,26 @@ func (p *GenericProvider) applyConfig(config map[string]interface{}) {
 	case "kimi":
 		p.baseURL = kimipkg.NormalizeBaseURL(p.config)
 	}
+}
+
+func sanitizeTokenConfig(tokenData map[string]interface{}) map[string]interface{} {
+	if len(tokenData) == 0 {
+		return nil
+	}
+
+	filtered := make(map[string]interface{}, len(tokenData))
+	for key, value := range tokenData {
+		switch key {
+		case "token", "api_key", "apiKey", "access_token", "github_token", "copilot_token", "refresh_token", "refreshToken", "id_token", "idToken", "expires_at", "expiresAt", "expiry", "expiry_date":
+			continue
+		default:
+			filtered[key] = value
+		}
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	return filtered
 }
 
 // ─── Headers ──────────────────────────────────────────────────────────────────
@@ -418,8 +450,17 @@ func (p *GenericProvider) LoadFromDB() error {
 			}
 		}
 
-		p.applyConfig(tokenData)
-		p.loadConfigFromDB()
+		// Token records may also carry non-secret config (e.g. auth_type,
+		// base_url, resource_url). Filter out credential fields before merging
+		// into p.config so downstream config consumers only see real config keys.
+		p.applyConfig(sanitizeTokenConfig(tokenData))
+		config, err := p.loadConfigRecord()
+		if err != nil {
+			log.Warn().Err(err).Str("provider", p.instanceID).Msg("Failed to load provider config during startup")
+		} else if config != nil {
+			p.applyConfig(config)
+		}
+		p.configOnce.Do(func() {})
 
 		if p.id == "alibaba" && p.token != "" {
 			p.name = alibabapkg.APIKeyProviderName(p.config)
@@ -450,58 +491,58 @@ func (a *GenericAdapter) RemapModel(model string) string {
 	return model
 }
 
-func (a *GenericAdapter) Execute(request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+func (a *GenericAdapter) Execute(ctx context.Context, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
 	a.provider.loadConfigFromDB()
 	switch a.provider.id {
 	case "alibaba":
 		if !alibabapkg.IsChatCompletionsModel(a.RemapModel(request.Model)) {
 			return nil, fmt.Errorf("alibaba model %s is realtime-only and is not supported by /v1/chat/completions", request.Model)
 		}
-		return a.executeOpenAI(a.alibabaURL(), a.provider.alibabaHeaders(false), request)
+		return a.executeOpenAI(ctx, a.alibabaURL(), a.provider.alibabaHeaders(false), request)
 	case "azure-openai":
 		if azurepkg.IsResponsesAPIModel(a.RemapModel(request.Model)) {
-			return a.executeAzureResponses(request)
+			return a.executeAzureResponses(ctx, request)
 		}
 		url, err := a.azureURL(a.RemapModel(request.Model))
 		if err != nil {
 			return nil, err
 		}
-		return a.executeOpenAI(url, a.azureHeaders(), request)
+		return a.executeOpenAI(ctx, url, a.azureHeaders(), request)
 	case "google":
-		return googlepkg.Execute(a.provider.token, a.provider.baseURL, request)
+		return googlepkg.Execute(ctx, a.provider.token, a.provider.baseURL, request)
 	case "kimi":
-		return a.executeOpenAI(a.kimiURL(), a.kimiHeaders(false), request)
+		return a.executeOpenAI(ctx, a.kimiURL(), a.kimiHeaders(false), request)
 	case "antigravity":
-		return a.collectStream(request)
+		return a.collectStream(ctx, request)
 	default:
 		return nil, fmt.Errorf("provider %s not yet implemented", a.provider.id)
 	}
 }
 
-func (a *GenericAdapter) ExecuteStream(request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
+func (a *GenericAdapter) ExecuteStream(ctx context.Context, request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
 	a.provider.loadConfigFromDB()
 	switch a.provider.id {
 	case "alibaba":
 		if !alibabapkg.IsChatCompletionsModel(a.RemapModel(request.Model)) {
 			return nil, fmt.Errorf("alibaba model %s is realtime-only and is not supported by /v1/chat/completions", request.Model)
 		}
-		return a.streamOpenAI(a.alibabaURL(), a.provider.alibabaHeaders(true), request)
+		return a.streamOpenAI(ctx, a.alibabaURL(), a.provider.alibabaHeaders(true), request)
 	case "azure-openai":
 		if azurepkg.IsResponsesAPIModel(a.RemapModel(request.Model)) {
-			return a.streamAzureResponses(request)
+			return a.streamAzureResponses(ctx, request)
 		}
 		url, err := a.azureURL(a.RemapModel(request.Model))
 		if err != nil {
 			return nil, err
 		}
-		return a.streamOpenAI(url, a.azureHeaders(), request)
+		return a.streamOpenAI(ctx, url, a.azureHeaders(), request)
 	case "google":
-		return googlepkg.Stream(a.provider.token, a.provider.baseURL, request)
+		return googlepkg.Stream(ctx, a.provider.token, a.provider.baseURL, request)
 	case "kimi":
-		return a.streamOpenAI(a.kimiURL(), a.kimiHeaders(true), request)
+		return a.streamOpenAI(ctx, a.kimiURL(), a.kimiHeaders(true), request)
 	case "antigravity":
 		projectID, _ := firstString(a.provider.config, "project_id", "project")
-		return antigravitypkg.Stream(a.provider.token, a.provider.baseURL, projectID, request)
+		return antigravitypkg.Stream(ctx, a.provider.token, a.provider.baseURL, projectID, request)
 	default:
 		return nil, fmt.Errorf("provider %s not yet implemented", a.provider.id)
 	}
@@ -544,22 +585,22 @@ func (a *GenericAdapter) azureResponsesURL() (string, error) {
 
 // ─── Azure Responses API ──────────────────────────────────────────────────────
 
-func (a *GenericAdapter) executeAzureResponses(request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+func (a *GenericAdapter) executeAzureResponses(ctx context.Context, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
 	url, err := a.azureResponsesURL()
 	if err != nil {
 		return nil, err
 	}
 	model := a.RemapModel(request.Model)
-	return azurepkg.ExecuteResponses(url, a.provider.token, request, model)
+	return azurepkg.ExecuteResponses(ctx, url, a.provider.token, request, model)
 }
 
-func (a *GenericAdapter) streamAzureResponses(request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
+func (a *GenericAdapter) streamAzureResponses(ctx context.Context, request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
 	url, err := a.azureResponsesURL()
 	if err != nil {
 		return nil, err
 	}
 	model := a.RemapModel(request.Model)
-	return azurepkg.StreamResponses(url, a.provider.token, request, model)
+	return azurepkg.StreamResponses(ctx, url, a.provider.token, request, model)
 }
 
 func (a *GenericAdapter) buildOpenAIPayload(request *cif.CanonicalRequest) map[string]interface{} {
@@ -677,38 +718,38 @@ func (a *GenericAdapter) buildOpenAIPayload(request *cif.CanonicalRequest) map[s
 	return payload
 }
 
-func (a *GenericAdapter) executeOpenAI(url string, headers map[string]string, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+func (a *GenericAdapter) executeOpenAI(ctx context.Context, url string, headers map[string]string, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
 	if a.provider.id == "azure-openai" {
-		return azurepkg.ExecuteOpenAI(url, headers, request)
+		return azurepkg.ExecuteOpenAI(ctx, url, headers, request)
 	}
-	return a.executeOpenAIGeneric(url, headers, request)
+	return a.executeOpenAIGeneric(ctx, url, headers, request)
 }
 
-func (a *GenericAdapter) executeOpenAIGeneric(url string, headers map[string]string, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+func (a *GenericAdapter) executeOpenAIGeneric(ctx context.Context, url string, headers map[string]string, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
 	payload := a.buildOpenAIPayload(request)
 	payload["stream"] = false
-	return executeOpenAIWithPayload(url, headers, payload, request.Model)
+	return executeOpenAIWithPayload(ctx, url, headers, payload, request.Model)
 }
 
-func (a *GenericAdapter) streamOpenAI(url string, headers map[string]string, request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
+func (a *GenericAdapter) streamOpenAI(ctx context.Context, url string, headers map[string]string, request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
 	if a.provider.id == "azure-openai" {
-		return azurepkg.StreamOpenAI(url, headers, request)
+		return azurepkg.StreamOpenAI(ctx, url, headers, request)
 	}
-	return a.streamOpenAIGeneric(url, headers, request)
+	return a.streamOpenAIGeneric(ctx, url, headers, request)
 }
 
-func (a *GenericAdapter) streamOpenAIGeneric(url string, headers map[string]string, request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
+func (a *GenericAdapter) streamOpenAIGeneric(ctx context.Context, url string, headers map[string]string, request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
 	payload := a.buildOpenAIPayload(request)
 	payload["stream"] = true
 	if a.provider.id == "alibaba" {
 		payload["stream_options"] = map[string]interface{}{"include_usage": true}
 	}
-	return streamOpenAIWithPayload(url, headers, payload)
+	return streamOpenAIWithPayload(ctx, url, headers, payload)
 }
 
 // collectStream runs ExecuteStream and assembles a CanonicalResponse.
-func (a *GenericAdapter) collectStream(request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
-	ch, err := a.ExecuteStream(request)
+func (a *GenericAdapter) collectStream(ctx context.Context, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+	ch, err := a.ExecuteStream(ctx, request)
 	if err != nil {
 		return nil, err
 	}
@@ -725,19 +766,19 @@ func (a *GenericAdapter) googleURL(model string) string {
 	return googlepkg.StreamURL(a.provider.baseURL, model)
 }
 
-func (a *GenericAdapter) executeGoogle(request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
-	return googlepkg.Execute(a.provider.token, a.provider.baseURL, request)
+func (a *GenericAdapter) executeGoogle(ctx context.Context, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+	return googlepkg.Execute(ctx, a.provider.token, a.provider.baseURL, request)
 }
 
-func (a *GenericAdapter) streamGoogle(request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
-	return googlepkg.Stream(a.provider.token, a.provider.baseURL, request)
+func (a *GenericAdapter) streamGoogle(ctx context.Context, request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
+	return googlepkg.Stream(ctx, a.provider.token, a.provider.baseURL, request)
 }
 
 // ─── Antigravity stream (kept for white-box test access) ─────────────────────
 
-func (a *GenericAdapter) streamAntigravity(request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
+func (a *GenericAdapter) streamAntigravity(ctx context.Context, request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
 	projectID, _ := firstString(a.provider.config, "project_id", "project")
-	return antigravitypkg.Stream(a.provider.token, a.provider.baseURL, projectID, request)
+	return antigravitypkg.Stream(ctx, a.provider.token, a.provider.baseURL, projectID, request)
 }
 
 // ─── Shared helpers (kept for white-box test access) ─────────────────────────
@@ -947,12 +988,35 @@ func convertCanonicalToolChoiceToOpenAI(toolChoice interface{}) interface{} {
 // ─── HTTP execution helpers ───────────────────────────────────────────────────
 
 var (
-	genericHTTPClient   = &http.Client{Timeout: 120 * time.Second}
-	genericStreamClient = &http.Client{}
+	genericHTTPClient = &http.Client{
+		Timeout: 120 * time.Second,
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   20,
+			MaxConnsPerHost:       50,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		},
+	}
+	genericStreamClient = &http.Client{
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   20,
+			MaxConnsPerHost:       50,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		},
+	}
 )
 
 // executeOpenAIWithPayload performs a non-streaming OpenAI-compatible HTTP request.
-func executeOpenAIWithPayload(url string, headers map[string]string, payload map[string]interface{}, originalModel string) (*cif.CanonicalResponse, error) {
+func executeOpenAIWithPayload(ctx context.Context, url string, headers map[string]string, payload map[string]interface{}, originalModel string) (*cif.CanonicalResponse, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
@@ -960,7 +1024,7 @@ func executeOpenAIWithPayload(url string, headers map[string]string, payload map
 
 	log.Trace().Str("url", url).RawJSON("payload", body).Msg("outbound proxy request payload")
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -989,7 +1053,7 @@ func executeOpenAIWithPayload(url string, headers map[string]string, payload map
 }
 
 // streamOpenAIWithPayload performs a streaming OpenAI-compatible HTTP request.
-func streamOpenAIWithPayload(url string, headers map[string]string, payload map[string]interface{}) (<-chan cif.CIFStreamEvent, error) {
+func streamOpenAIWithPayload(ctx context.Context, url string, headers map[string]string, payload map[string]interface{}) (<-chan cif.CIFStreamEvent, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
@@ -997,7 +1061,7 @@ func streamOpenAIWithPayload(url string, headers map[string]string, payload map[
 
 	log.Trace().Str("url", url).RawJSON("payload", body).Msg("outbound proxy request payload")
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

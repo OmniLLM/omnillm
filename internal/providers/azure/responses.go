@@ -3,6 +3,7 @@ package azure
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,7 +15,19 @@ import (
 )
 
 // Shared HTTP client with default timeout for Responses API requests.
-var responsesHTTPClient = &http.Client{Timeout: 120 * time.Second}
+var responsesHTTPClient = &http.Client{
+	Timeout: 120 * time.Second,
+	Transport: &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   20,
+		MaxConnsPerHost:       50,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	},
+}
 
 // ─── Tool call ID normalization ───────────────────────────────────────────────
 
@@ -251,7 +264,7 @@ func ResponsesRespToCIF(resp map[string]interface{}, originalModel string) *cif.
 // ─── Execute (non-streaming) ──────────────────────────────────────────────────
 
 // ExecuteResponses calls the Azure Responses API (non-streaming) and returns a CIF response.
-func ExecuteResponses(responsesURL, apiKey string, request *cif.CanonicalRequest, model string) (*cif.CanonicalResponse, error) {
+func ExecuteResponses(ctx context.Context, responsesURL, apiKey string, request *cif.CanonicalRequest, model string) (*cif.CanonicalResponse, error) {
 	payload := BuildResponsesPayload(request, model)
 	payload["stream"] = false
 
@@ -260,7 +273,7 @@ func ExecuteResponses(responsesURL, apiKey string, request *cif.CanonicalRequest
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", responsesURL, bytes.NewBuffer(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", responsesURL, bytes.NewBuffer(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -292,8 +305,8 @@ func ExecuteResponses(responsesURL, apiKey string, request *cif.CanonicalRequest
 
 // StreamResponses calls ExecuteResponses and emits the result as a CIF stream.
 // The Azure Responses API SSE format is complex; non-streaming is simpler and sufficient.
-func StreamResponses(responsesURL, apiKey string, request *cif.CanonicalRequest, model string) (<-chan cif.CIFStreamEvent, error) {
-	cifResp, err := ExecuteResponses(responsesURL, apiKey, request, model)
+func StreamResponses(ctx context.Context, responsesURL, apiKey string, request *cif.CanonicalRequest, model string) (<-chan cif.CIFStreamEvent, error) {
+	cifResp, err := ExecuteResponses(ctx, responsesURL, apiKey, request, model)
 	if err != nil {
 		return nil, err
 	}

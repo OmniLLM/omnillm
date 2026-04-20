@@ -2,6 +2,7 @@ package server
 
 import (
 	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -82,14 +83,19 @@ func RunServer(options StartOptions) error {
 		rateLimitInterval = *options.RateLimit
 	}
 	rl := ratelimit.NewRateLimiter(rateLimitInterval, options.RateLimitWait)
-	routes.ConfigureChatCompletionOptions(rl, options.Manual)
+	chatOptions := routes.ChatCompletionOptions{
+		RateLimiter:    rl,
+		ManualApproval: options.Manual,
+	}
+
+	routes.ConfigureAdminStatus(chatOptions)
 
 	// Set Gin mode
 	if !options.Verbose {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	r := buildRouter(options.Port, options.APIKey)
+	r := buildRouter(options.Port, options.APIKey, chatOptions)
 
 	// Claude Code mode output
 	if options.ClaudeCode {
@@ -110,7 +116,7 @@ func RunServer(options StartOptions) error {
 	return r.Run(fmt.Sprintf(":%d", options.Port))
 }
 
-func buildRouter(port int, apiKey string) *gin.Engine {
+func buildRouter(port int, apiKey string, chatOptions routes.ChatCompletionOptions) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
 
@@ -183,7 +189,7 @@ func buildRouter(port int, apiKey string) *gin.Engine {
 
 	// API routes
 	api := r.Group("/", auth.middleware())
-	routes.SetupChatCompletionRoutes(api)
+	routes.SetupChatCompletionRoutes(api, chatOptions)
 	routes.SetupModelRoutes(api)
 	routes.SetupEmbeddingRoutes(api)
 	routes.SetupUsageRoutes(api)
@@ -191,7 +197,7 @@ func buildRouter(port int, apiKey string) *gin.Engine {
 
 	// v1 compatibility routes
 	v1 := r.Group("/v1", auth.middleware())
-	routes.SetupChatCompletionRoutes(v1)
+	routes.SetupChatCompletionRoutes(v1, chatOptions)
 	routes.SetupModelRoutes(v1)
 	routes.SetupEmbeddingRoutes(v1)
 	routes.SetupMessageRoutes(v1)
@@ -214,14 +220,15 @@ func buildRouter(port int, apiKey string) *gin.Engine {
 	return r
 }
 
-// generateRequestID creates a random request ID for correlation
+// generateRequestID creates a random request ID for correlation.
+// hex.EncodeToString is ~5x faster than fmt.Sprintf("%x", b) for byte slices.
 func generateRequestID() string {
 	b := make([]byte, 8)
 	if _, err := io.ReadFull(rand.Reader, b); err != nil {
 		// Fallback to timestamp-based ID if RNG fails (should never happen on a properly functioning OS)
 		return fmt.Sprintf("%x", time.Now().UnixNano())
 	}
-	return fmt.Sprintf("%x", b)
+	return hex.EncodeToString(b)
 }
 
 func setupLogging(verbose bool) {
@@ -245,6 +252,11 @@ func setupLogging(verbose bool) {
 }
 
 func registerDefaultProviders(reg *registry.ProviderRegistry, options StartOptions) error {
+	// Skip if providers are already registered in memory (e.g., by tests)
+	if len(reg.ListProviders()) > 0 {
+		return nil
+	}
+
 	// Try to load saved provider instances from the database
 	instanceStore := database.NewProviderInstanceStore()
 	instances, err := instanceStore.GetAll()

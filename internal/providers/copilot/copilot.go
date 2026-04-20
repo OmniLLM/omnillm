@@ -4,6 +4,7 @@ package copilot
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/sha1"
 	"encoding/hex"
@@ -30,8 +31,31 @@ import (
 
 // Shared HTTP clients: one for normal requests with timeout, one for streaming.
 var (
-	copilotHTTPClient    = &http.Client{Timeout: 120 * time.Second}
-	copilotStreamClient  = &http.Client{} // no timeout for streaming
+	copilotHTTPClient = &http.Client{
+		Timeout: 120 * time.Second,
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   20,
+			MaxConnsPerHost:       50,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		},
+	}
+	copilotStreamClient = &http.Client{
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   20,
+			MaxConnsPerHost:       50,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		},
+	}
 )
 
 type GitHubCopilotProvider struct {
@@ -589,13 +613,17 @@ func firstNonEmpty(values ...string) string {
 
 // Legacy interface methods
 func (p *GitHubCopilotProvider) CreateChatCompletions(payload map[string]interface{}) (map[string]interface{}, error) {
-	canonicalReq, err := ingestion.ParseOpenAIChatCompletions(payload)
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal payload: %w", err)
+	}
+	canonicalReq, err := ingestion.ParseOpenAIChatCompletions(raw)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse request: %w", err)
 	}
 
 	adapter := p.GetAdapter().(*CopilotAdapter)
-	response, err := adapter.Execute(canonicalReq)
+	response, err := adapter.Execute(context.Background(), canonicalReq)
 	if err != nil {
 		return nil, err
 	}
@@ -668,12 +696,12 @@ func (a *CopilotAdapter) GetProvider() types.Provider {
 	return a.provider
 }
 
-func (a *CopilotAdapter) Execute(request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+func (a *CopilotAdapter) Execute(ctx context.Context, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
 	if !a.forceChatCompletions(request) && a.shouldUseResponsesAPI(request.Model) {
-		return a.executeResponses(request)
+		return a.executeResponses(ctx, request)
 	}
 
-	response, err := a.executeOpenAI(request)
+	response, err := a.executeOpenAI(ctx, request)
 	if err == nil {
 		return response, nil
 	}
@@ -684,18 +712,18 @@ func (a *CopilotAdapter) Execute(request *cif.CanonicalRequest) (*cif.CanonicalR
 			Str("model", request.Model).
 			Str("provider", a.provider.GetInstanceID()).
 			Msg("Copilot model requires responses API, retrying request")
-		return a.executeResponses(request)
+		return a.executeResponses(ctx, request)
 	}
 
 	return nil, err
 }
 
-func (a *CopilotAdapter) ExecuteStream(request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
+func (a *CopilotAdapter) ExecuteStream(ctx context.Context, request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
 	if !a.forceChatCompletions(request) && a.shouldUseResponsesAPI(request.Model) {
-		return a.executeResponsesStream(request)
+		return a.executeResponsesStream(ctx, request)
 	}
 
-	eventCh, err := a.executeOpenAIStream(request)
+	eventCh, err := a.executeOpenAIStream(ctx, request)
 	if err == nil {
 		return eventCh, nil
 	}
@@ -706,7 +734,7 @@ func (a *CopilotAdapter) ExecuteStream(request *cif.CanonicalRequest) (<-chan ci
 			Str("model", request.Model).
 			Str("provider", a.provider.GetInstanceID()).
 			Msg("Copilot model requires responses API for streaming, retrying request")
-		return a.executeResponsesStream(request)
+		return a.executeResponsesStream(ctx, request)
 	}
 
 	return nil, err
@@ -745,11 +773,11 @@ func (a *CopilotAdapter) isUnsupportedChatCompletionsModel(apiErr *copilotAPIErr
 	return strings.Contains(strings.ToLower(string(apiErr.body)), "unsupported_api_for_model")
 }
 
-func (a *CopilotAdapter) executeOpenAI(request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
-	return a.executeOpenAIWithRetry(request, true)
+func (a *CopilotAdapter) executeOpenAI(ctx context.Context, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+	return a.executeOpenAIWithRetry(ctx, request, true)
 }
 
-func (a *CopilotAdapter) executeOpenAIWithRetry(request *cif.CanonicalRequest, allowAuthRetry bool) (*cif.CanonicalResponse, error) {
+func (a *CopilotAdapter) executeOpenAIWithRetry(ctx context.Context, request *cif.CanonicalRequest, allowAuthRetry bool) (*cif.CanonicalResponse, error) {
 	toolNameMapper := newCopilotToolNameMapper(request)
 	openaiPayload := a.convertCIFToOpenAI(request, toolNameMapper)
 	openaiPayload["stream"] = false
@@ -761,7 +789,7 @@ func (a *CopilotAdapter) executeOpenAIWithRetry(request *cif.CanonicalRequest, a
 
 	url := fmt.Sprintf("%s/chat/completions", a.provider.GetBaseURL())
 	log.Trace().Str("url", url).RawJSON("payload", reqBody).Msg("outbound proxy request payload")
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(reqBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -780,7 +808,7 @@ func (a *CopilotAdapter) executeOpenAIWithRetry(request *cif.CanonicalRequest, a
 		body, _ := io.ReadAll(resp.Body)
 		apiErr := &copilotAPIError{statusCode: resp.StatusCode, body: body}
 		if allowAuthRetry && a.shouldRetryAfterAuthError(request, apiErr) && a.refreshTokenForRetry("chat.completions") {
-			return a.executeOpenAIWithRetry(request, false)
+			return a.executeOpenAIWithRetry(ctx, request, false)
 		}
 		return nil, apiErr
 	}
@@ -793,11 +821,11 @@ func (a *CopilotAdapter) executeOpenAIWithRetry(request *cif.CanonicalRequest, a
 	return a.convertOpenAIToCIF(openaiResp, toolNameMapper), nil
 }
 
-func (a *CopilotAdapter) executeOpenAIStream(request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
-	return a.executeOpenAIStreamWithRetry(request, true)
+func (a *CopilotAdapter) executeOpenAIStream(ctx context.Context, request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
+	return a.executeOpenAIStreamWithRetry(ctx, request, true)
 }
 
-func (a *CopilotAdapter) executeOpenAIStreamWithRetry(request *cif.CanonicalRequest, allowAuthRetry bool) (<-chan cif.CIFStreamEvent, error) {
+func (a *CopilotAdapter) executeOpenAIStreamWithRetry(ctx context.Context, request *cif.CanonicalRequest, allowAuthRetry bool) (<-chan cif.CIFStreamEvent, error) {
 	toolNameMapper := newCopilotToolNameMapper(request)
 	openaiPayload := a.convertCIFToOpenAI(request, toolNameMapper)
 	openaiPayload["stream"] = true
@@ -809,7 +837,7 @@ func (a *CopilotAdapter) executeOpenAIStreamWithRetry(request *cif.CanonicalRequ
 
 	url := fmt.Sprintf("%s/chat/completions", a.provider.GetBaseURL())
 	log.Trace().Str("url", url).RawJSON("payload", reqBody).Msg("outbound proxy request payload")
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(reqBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -830,7 +858,7 @@ func (a *CopilotAdapter) executeOpenAIStreamWithRetry(request *cif.CanonicalRequ
 		resp.Body.Close()
 		apiErr := &copilotAPIError{statusCode: resp.StatusCode, body: body}
 		if allowAuthRetry && a.shouldRetryAfterAuthError(request, apiErr) && a.refreshTokenForRetry("chat.completions-stream") {
-			return a.executeOpenAIStreamWithRetry(request, false)
+			return a.executeOpenAIStreamWithRetry(ctx, request, false)
 		}
 		return nil, apiErr
 	}
@@ -840,11 +868,11 @@ func (a *CopilotAdapter) executeOpenAIStreamWithRetry(request *cif.CanonicalRequ
 	return eventCh, nil
 }
 
-func (a *CopilotAdapter) executeResponses(request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
-	return a.executeResponsesWithRetry(request, true)
+func (a *CopilotAdapter) executeResponses(ctx context.Context, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+	return a.executeResponsesWithRetry(ctx, request, true)
 }
 
-func (a *CopilotAdapter) executeResponsesWithRetry(request *cif.CanonicalRequest, allowAuthRetry bool) (*cif.CanonicalResponse, error) {
+func (a *CopilotAdapter) executeResponsesWithRetry(ctx context.Context, request *cif.CanonicalRequest, allowAuthRetry bool) (*cif.CanonicalResponse, error) {
 	toolNameMapper := newCopilotToolNameMapper(request)
 	responsesPayload := a.convertCIFToResponses(request, toolNameMapper)
 	responsesPayload["stream"] = false
@@ -856,7 +884,7 @@ func (a *CopilotAdapter) executeResponsesWithRetry(request *cif.CanonicalRequest
 
 	url := fmt.Sprintf("%s/v1/responses", a.provider.GetBaseURL())
 	log.Trace().Str("url", url).RawJSON("payload", reqBody).Msg("outbound proxy request payload")
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(reqBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create responses request: %w", err)
 	}
@@ -875,7 +903,7 @@ func (a *CopilotAdapter) executeResponsesWithRetry(request *cif.CanonicalRequest
 		body, _ := io.ReadAll(resp.Body)
 		apiErr := &copilotAPIError{statusCode: resp.StatusCode, body: body}
 		if allowAuthRetry && a.shouldRetryAfterAuthError(request, apiErr) && a.refreshTokenForRetry("responses") {
-			return a.executeResponsesWithRetry(request, false)
+			return a.executeResponsesWithRetry(ctx, request, false)
 		}
 		return nil, apiErr
 	}
@@ -888,11 +916,11 @@ func (a *CopilotAdapter) executeResponsesWithRetry(request *cif.CanonicalRequest
 	return a.convertResponsesToCIF(&responsesResp, toolNameMapper), nil
 }
 
-func (a *CopilotAdapter) executeResponsesStream(request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
-	return a.executeResponsesStreamWithRetry(request, true)
+func (a *CopilotAdapter) executeResponsesStream(ctx context.Context, request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
+	return a.executeResponsesStreamWithRetry(ctx, request, true)
 }
 
-func (a *CopilotAdapter) executeResponsesStreamWithRetry(request *cif.CanonicalRequest, allowAuthRetry bool) (<-chan cif.CIFStreamEvent, error) {
+func (a *CopilotAdapter) executeResponsesStreamWithRetry(ctx context.Context, request *cif.CanonicalRequest, allowAuthRetry bool) (<-chan cif.CIFStreamEvent, error) {
 	toolNameMapper := newCopilotToolNameMapper(request)
 	responsesPayload := a.convertCIFToResponses(request, toolNameMapper)
 	responsesPayload["stream"] = true
@@ -904,7 +932,7 @@ func (a *CopilotAdapter) executeResponsesStreamWithRetry(request *cif.CanonicalR
 
 	url := fmt.Sprintf("%s/v1/responses", a.provider.GetBaseURL())
 	log.Trace().Str("url", url).RawJSON("payload", reqBody).Msg("outbound proxy request payload")
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(reqBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create responses request: %w", err)
 	}
@@ -925,7 +953,7 @@ func (a *CopilotAdapter) executeResponsesStreamWithRetry(request *cif.CanonicalR
 		resp.Body.Close()
 		apiErr := &copilotAPIError{statusCode: resp.StatusCode, body: body}
 		if allowAuthRetry && a.shouldRetryAfterAuthError(request, apiErr) && a.refreshTokenForRetry("responses-stream") {
-			return a.executeResponsesStreamWithRetry(request, false)
+			return a.executeResponsesStreamWithRetry(ctx, request, false)
 		}
 		return nil, apiErr
 	}
@@ -1024,8 +1052,7 @@ func (a *CopilotAdapter) parseOpenAISSE(body io.ReadCloser, eventCh chan cif.CIF
 	defer close(eventCh)
 
 	scanner := bufio.NewScanner(body)
-	scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
-
+	scanner.Buffer(make([]byte, 0, 4*1024), 1024*1024)
 	var streamStartSent bool
 	var contentBlockIndex int
 
@@ -1169,8 +1196,7 @@ func (a *CopilotAdapter) parseResponsesSSE(body io.ReadCloser, eventCh chan cif.
 	defer close(eventCh)
 
 	scanner := bufio.NewScanner(body)
-	scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
-
+	scanner.Buffer(make([]byte, 0, 4*1024), 1024*1024)
 	state := &copilotResponsesStreamState{
 		textBlockIndices:  make(map[string]int),
 		textBlockHasDelta: make(map[string]bool),

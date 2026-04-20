@@ -2,7 +2,9 @@
 package vmodelrouting
 
 import (
-	"math/rand"
+	// math/rand/v2 (Go 1.22+) uses a lock-free per-goroutine PCG source,
+	// eliminating the global mutex contention of math/rand under concurrent load.
+	"math/rand/v2"
 	"sync"
 
 	"omnillm/internal/database"
@@ -49,7 +51,7 @@ func OrderUpstreams(
 		return append(ordered[idx:], ordered[:idx]...)
 
 	case database.LbStrategyRandom:
-		idx := rand.Intn(len(ordered))
+		idx := rand.IntN(len(ordered))
 		return moveToFront(ordered, idx)
 
 	case database.LbStrategyPriority:
@@ -64,7 +66,7 @@ func OrderUpstreams(
 			}
 			totalWeight += w
 		}
-		roll := rand.Intn(totalWeight)
+		roll := rand.IntN(totalWeight)
 		for i, u := range ordered {
 			w := u.Weight
 			if w < 1 {

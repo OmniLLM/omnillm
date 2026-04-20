@@ -20,7 +20,7 @@ func ParseAntigravitySSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 	defer close(eventCh)
 
 	scanner := bufio.NewScanner(body)
-	scanner.Buffer(make([]byte, 0, 4*1024*1024), 4*1024*1024)
+	scanner.Buffer(make([]byte, 0, 4*1024), 4*1024*1024)
 
 	var streamStartSent bool
 	var textIndex int

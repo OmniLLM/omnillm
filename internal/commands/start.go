@@ -2,7 +2,6 @@ package commands
 
 import (
 	"fmt"
-	"strconv"
 
 	"github.com/spf13/cobra"
 	"omnillm/internal/server"
@@ -13,34 +12,71 @@ var StartCmd = &cobra.Command{
 	Short: "Start the LLM proxy server",
 	Long:  "Start the LLM proxy server",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		portStr, _ := cmd.Flags().GetString("port")
-		port, err := strconv.Atoi(portStr)
+		port, err := cmd.Flags().GetInt("port")
 		if err != nil {
-			return fmt.Errorf("invalid port: %v", err)
+			return fmt.Errorf("get port flag: %w", err)
 		}
 
-		verbose, _ := cmd.Flags().GetBool("verbose")
-		accountType, _ := cmd.Flags().GetString("account-type")
-		manual, _ := cmd.Flags().GetBool("manual")
-		rateLimitStr, _ := cmd.Flags().GetString("rate-limit")
-		wait, _ := cmd.Flags().GetBool("wait")
-		githubToken, _ := cmd.Flags().GetString("github-token")
-		claudeCode, _ := cmd.Flags().GetBool("claude-code")
-		console, _ := cmd.Flags().GetBool("console")
-		showToken, _ := cmd.Flags().GetBool("show-token")
-		proxyEnv, _ := cmd.Flags().GetBool("proxy-env")
-		apiKey, _ := cmd.Flags().GetString("api-key")
-provider, _ := cmd.Flags().GetString("provider")
-	allowLocalEndpoints, _ := cmd.Flags().GetBool("allow-local-endpoints")
-	enableConfigEdit, _ := cmd.Flags().GetBool("enable-config-edit")
+		verbose, err := cmd.Flags().GetBool("verbose")
+		if err != nil {
+			return fmt.Errorf("get verbose flag: %w", err)
+		}
+		accountType, err := cmd.Flags().GetString("account-type")
+		if err != nil {
+			return fmt.Errorf("get account-type flag: %w", err)
+		}
+		manual, err := cmd.Flags().GetBool("manual")
+		if err != nil {
+			return fmt.Errorf("get manual flag: %w", err)
+		}
+		rateLimitSeconds, err := cmd.Flags().GetInt("rate-limit")
+		if err != nil {
+			return fmt.Errorf("get rate-limit flag: %w", err)
+		}
+		wait, err := cmd.Flags().GetBool("wait")
+		if err != nil {
+			return fmt.Errorf("get wait flag: %w", err)
+		}
+		githubToken, err := cmd.Flags().GetString("github-token")
+		if err != nil {
+			return fmt.Errorf("get github-token flag: %w", err)
+		}
+		claudeCode, err := cmd.Flags().GetBool("claude-code")
+		if err != nil {
+			return fmt.Errorf("get claude-code flag: %w", err)
+		}
+		console, err := cmd.Flags().GetBool("console")
+		if err != nil {
+			return fmt.Errorf("get console flag: %w", err)
+		}
+		showToken, err := cmd.Flags().GetBool("show-token")
+		if err != nil {
+			return fmt.Errorf("get show-token flag: %w", err)
+		}
+		proxyEnv, err := cmd.Flags().GetBool("proxy-env")
+		if err != nil {
+			return fmt.Errorf("get proxy-env flag: %w", err)
+		}
+		apiKey, err := cmd.Flags().GetString("api-key")
+		if err != nil {
+			return fmt.Errorf("get api-key flag: %w", err)
+		}
+		provider, err := cmd.Flags().GetString("provider")
+		if err != nil {
+			return fmt.Errorf("get provider flag: %w", err)
+		}
+		allowLocalEndpoints, err := cmd.Flags().GetBool("allow-local-endpoints")
+		if err != nil {
+			return fmt.Errorf("get allow-local-endpoints flag: %w", err)
+		}
+		enableConfigEdit, err := cmd.Flags().GetBool("enable-config-edit")
+		if err != nil {
+			return fmt.Errorf("get enable-config-edit flag: %w", err)
+		}
 
 		var rateLimit *int
-		if rateLimitStr != "" {
-			rl, err := strconv.Atoi(rateLimitStr)
-			if err != nil {
-				return fmt.Errorf("invalid rate-limit: %v", err)
-			}
-			rateLimit = &rl
+		if cmd.Flags().Changed("rate-limit") {
+			rateLimit = &rateLimitSeconds
 		}
 
 		options := server.StartOptions{
@@ -66,11 +102,11 @@ provider, _ := cmd.Flags().GetString("provider")
 }
 
 func init() {
-	StartCmd.Flags().StringP("port", "p", "5005", "Port to listen on")
+	StartCmd.Flags().IntP("port", "p", 5005, "Port to listen on")
 	StartCmd.Flags().BoolP("verbose", "v", false, "Enable verbose logging")
 	StartCmd.Flags().StringP("account-type", "a", "individual", "Account type to use (individual, business, enterprise)")
 	StartCmd.Flags().Bool("manual", false, "Enable manual request approval")
-	StartCmd.Flags().StringP("rate-limit", "r", "", "Rate limit in seconds between requests")
+	StartCmd.Flags().IntP("rate-limit", "r", 0, "Rate limit in seconds between requests")
 	StartCmd.Flags().BoolP("wait", "w", false, "Wait instead of error when rate limit is hit")
 	StartCmd.Flags().StringP("github-token", "g", "", "Provide GitHub token directly")
 	StartCmd.Flags().BoolP("claude-code", "c", false, "Generate a command to launch Claude Code with proxy config")

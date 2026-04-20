@@ -84,3 +84,37 @@ func TestCheckAndWait_AllowsCallAfterInterval(t *testing.T) {
 		t.Fatalf("call after interval should succeed: %v", err)
 	}
 }
+
+func TestCheckAndWait_ConcurrentWaitersSerialize(t *testing.T) {
+	rl := NewRateLimiter(1, true)
+	if err := rl.CheckAndWait(); err != nil {
+		t.Fatalf("first call should succeed: %v", err)
+	}
+
+	start := time.Now()
+	results := make(chan time.Duration, 2)
+
+	for range 2 {
+		go func() {
+			if err := rl.CheckAndWait(); err != nil {
+				t.Errorf("concurrent waiter should not error: %v", err)
+				results <- 0
+				return
+			}
+			results <- time.Since(start)
+		}()
+	}
+
+	first := <-results
+	second := <-results
+	if first > second {
+		first, second = second, first
+	}
+
+	if first < 900*time.Millisecond {
+		t.Fatalf("expected first waiter to wait about 1s, got %v", first)
+	}
+	if second < 1900*time.Millisecond {
+		t.Fatalf("expected second waiter to wait about 2s, got %v", second)
+	}
+}

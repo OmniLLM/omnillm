@@ -1,0 +1,115 @@
+package openaicompat
+import (
+	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"omnillm/internal/cif"
+)
+
+func TestBuildChatRequest_AppliesDefaultsToolsAndSystemPrompt(t *testing.T) {
+	defaultTemp := 0.3
+	defaultTopP := 0.9
+	maxTokens := 64
+	request := &cif.CanonicalRequest{
+		Model:        "gpt-4o",
+		SystemPrompt: stringPtr("Be terse."),
+		Messages: []cif.CIFMessage{
+			cif.CIFUserMessage{Role: "user", Content: []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: "Hello"}}},
+		},
+		MaxTokens: &maxTokens,
+		Tools: []cif.CIFTool{{
+			Name:             "get_weather",
+			ParametersSchema: map[string]interface{}{"type": "object"},
+		}},
+		ToolChoice: "auto",
+	}
+
+	out, err := BuildChatRequest("gpt-4o", request, true, Config{
+		DefaultTemperature:   &defaultTemp,
+		DefaultTopP:          &defaultTopP,
+		IncludeUsageInStream: true,
+		Extras:               map[string]interface{}{"enable_thinking": true},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out.Model != "gpt-4o" || !out.Stream {
+		t.Fatalf("unexpected request: %#v", out)
+	}
+	if out.Temperature == nil || *out.Temperature != defaultTemp {
+		t.Fatalf("unexpected temperature: %#v", out.Temperature)
+	}
+	if out.TopP == nil || *out.TopP != defaultTopP {
+		t.Fatalf("unexpected top_p: %#v", out.TopP)
+	}
+	if out.MaxTokens == nil || *out.MaxTokens != maxTokens {
+		t.Fatalf("unexpected max tokens: %#v", out.MaxTokens)
+	}
+	if len(out.Messages) != 2 || out.Messages[0].Role != "system" {
+		t.Fatalf("unexpected messages: %#v", out.Messages)
+	}
+	if len(out.Tools) != 1 || out.Tools[0].Function.Name != "get_weather" {
+		t.Fatalf("unexpected tools: %#v", out.Tools)
+	}
+	if out.StreamOptions == nil || !out.StreamOptions.IncludeUsage {
+		t.Fatalf("unexpected stream options: %#v", out.StreamOptions)
+	}
+	if out.Extras["enable_thinking"] != true {
+		t.Fatalf("unexpected extras: %#v", out.Extras)
+	}
+}
+
+func TestMarshal_MergesExtras(t *testing.T) {
+	body, err := Marshal(&ChatRequest{
+		Model:    "gpt-4o",
+		Messages: []Message{{Role: "user", Content: "Hello"}},
+		Extras:   map[string]interface{}{"enable_thinking": true},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	text := string(body)
+	if !strings.Contains(text, `"enable_thinking":true`) {
+		t.Fatalf("expected extras in marshaled body: %s", text)
+	}
+}
+
+func TestExecute_ParsesChatResponse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"chat_123","model":"gpt-4o","choices":[{"message":{"content":"pong"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1}}`)
+	}))
+	defer srv.Close()
+
+	resp, err := Execute(context.Background(), srv.URL, map[string]string{"Authorization": "Bearer test"}, &ChatRequest{
+		Model:    "gpt-4o",
+		Messages: []Message{{Role: "user", Content: "ping"}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.ID != "chat_123" || resp.Model != "gpt-4o" {
+		t.Fatalf("unexpected response identity: %#v", resp)
+	}
+	if len(resp.Content) != 1 {
+		t.Fatalf("unexpected content: %#v", resp.Content)
+	}
+}
+
+func TestExecute_ReturnsAPIErrorDetails(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "bad upstream", http.StatusBadGateway)
+	}))
+	defer srv.Close()
+
+	_, err := Execute(context.Background(), srv.URL, nil, &ChatRequest{Model: "gpt-4o"})
+	if err == nil || !strings.Contains(err.Error(), "502") {
+		t.Fatalf("expected wrapped API error, got %v", err)
+	}
+}
+
+func stringPtr(s string) *string { return &s }

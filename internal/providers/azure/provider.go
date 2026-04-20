@@ -1,30 +1,14 @@
-// Package azure provides Azure OpenAI provider implementation.
 package azure
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
-	"time"
 
-	"omnillm/internal/cif"
 	"omnillm/internal/database"
-	"omnillm/internal/providers/shared"
 	"omnillm/internal/providers/types"
 
 	"github.com/rs/zerolog/log"
 )
-
-// Shared HTTP clients: one for normal requests with timeout, one for streaming.
-var (
-	azureHTTPClient   = &http.Client{Timeout: 120 * time.Second}
-	azureStreamClient = &http.Client{} // no timeout for streaming
-)
-
-// ─── Auth ─────────────────────────────────────────────────────────────────────
 
 // SetupAuth handles API-key authentication for Azure OpenAI.
 // Returns the token, endpoint, and config; or an error.
@@ -54,8 +38,6 @@ func SetupAuth(instanceID string, options *types.AuthOptions) (token, endpoint s
 	return options.APIKey, resolvedEndpoint, cfg, nil
 }
 
-// ─── URL helpers ──────────────────────────────────────────────────────────────
-
 // ChatURL builds the Azure OpenAI chat completions URL for a deployment.
 func ChatURL(endpoint, deployment, apiVersion string) (string, error) {
 	if endpoint == "" {
@@ -76,8 +58,6 @@ func ResponsesURL(endpoint string) (string, error) {
 	return endpoint + "/openai/v1/responses", nil
 }
 
-// ─── Headers ──────────────────────────────────────────────────────────────────
-
 // Headers returns the HTTP headers for Azure OpenAI API requests.
 func Headers(apiKey string) map[string]string {
 	return map[string]string{
@@ -85,8 +65,6 @@ func Headers(apiKey string) map[string]string {
 		"Content-Type": "application/json",
 	}
 }
-
-// ─── Models ───────────────────────────────────────────────────────────────────
 
 // DefaultModels is the built-in model catalog for Azure OpenAI.
 var DefaultModels = []types.Model{
@@ -143,8 +121,6 @@ func stringSliceFromConfig(config map[string]interface{}, key string) []string {
 	}
 }
 
-// ─── Model detection ──────────────────────────────────────────────────────────
-
 // IsResponsesAPIModel returns true if the model should use the Responses API
 // rather than the chat completions endpoint.
 func IsResponsesAPIModel(model string) bool {
@@ -162,160 +138,4 @@ func IsResponsesAPIModel(model string) bool {
 		}
 	}
 	return false
-}
-
-// ─── OpenAI payload builder ───────────────────────────────────────────────────
-
-// BuildOpenAIPayload builds the Azure OpenAI chat completions request payload.
-// The model field is omitted (deployment is in the URL for Azure).
-func BuildOpenAIPayload(model string, messages []map[string]interface{}, request *cif.CanonicalRequest) map[string]interface{} {
-	payload := map[string]interface{}{
-		"messages": messages,
-	}
-
-	if request.Temperature != nil {
-		payload["temperature"] = *request.Temperature
-	}
-	if request.TopP != nil {
-		payload["top_p"] = *request.TopP
-	}
-	if request.MaxTokens != nil {
-		modelLower := strings.ToLower(model)
-		if strings.Contains(modelLower, "gpt-5.3") ||
-			strings.Contains(modelLower, "gpt-5.4") ||
-			strings.Contains(modelLower, "gpt-6") {
-			payload["max_completion_tokens"] = *request.MaxTokens
-		} else {
-			payload["max_tokens"] = *request.MaxTokens
-		}
-	}
-	if len(request.Stop) > 0 {
-		payload["stop"] = request.Stop
-	}
-	if request.UserID != nil {
-		payload["user"] = *request.UserID
-	}
-
-	if len(request.Tools) > 0 {
-		tools := make([]map[string]interface{}, 0, len(request.Tools))
-		for _, tool := range request.Tools {
-			t := map[string]interface{}{
-				"type": "function",
-				"function": map[string]interface{}{
-					"name":       tool.Name,
-					"parameters": shared.NormalizeToolParameters(tool.ParametersSchema),
-				},
-			}
-			if tool.Description != nil {
-				t["function"].(map[string]interface{})["description"] = *tool.Description
-			}
-			tools = append(tools, t)
-		}
-		payload["tools"] = tools
-	}
-
-	if request.ToolChoice != nil {
-		if toolChoice := shared.ConvertCanonicalToolChoiceToOpenAI(request.ToolChoice); toolChoice != nil {
-			payload["tool_choice"] = toolChoice
-		}
-	}
-
-	// Azure: model is in the URL (deployment), not the body
-	// (model field intentionally omitted)
-
-	return payload
-}
-
-// ─── Execute non-streaming ────────────────────────────────────────────────────
-
-// ExecuteOpenAI executes a non-streaming OpenAI-compatible chat completion for Azure.
-func ExecuteOpenAI(url string, headers map[string]string, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
-	messages := shared.CIFMessagesToOpenAI(request.Messages)
-	if request.SystemPrompt != nil && strings.TrimSpace(*request.SystemPrompt) != "" {
-		messages = append([]map[string]interface{}{{
-			"role":    "system",
-			"content": *request.SystemPrompt,
-		}}, messages...)
-	}
-
-	payload := BuildOpenAIPayload(request.Model, messages, request)
-	payload["stream"] = false
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-
-	client := azureHTTPClient
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(b))
-	}
-
-	var openaiResp map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&openaiResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return shared.OpenAIRespToCIF(openaiResp), nil
-}
-
-// ─── Execute streaming ────────────────────────────────────────────────────────
-
-// StreamOpenAI executes a streaming OpenAI-compatible chat completion for Azure.
-func StreamOpenAI(url string, headers map[string]string, request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
-	messages := shared.CIFMessagesToOpenAI(request.Messages)
-	if request.SystemPrompt != nil && strings.TrimSpace(*request.SystemPrompt) != "" {
-		messages = append([]map[string]interface{}{{
-			"role":    "system",
-			"content": *request.SystemPrompt,
-		}}, messages...)
-	}
-
-	payload := BuildOpenAIPayload(request.Model, messages, request)
-	payload["stream"] = true
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-	req.Header.Set("Accept", "text/event-stream")
-
-	client := azureStreamClient
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("streaming request failed: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		return nil, fmt.Errorf("streaming API request failed with status %d: %s", resp.StatusCode, string(b))
-	}
-
-	eventCh := make(chan cif.CIFStreamEvent, 64)
-	go shared.ParseOpenAISSE(resp.Body, eventCh)
-	return eventCh, nil
 }

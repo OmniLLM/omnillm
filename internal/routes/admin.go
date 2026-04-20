@@ -2,6 +2,8 @@ package routes
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,6 +19,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"omnillm/internal/database"
+	"omnillm/internal/lib/ratelimit"
 	alibabapkg "omnillm/internal/providers/alibaba"
 	"omnillm/internal/providers/copilot"
 	"omnillm/internal/providers/generic"
@@ -38,11 +41,42 @@ var (
 	logSubscribers   = make(map[*logSubscriber]struct{})
 	currentLogLevel  atomic.Int32 // stores zerolog.Level (int32)
 	serverStartTime  = time.Now()
+	adminStatus      = newAdminStatus()
 
 	// Active OAuth device code flow state
 	activeAuthFlowMu sync.RWMutex
 	activeAuthFlow   *authFlowState
 )
+
+type adminStatusState struct {
+	mu             sync.RWMutex
+	rateLimiter    *ratelimit.RateLimiter
+	manualApproval bool
+}
+
+func newAdminStatus() *adminStatusState {
+	return &adminStatusState{
+		rateLimiter: ratelimit.NewRateLimiter(0, false),
+	}
+}
+
+func ConfigureAdminStatus(options ChatCompletionOptions) {
+	adminStatus.mu.Lock()
+	defer adminStatus.mu.Unlock()
+
+	if options.RateLimiter != nil {
+		adminStatus.rateLimiter = options.RateLimiter
+	} else {
+		adminStatus.rateLimiter = ratelimit.NewRateLimiter(0, false)
+	}
+	adminStatus.manualApproval = options.ManualApproval
+}
+
+func getAdminStatusSnapshot() (bool, *ratelimit.RateLimiter) {
+	adminStatus.mu.RLock()
+	defer adminStatus.mu.RUnlock()
+	return adminStatus.manualApproval, adminStatus.rateLimiter
+}
 
 type authFlowState struct {
 	ProviderID     string             `json:"providerId"`
@@ -657,8 +691,8 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 			return
 		}
 
-		// API-key path — build provider with the canonical ID from the start to
-		// avoid writing any ephemeral "alibaba-new" records to the database.
+		// API-key path — build provider with a canonical ID derived from the
+		// API key fields before persisting it.
 		suffix := req.APIKey
 		if len(suffix) > 6 {
 			suffix = suffix[len(suffix)-6:]
@@ -1127,8 +1161,6 @@ func handleProviderAuth(c *gin.Context) {
 	}
 
 	cop, isCopilot := provider.(*copilot.GitHubCopilotProvider)
-	_, isGeneric := provider.(*generic.GenericProvider)
-	_ = isGeneric
 
 	// Alibaba: API-key only — OAuth is not supported.
 	if aliProv, ok := provider.(*alibabapkg.Provider); ok {
@@ -1571,6 +1603,8 @@ func handleGetStatus(c *gin.Context) {
 		authFlowResp = flowMap
 	}
 
+	manualApproval, rateLimiter := getAdminStatusSnapshot()
+
 	c.JSON(http.StatusOK, gin.H{
 		"activeProvider":   activeProvider,
 		"modelCount":       modelCount,
@@ -1786,6 +1820,14 @@ func handleGetChatSessions(c *gin.Context) {
 	})
 }
 
+func generateSessionID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("session-%d", time.Now().UnixNano())
+	}
+	return fmt.Sprintf("session-%s", hex.EncodeToString(b))
+}
+
 func handleCreateChatSession(c *gin.Context) {
 	var req struct {
 		SessionID string `json:"session_id"`
@@ -1804,7 +1846,7 @@ func handleCreateChatSession(c *gin.Context) {
 
 	sessionID := req.SessionID
 	if sessionID == "" {
-		sessionID = fmt.Sprintf("session-%d", time.Now().UnixNano())
+		sessionID = generateSessionID()
 	}
 
 	chatStore := database.NewChatStore()
@@ -1939,7 +1981,6 @@ func handleLogsStream(c *gin.Context) {
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
-	c.Header("Access-Control-Allow-Origin", "*")
 	c.Header("X-Accel-Buffering", "no")
 
 	sub := &logSubscriber{

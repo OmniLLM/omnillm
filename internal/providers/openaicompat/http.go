@@ -3,6 +3,7 @@ package openaicompat
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,12 +13,31 @@ import (
 	"omnillm/internal/cif"
 	"omnillm/internal/providers/shared"
 
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
 
+const traceBodyLimit = 1024
+
+func cappedBody(b []byte) []byte {
+	if len(b) <= traceBodyLimit {
+		return b
+	}
+	return append(b[:traceBodyLimit], []byte("...(truncated)")...)
+}
+
 var (
-	httpClient   = &http.Client{Timeout: 120 * time.Second}
-	streamClient = &http.Client{}
+	httpClient = &http.Client{
+		Timeout: 120 * time.Second,
+		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+		},
+	}
+	streamClient = &http.Client{
+		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+		},
+	}
 )
 
 // APIError preserves upstream HTTP failures so adapters can decide whether to
@@ -34,8 +54,8 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("openaicompat: upstream returned %d: %s", e.StatusCode, string(e.Body))
 }
 
-func newPOSTRequest(url string, headers map[string]string, body []byte, stream bool) (*http.Request, error) {
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
+func newPOSTRequest(ctx context.Context, url string, headers map[string]string, body []byte, stream bool) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(body))
 	if err != nil {
 		return nil, err
 	}
@@ -72,16 +92,18 @@ func startSSEStream(body io.ReadCloser, parser func(io.ReadCloser, chan cif.CIFS
 }
 
 // Execute performs a non-streaming POST to url and returns a CIF response.
-func Execute(url string, headers map[string]string, cr *ChatRequest) (*cif.CanonicalResponse, error) {
+func Execute(ctx context.Context, url string, headers map[string]string, cr *ChatRequest) (*cif.CanonicalResponse, error) {
 	cr.Stream = false
 	body, err := Marshal(cr)
 	if err != nil {
 		return nil, fmt.Errorf("openaicompat: marshal request: %w", err)
 	}
 
-	log.Trace().Str("url", url).RawJSON("payload", body).Msg("outbound openaicompat request")
+	if log.Logger.GetLevel() <= zerolog.TraceLevel {
+		log.Trace().Str("url", url).RawJSON("payload", cappedBody(body)).Msg("outbound openaicompat request")
+	}
 
-	req, err := newPOSTRequest(url, headers, body, false)
+	req, err := newPOSTRequest(ctx, url, headers, body, false)
 	if err != nil {
 		return nil, fmt.Errorf("openaicompat: create request: %w", err)
 	}
@@ -100,16 +122,18 @@ func Execute(url string, headers map[string]string, cr *ChatRequest) (*cif.Canon
 }
 
 // Stream performs a streaming POST to url and returns a CIF event channel.
-func Stream(url string, headers map[string]string, cr *ChatRequest) (<-chan cif.CIFStreamEvent, error) {
+func Stream(ctx context.Context, url string, headers map[string]string, cr *ChatRequest) (<-chan cif.CIFStreamEvent, error) {
 	cr.Stream = true
 	body, err := Marshal(cr)
 	if err != nil {
 		return nil, fmt.Errorf("openaicompat: marshal request: %w", err)
 	}
 
-	log.Trace().Str("url", url).RawJSON("payload", body).Msg("outbound openaicompat stream request")
+	if log.Logger.GetLevel() <= zerolog.TraceLevel {
+		log.Trace().Str("url", url).RawJSON("payload", cappedBody(body)).Msg("outbound openaicompat stream request")
+	}
 
-	req, err := newPOSTRequest(url, headers, body, true)
+	req, err := newPOSTRequest(ctx, url, headers, body, true)
 	if err != nil {
 		return nil, fmt.Errorf("openaicompat: create stream request: %w", err)
 	}
@@ -123,8 +147,8 @@ func Stream(url string, headers map[string]string, cr *ChatRequest) (<-chan cif.
 }
 
 // CollectStream is a convenience wrapper: runs Stream and assembles CIF response.
-func CollectStream(url string, headers map[string]string, cr *ChatRequest) (*cif.CanonicalResponse, error) {
-	ch, err := Stream(url, headers, cr)
+func CollectStream(ctx context.Context, url string, headers map[string]string, cr *ChatRequest) (*cif.CanonicalResponse, error) {
+	ch, err := Stream(ctx, url, headers, cr)
 	if err != nil {
 		return nil, err
 	}

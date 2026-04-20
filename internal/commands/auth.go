@@ -97,9 +97,15 @@ var AuthCmd = &cobra.Command{
 		// Register provider in registry
 		providerRegistry := registry.GetProviderRegistry()
 		copilotProvider := copilot.NewGitHubCopilotProvider(instanceID)
-		copilotProvider.SetupAuth(&types.AuthOptions{GithubToken: copilotToken.Token})
-		providerRegistry.Register(copilotProvider, true)
-		providerRegistry.SetActive(instanceID)
+		if err := copilotProvider.SetupAuth(&types.AuthOptions{GithubToken: copilotToken.Token}); err != nil {
+			return fmt.Errorf("failed to configure provider auth: %w", err)
+		}
+		if err := providerRegistry.Register(copilotProvider, true); err != nil {
+			return fmt.Errorf("failed to register provider: %w", err)
+		}
+		if _, err := providerRegistry.SetActive(instanceID); err != nil {
+			return fmt.Errorf("failed to activate provider: %w", err)
+		}
 
 		fmt.Println()
 		fmt.Printf("Provider '%s' is ready. Start the server with:\n", instanceID)

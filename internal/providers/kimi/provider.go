@@ -1,6 +1,3 @@
-// Package kimi provides Kimi provider implementation.
-// This package contains auth, header, model, and adapter logic specific to Kimi.
-// The OAuth 2.0 device-code flow is implemented in auth.go (sibling file).
 package kimi
 
 import (
@@ -65,7 +62,6 @@ func IsExpiringSoon(td *TokenData) bool {
 }
 
 // SetupAPIKeyAuth handles the api-key auth method for Kimi.
-// It saves the token and config to the database and updates the in-memory fields.
 func SetupAPIKeyAuth(instanceID string, options *types.AuthOptions) (token, baseURL, name string, config map[string]interface{}, err error) {
 	if options.APIKey == "" {
 		return "", "", "", nil, fmt.Errorf("kimi: API key is required")
@@ -106,7 +102,6 @@ func SetupAPIKeyAuth(instanceID string, options *types.AuthOptions) (token, base
 }
 
 // LoadTokenFromDB reads the persisted Kimi token from the database.
-// Returns the token string, base URL, config, and any error.
 func LoadTokenFromDB(instanceID string) (token, baseURL string, config map[string]interface{}, err error) {
 	tokenStore := database.NewTokenStore()
 	record, err := tokenStore.Get(instanceID)
@@ -132,8 +127,6 @@ func LoadTokenFromDB(instanceID string) (token, baseURL string, config map[strin
 }
 
 // SaveOAuthToken persists a completed OAuth token for the given provider instance.
-// It derives the canonical instance ID from the JWT email or token suffix and
-// returns it so the caller can rename the provider in the registry.
 func SaveOAuthToken(instanceID string, td *TokenData) (newInstanceID, name, baseURL string, err error) {
 	cfg := map[string]interface{}{
 		"auth_type":    td.AuthType,
@@ -142,7 +135,6 @@ func SaveOAuthToken(instanceID string, td *TokenData) (newInstanceID, name, base
 	}
 	resolvedURL := NormalizeBaseURL(cfg)
 
-	// Determine region
 	region := "china"
 	if td.ResourceURL != "" && strings.Contains(strings.ToLower(td.ResourceURL), "intl") {
 		region = "global"
@@ -150,7 +142,6 @@ func SaveOAuthToken(instanceID string, td *TokenData) (newInstanceID, name, base
 		region = "global"
 	}
 
-	// Derive display name and canonical instance ID
 	email := ExtractEmailFromJWT(td.AccessToken)
 	if email != "" {
 		safe := strings.ReplaceAll(email, "@", "-")
@@ -168,7 +159,6 @@ func SaveOAuthToken(instanceID string, td *TokenData) (newInstanceID, name, base
 		return "", "", "", fmt.Errorf("kimi: failed to save OAuth token: %w", err)
 	}
 
-	// Remove old temporary record (best-effort)
 	if instanceID != newInstanceID {
 		_ = tokenStore.Delete(instanceID)
 	}
@@ -183,8 +173,6 @@ func SaveOAuthToken(instanceID string, td *TokenData) (newInstanceID, name, base
 }
 
 // EnsureFreshToken refreshes the OAuth token if it is about to expire.
-// Returns the current (possibly refreshed) access token.
-// Errors are logged but not propagated so callers always get a token to try.
 func EnsureFreshToken(instanceID, currentToken string) string {
 	tokenStore := database.NewTokenStore()
 	record, err := tokenStore.Get(instanceID)
@@ -212,7 +200,6 @@ func EnsureFreshToken(instanceID, currentToken string) string {
 		return currentToken
 	}
 
-	// Persist refreshed token (best-effort)
 	_, _, _, saveErr := SaveOAuthToken(instanceID, refreshed)
 	if saveErr != nil {
 		log.Warn().Err(saveErr).Str("provider", instanceID).Msg("Failed to persist refreshed Kimi token")
@@ -222,15 +209,11 @@ func EnsureFreshToken(instanceID, currentToken string) string {
 }
 
 // RefreshToken attempts to refresh an expired OAuth token.
-// This is a placeholder implementation - actual refresh mechanism may differ.
 func RefreshToken(ctx context.Context, refreshToken string) (*TokenData, error) {
-	// Placeholder for actual refresh implementation
 	return nil, fmt.Errorf("refresh not implemented for Kimi")
 }
 
 // Headers returns the HTTP headers required for Kimi API requests.
-// When stream is true, Accept is set to text/event-stream.
-// config must contain auth_type to determine OAuth vs API-key header sets.
 func Headers(token string, stream bool, config map[string]interface{}) map[string]string {
 	headers := map[string]string{
 		"Authorization": "Bearer " + token,
@@ -251,7 +234,7 @@ func Headers(token string, stream bool, config map[string]interface{}) map[strin
 func ChatURL(baseURL string) string {
 	base := baseURL
 	if base == "" {
-	base = BaseURL
+		base = BaseURL
 	}
 	return base + "/chat/completions"
 }
@@ -260,16 +243,12 @@ func ChatURL(baseURL string) string {
 func ModelsURL(baseURL string) string {
 	base := baseURL
 	if base == "" {
-	base = BaseURL
+		base = BaseURL
 	}
 	return base + "/models"
 }
 
-// ─── Models ───────────────────────────────────────────────────────────────────
-
 // GetModels returns the available models for this Kimi instance.
-// For OAuth providers it returns a filtered hardcoded list; for API-key it tries
-// live discovery then falls back to the hardcoded catalog.
 func GetModels(instanceID, token, baseURL string, config map[string]interface{}) (*types.ModelsResponse, error) {
 	if token == "" {
 		return nil, fmt.Errorf("kimi: not authenticated (set access_token via admin UI)")
@@ -325,8 +304,7 @@ func FetchModelsFromAPI(instanceID, token, baseURL string) (*types.ModelsRespons
 		req.Header.Set(key, value)
 	}
 
-	client := kimiHTTPClient
-	resp, err := client.Do(req)
+	resp, err := kimiHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("kimi models request failed: %w", err)
 	}
@@ -338,9 +316,9 @@ func FetchModelsFromAPI(instanceID, token, baseURL string) (*types.ModelsRespons
 
 	var payload struct {
 		Data []struct {
-			ID      string `json:"id"`
-			Name    string `json:"name"`
-			MaxTokens int  `json:"max_tokens,omitempty"`
+			ID        string `json:"id"`
+			Name      string `json:"name"`
+			MaxTokens int    `json:"max_tokens,omitempty"`
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
@@ -356,9 +334,9 @@ func FetchModelsFromAPI(instanceID, token, baseURL string) (*types.ModelsRespons
 			continue
 		}
 		result := types.Model{
-			ID:       model.ID,
-			Name:     model.Name,
-			Provider: instanceID,
+			ID:        model.ID,
+			Name:      model.Name,
+			Provider:  instanceID,
 			MaxTokens: model.MaxTokens,
 		}
 		if metadata, ok := ModelMetadata(model.ID); ok {
@@ -374,8 +352,7 @@ func FetchModelsFromAPI(instanceID, token, baseURL string) (*types.ModelsRespons
 	return &types.ModelsResponse{Data: models, Object: "list"}, nil
 }
 
-// IsChatCompletionsModel returns true if the model supports chat completions
-// (i.e., is not a realtime-only model).
+// IsChatCompletionsModel returns true if the model supports chat completions.
 func IsChatCompletionsModel(modelID string) bool {
 	return !strings.Contains(strings.ToLower(modelID), "realtime")
 }
@@ -389,8 +366,6 @@ func ModelMetadata(modelID string) (types.Model, bool) {
 	}
 	return types.Model{}, false
 }
-
-// ─── URL helpers ──────────────────────────────────────────────────────────────
 
 // NormalizeBaseURL derives the base URL from a provider config map.
 func NormalizeBaseURL(config map[string]interface{}) string {
@@ -427,8 +402,6 @@ func EnsureBaseURL(raw string) string {
 	}
 	return baseURL
 }
-
-// ─── JWT / token helpers ──────────────────────────────────────────────────────
 
 // IsJWT checks if a token has the format of a JWT (xxx.yyy.zzz).
 func IsJWT(token string) bool {
@@ -473,8 +446,6 @@ func ExtractEmailFromJWT(token string) string {
 	}
 	return claims.Email
 }
-
-// ─── Payload helpers ──────────────────────────────────────────────────────────
 
 // BuildOpenAIPayload builds the OpenAI-compatible request payload for Kimi.
 func BuildOpenAIPayload(model string, messages []map[string]interface{}, request *cif.CanonicalRequest, isOAuth bool) map[string]interface{} {

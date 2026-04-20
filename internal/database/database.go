@@ -156,10 +156,14 @@ func InitializeDatabase(configDir string) error {
 	dbPath := filepath.Join(configDir, "database.sqlite")
 	log.Debug().Str("path", dbPath).Msg("Initializing SQLite database")
 
-	db, err := sql.Open("sqlite", dbPath+"?_journal_mode=WAL")
+	db, err := sql.Open("sqlite", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
+
+	// SQLite file database works best with a single writer connection
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(4)
 
 	globalDB = &Database{db: db}
 

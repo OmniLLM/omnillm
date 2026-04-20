@@ -668,6 +668,99 @@ function ClaudeCodeEditor({
         </button>
       </Section>
 
+      {/* Custom Settings */}
+      <Section
+        title="Custom Settings"
+        icon={Settings2}
+        count={
+          Object.keys(settings).filter(
+            (k) =>
+              !["model", "env", "enabledPlugins", "extraKnownMarketplaces", "autoUpdatesChannel", "skipDangerousModePermissionPrompt"].includes(k),
+          ).length
+        }
+        defaultOpen={false}
+      >
+        {Object.entries(settings)
+          .filter(
+            ([key]) =>
+              !["model", "env", "enabledPlugins", "extraKnownMarketplaces", "autoUpdatesChannel", "skipDangerousModePermissionPrompt"].includes(key),
+          )
+          .map(([key, value]) => (
+            <div
+              key={key}
+              style={{
+                display: "flex",
+                gap: 6,
+                marginBottom: 6,
+                alignItems: "center",
+              }}
+            >
+              <input
+                value={key}
+                onChange={(e) => {
+                  const newSettings = { ...settings }
+                  delete newSettings[key]
+                  newSettings[e.target.value] = value
+                  onChange(newSettings)
+                }}
+                placeholder="key"
+                style={{ ...smallInputStyle, width: 260, flex: "none" }}
+              />
+              <input
+                value={typeof value === "string" ? value : JSON.stringify(value)}
+                onChange={(e) =>
+                  onChange({ ...settings, [key]: e.target.value })
+                }
+                placeholder="value"
+                style={{ ...smallInputStyle, flex: 1 }}
+              />
+              <button
+                onClick={() => {
+                  const newSettings = { ...settings }
+                  delete newSettings[key]
+                  onChange(newSettings)
+                }}
+                style={{
+                  padding: 4,
+                  border: "none",
+                  background: "transparent",
+                  color: "var(--color-red, #f87171)",
+                  cursor: "pointer",
+                }}
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          ))}
+        <button
+          onClick={() => {
+            const key = "new_setting"
+            let finalKey = key
+            let i = 1
+            while (finalKey in settings) {
+              finalKey = `${key}_${i}`
+              i++
+            }
+            onChange({ ...settings, [finalKey]: "" })
+          }}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+            padding: "5px 10px",
+            borderRadius: "var(--radius-sm)",
+            border: "1px dashed var(--color-separator)",
+            background: "transparent",
+            color: "var(--color-text-tertiary)",
+            fontSize: 11,
+            cursor: "pointer",
+            marginTop: 4,
+          }}
+        >
+          <Plus size={11} /> Add setting
+        </button>
+      </Section>
+
       {/* Plugins */}
       <Section
         title="Plugins"
@@ -778,6 +871,87 @@ function CodexEditor({
             placeholder="profile name"
           />
         </Field>
+
+        {/* Custom settings */}
+        {Object.entries(config)
+          .filter(
+            ([key]) =>
+              !["model", "model_reasoning_effort", "profile", "model_providers", "profiles", "projects"].includes(key),
+          )
+          .map(([key, value]) => (
+            <div
+              key={key}
+              style={{
+                display: "flex",
+                gap: 6,
+                marginBottom: 6,
+                alignItems: "center",
+              }}
+            >
+              <input
+                value={key}
+                onChange={(e) => {
+                  const newConfig = { ...config }
+                  delete (newConfig as Record<string, unknown>)[key]
+                  ;(newConfig as Record<string, unknown>)[e.target.value] = value
+                  onChange(newConfig)
+                }}
+                placeholder="key"
+                style={{ ...smallInputStyle, width: 260, flex: "none" }}
+              />
+              <input
+                value={typeof value === "string" ? value : JSON.stringify(value)}
+                onChange={(e) =>
+                  onChange({ ...config, [key]: e.target.value })
+                }
+                placeholder="value"
+                style={{ ...smallInputStyle, flex: 1 }}
+              />
+              <button
+                onClick={() => {
+                  const newConfig = { ...config }
+                  delete (newConfig as Record<string, unknown>)[key]
+                  onChange(newConfig)
+                }}
+                style={{
+                  padding: 4,
+                  border: "none",
+                  background: "transparent",
+                  color: "var(--color-red, #f87171)",
+                  cursor: "pointer",
+                }}
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          ))}
+        <button
+          onClick={() => {
+            const key = "new_setting"
+            let finalKey = key
+            let i = 1
+            while (finalKey in config) {
+              finalKey = `${key}_${i}`
+              i++
+            }
+            onChange({ ...config, [finalKey]: "" })
+          }}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+            padding: "5px 10px",
+            borderRadius: "var(--radius-sm)",
+            border: "1px dashed var(--color-separator)",
+            background: "transparent",
+            color: "var(--color-text-tertiary)",
+            fontSize: 11,
+            cursor: "pointer",
+            marginTop: 4,
+          }}
+        >
+          <Plus size={11} /> Add setting
+        </button>
       </Section>
 
       {/* Model providers */}
@@ -1191,6 +1365,87 @@ function OpenCodeEditor({
             placeholder="(auto-generated)"
           />
         </Field>
+
+        {/* Custom settings */}
+        {Object.entries(config)
+          .filter(
+            ([key]) =>
+              !["provider", "model", "endpoint", "api_key_env", "features", "mcp", "skills", "generated_on"].includes(key),
+          )
+          .map(([key, value]) => (
+            <div
+              key={key}
+              style={{
+                display: "flex",
+                gap: 6,
+                marginBottom: 6,
+                alignItems: "center",
+              }}
+            >
+              <input
+                value={key}
+                onChange={(e) => {
+                  const newConfig = { ...config }
+                  delete (newConfig as Record<string, unknown>)[key]
+                  ;(newConfig as Record<string, unknown>)[e.target.value] = value
+                  onChange(newConfig)
+                }}
+                placeholder="key"
+                style={{ ...smallInputStyle, width: 260, flex: "none" }}
+              />
+              <input
+                value={typeof value === "string" ? value : JSON.stringify(value)}
+                onChange={(e) =>
+                  onChange({ ...config, [key]: e.target.value })
+                }
+                placeholder="value"
+                style={{ ...smallInputStyle, flex: 1 }}
+              />
+              <button
+                onClick={() => {
+                  const newConfig = { ...config }
+                  delete (newConfig as Record<string, unknown>)[key]
+                  onChange(newConfig)
+                }}
+                style={{
+                  padding: 4,
+                  border: "none",
+                  background: "transparent",
+                  color: "var(--color-red, #f87171)",
+                  cursor: "pointer",
+                }}
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          ))}
+        <button
+          onClick={() => {
+            const key = "new_setting"
+            let finalKey = key
+            let i = 1
+            while (finalKey in config) {
+              finalKey = `${key}_${i}`
+              i++
+            }
+            onChange({ ...config, [finalKey]: "" })
+          }}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+            padding: "5px 10px",
+            borderRadius: "var(--radius-sm)",
+            border: "1px dashed var(--color-separator)",
+            background: "transparent",
+            color: "var(--color-text-tertiary)",
+            fontSize: 11,
+            cursor: "pointer",
+            marginTop: 4,
+          }}
+        >
+          <Plus size={11} /> Add setting
+        </button>
       </Section>
 
       {/* Features */}
@@ -1339,6 +1594,87 @@ function AMPEditor({
             placeholder="e.g. omnillm-glm-5.1"
           />
         </Field>
+
+        {/* Custom settings */}
+        {Object.entries(config)
+          .filter(
+            ([key]) =>
+              !["models", "features", "ui", "logging"].includes(key),
+          )
+          .map(([key, value]) => (
+            <div
+              key={key}
+              style={{
+                display: "flex",
+                gap: 6,
+                marginBottom: 6,
+                alignItems: "center",
+              }}
+            >
+              <input
+                value={key}
+                onChange={(e) => {
+                  const newConfig = { ...config }
+                  delete (newConfig as Record<string, unknown>)[key]
+                  ;(newConfig as Record<string, unknown>)[e.target.value] = value
+                  onChange(newConfig)
+                }}
+                placeholder="key"
+                style={{ ...smallInputStyle, width: 260, flex: "none" }}
+              />
+              <input
+                value={typeof value === "string" ? value : JSON.stringify(value)}
+                onChange={(e) =>
+                  onChange({ ...config, [key]: e.target.value })
+                }
+                placeholder="value"
+                style={{ ...smallInputStyle, flex: 1 }}
+              />
+              <button
+                onClick={() => {
+                  const newConfig = { ...config }
+                  delete (newConfig as Record<string, unknown>)[key]
+                  onChange(newConfig)
+                }}
+                style={{
+                  padding: 4,
+                  border: "none",
+                  background: "transparent",
+                  color: "var(--color-red, #f87171)",
+                  cursor: "pointer",
+                }}
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          ))}
+        <button
+          onClick={() => {
+            const key = "new_setting"
+            let finalKey = key
+            let i = 1
+            while (finalKey in config) {
+              finalKey = `${key}_${i}`
+              i++
+            }
+            onChange({ ...config, [finalKey]: "" })
+          }}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+            padding: "5px 10px",
+            borderRadius: "var(--radius-sm)",
+            border: "1px dashed var(--color-separator)",
+            background: "transparent",
+            color: "var(--color-text-tertiary)",
+            fontSize: 11,
+            cursor: "pointer",
+            marginTop: 4,
+          }}
+        >
+          <Plus size={11} /> Add setting
+        </button>
       </Section>
 
       {/* Features */}
@@ -1551,6 +1887,123 @@ function DroidEditor({
 
   return (
     <div>
+      {/* Global Settings */}
+      <Section title="Global Settings" icon={Settings2}>
+        <Field label="Default Base URL">
+          <input
+            value={config.providers?.default?.baseUrl ?? ""}
+            onChange={(e) =>
+              onChange({
+                ...config,
+                providers: {
+                  ...config.providers,
+                  default: { ...config.providers?.default, baseUrl: e.target.value },
+                },
+              })
+            }
+            style={inputStyle}
+            placeholder="http://localhost:5000/v1"
+          />
+        </Field>
+        <Field label="Default API Key Env">
+          <input
+            value={config.providers?.default?.apiKey ?? ""}
+            onChange={(e) =>
+              onChange({
+                ...config,
+                providers: {
+                  ...config.providers,
+                  default: { ...config.providers?.default, apiKey: e.target.value },
+                },
+              })
+            }
+            style={inputStyle}
+            placeholder="${OMNILLM_API_KEY}"
+          />
+        </Field>
+
+        {/* Custom settings */}
+        {Object.entries(config)
+          .filter(
+            ([key]) =>
+              !["customModels", "providers", "features", "logging", "ui", "enabledPlugins"].includes(key),
+          )
+          .map(([key, value]) => (
+            <div
+              key={key}
+              style={{
+                display: "flex",
+                gap: 6,
+                marginBottom: 6,
+                alignItems: "center",
+              }}
+            >
+              <input
+                value={key}
+                onChange={(e) => {
+                  const newConfig = { ...config }
+                  delete (newConfig as Record<string, unknown>)[key]
+                  ;(newConfig as Record<string, unknown>)[e.target.value] = value
+                  onChange(newConfig)
+                }}
+                placeholder="key"
+                style={{ ...smallInputStyle, width: 260, flex: "none" }}
+              />
+              <input
+                value={typeof value === "string" ? value : JSON.stringify(value)}
+                onChange={(e) =>
+                  onChange({ ...config, [key]: e.target.value })
+                }
+                placeholder="value"
+                style={{ ...smallInputStyle, flex: 1 }}
+              />
+              <button
+                onClick={() => {
+                  const newConfig = { ...config }
+                  delete (newConfig as Record<string, unknown>)[key]
+                  onChange(newConfig)
+                }}
+                style={{
+                  padding: 4,
+                  border: "none",
+                  background: "transparent",
+                  color: "var(--color-red, #f87171)",
+                  cursor: "pointer",
+                }}
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          ))}
+        <button
+          onClick={() => {
+            const key = "new_setting"
+            let finalKey = key
+            let i = 1
+            while (finalKey in config) {
+              finalKey = `${key}_${i}`
+              i++
+            }
+            onChange({ ...config, [finalKey]: "" })
+          }}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+            padding: "5px 10px",
+            borderRadius: "var(--radius-sm)",
+            border: "1px dashed var(--color-separator)",
+            background: "transparent",
+            color: "var(--color-text-tertiary)",
+            fontSize: 11,
+            cursor: "pointer",
+            marginTop: 4,
+          }}
+        >
+          <Plus size={11} /> Add setting
+        </button>
+      </Section>
+
       {/* Features */}
       <Section title="Features" icon={Plug}>
         {(["streaming", "toolUse", "imageSupport", "functionCalling"] as const).map((key) => (

@@ -1,10 +1,29 @@
 package routes
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
 )
+
+// parseRequestMessage returns a user-facing message for a request body parse
+// error.  JSON syntax/EOF errors produce the generic "Invalid request format"
+// string (same as the old json.Valid guard) so callers get a clean message
+// without the unmarshal detail.  Semantic errors (wrong field types, missing
+// required fields) pass through so they are actionable.
+func parseRequestMessage(err error) string {
+	var syntaxErr *json.SyntaxError
+	if errors.As(err, &syntaxErr) {
+		return "Invalid request format"
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "unexpected end of JSON") ||
+		strings.Contains(msg, "invalid character") {
+		return "Invalid request format"
+	}
+	return "Failed to parse request: " + msg
+}
 
 func isAuthenticationError(err error) bool {
 	if err == nil {

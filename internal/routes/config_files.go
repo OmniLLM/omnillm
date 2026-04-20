@@ -21,6 +21,20 @@ var configFilePaths = map[string]string{
 	"amp":         expandHomePath("~/.amp/config.json"),
 }
 
+// ConfigFilePathsForTest returns a shallow copy of the current config file path map.
+func ConfigFilePathsForTest() map[string]string {
+	copyMap := make(map[string]string, len(configFilePaths))
+	for k, v := range configFilePaths {
+		copyMap[k] = v
+	}
+	return copyMap
+}
+
+// SetConfigFilePathsForTest replaces config file paths for tests.
+func SetConfigFilePathsForTest(paths map[string]string) {
+	configFilePaths = paths
+}
+
 // configMetadata holds display info for each config file.
 var configMetadata = map[string]struct {
 	Label       string `json:"label"`
@@ -165,12 +179,12 @@ func handleSaveConfig(c *gin.Context) {
 
 	// Ensure parent directory exists
 	dir := filepath.Dir(filePath)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to create directory: %v", err)})
 		return
 	}
 
-	if err := os.WriteFile(filePath, []byte(req.Content), 0o644); err != nil {
+	if err := os.WriteFile(filePath, []byte(req.Content), 0o600); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to write file: %v", err)})
 		return
 	}
@@ -220,12 +234,12 @@ func handleImportConfig(c *gin.Context) {
 
 	// Ensure parent directory exists
 	dir := filepath.Dir(filePath)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to create directory: %v", err)})
 		return
 	}
 
-	if err := os.WriteFile(filePath, content, 0o644); err != nil {
+	if err := os.WriteFile(filePath, content, 0o600); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to write file: %v", err)})
 		return
 	}

@@ -9,9 +9,11 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "omnillm",
-	Short: "A wrapper around GitHub Copilot API to make it OpenAI compatible",
-	Long:  "A wrapper around GitHub Copilot API to make it OpenAI compatible, making it usable for other tools.",
+	Use:           "omnillm",
+	Short:         "Universal LLM proxy with OpenAI-compatible endpoints",
+	Long:          "OmniLLM is a universal LLM proxy that provides OpenAI-compatible endpoints for multiple upstream providers.",
+	SilenceUsage:  true,
+	SilenceErrors: true,
 }
 
 func main() {

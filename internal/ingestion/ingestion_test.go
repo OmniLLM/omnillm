@@ -1,10 +1,17 @@
 package ingestion
 
 import (
+	"encoding/json"
 	"testing"
 
 	"omnillm/internal/cif"
 )
+
+func mustRaw(t *testing.T, v any) json.RawMessage {
+	t.Helper()
+	b, _ := json.Marshal(v)
+	return b
+}
 
 // ─── ParseOpenAIChatCompletions ───
 
@@ -15,7 +22,7 @@ func TestParseOpenAI_SimpleUserMessage(t *testing.T) {
 			map[string]interface{}{"role": "user", "content": "Hello"},
 		},
 	}
-	req, err := ParseOpenAIChatCompletions(payload)
+	req, err := ParseOpenAIChatCompletions(mustRaw(t, payload))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -38,7 +45,7 @@ func TestParseOpenAI_SystemMessage(t *testing.T) {
 			map[string]interface{}{"role": "user", "content": "Hi"},
 		},
 	}
-	req, err := ParseOpenAIChatCompletions(payload)
+	req, err := ParseOpenAIChatCompletions(mustRaw(t, payload))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -61,7 +68,7 @@ func TestParseOpenAI_AssistantMessage(t *testing.T) {
 			map[string]interface{}{"role": "assistant", "content": "It is 4."},
 		},
 	}
-	req, err := ParseOpenAIChatCompletions(payload)
+	req, err := ParseOpenAIChatCompletions(mustRaw(t, payload))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -90,7 +97,7 @@ func TestParseOpenAI_ToolCallInAssistantMessage(t *testing.T) {
 			},
 		},
 	}
-	req, err := ParseOpenAIChatCompletions(payload)
+	req, err := ParseOpenAIChatCompletions(mustRaw(t, payload))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -133,7 +140,7 @@ func TestParseOpenAI_ToolCallInAssistantMessage_WithCallIDAlias(t *testing.T) {
 			},
 		},
 	}
-	req, err := ParseOpenAIChatCompletions(payload)
+	req, err := ParseOpenAIChatCompletions(mustRaw(t, payload))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -175,7 +182,7 @@ func TestParseOpenAI_Tools(t *testing.T) {
 			},
 		},
 	}
-	req, err := ParseOpenAIChatCompletions(payload)
+	req, err := ParseOpenAIChatCompletions(mustRaw(t, payload))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -208,7 +215,7 @@ func TestParseOpenAI_ImageURLContent(t *testing.T) {
 			},
 		},
 	}
-	req, err := ParseOpenAIChatCompletions(payload)
+	req, err := ParseOpenAIChatCompletions(mustRaw(t, payload))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -242,7 +249,7 @@ func TestParseOpenAI_StreamFlag(t *testing.T) {
 			map[string]interface{}{"role": "user", "content": "Hello"},
 		},
 	}
-	req, err := ParseOpenAIChatCompletions(payload)
+	req, err := ParseOpenAIChatCompletions(mustRaw(t, payload))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -259,7 +266,7 @@ func TestParseOpenAI_StopString(t *testing.T) {
 			map[string]interface{}{"role": "user", "content": "Hi"},
 		},
 	}
-	req, err := ParseOpenAIChatCompletions(payload)
+	req, err := ParseOpenAIChatCompletions(mustRaw(t, payload))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -275,7 +282,7 @@ func TestParseOpenAI_UnknownRole(t *testing.T) {
 			map[string]interface{}{"role": "function", "content": "result"},
 		},
 	}
-	_, err := ParseOpenAIChatCompletions(payload)
+	_, err := ParseOpenAIChatCompletions(mustRaw(t, payload))
 	if err == nil {
 		t.Error("expected error for unknown role 'function'")
 	}
@@ -295,7 +302,7 @@ func TestParseAnthropic_SimpleUserMessage(t *testing.T) {
 			},
 		},
 	}
-	req, err := ParseAnthropicMessages(payload)
+	req, err := ParseAnthropicMessages(mustRaw(t, payload))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -323,7 +330,7 @@ func TestParseAnthropic_SystemPrompt(t *testing.T) {
 			},
 		},
 	}
-	req, err := ParseAnthropicMessages(payload)
+	req, err := ParseAnthropicMessages(mustRaw(t, payload))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -349,7 +356,7 @@ func TestParseAnthropic_ToolUseBlock(t *testing.T) {
 			},
 		},
 	}
-	req, err := ParseAnthropicMessages(payload)
+	req, err := ParseAnthropicMessages(mustRaw(t, payload))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -382,7 +389,7 @@ func TestParseAnthropic_ToolResultBlock(t *testing.T) {
 			},
 		},
 	}
-	req, err := ParseAnthropicMessages(payload)
+	req, err := ParseAnthropicMessages(mustRaw(t, payload))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -419,7 +426,7 @@ func TestParseAnthropic_ToolResultBlockFallsBackToID(t *testing.T) {
 			},
 		},
 	}
-	req, err := ParseAnthropicMessages(payload)
+	req, err := ParseAnthropicMessages(mustRaw(t, payload))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -458,7 +465,7 @@ func TestParseAnthropic_ImageBlock(t *testing.T) {
 			},
 		},
 	}
-	req, err := ParseAnthropicMessages(payload)
+	req, err := ParseAnthropicMessages(mustRaw(t, payload))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -502,7 +509,7 @@ func TestParseAnthropic_Tools(t *testing.T) {
 			},
 		},
 	}
-	req, err := ParseAnthropicMessages(payload)
+	req, err := ParseAnthropicMessages(mustRaw(t, payload))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -527,7 +534,7 @@ func TestParseAnthropic_MaxTokens(t *testing.T) {
 			},
 		},
 	}
-	req, err := ParseAnthropicMessages(payload)
+	req, err := ParseAnthropicMessages(mustRaw(t, payload))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

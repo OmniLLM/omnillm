@@ -38,14 +38,12 @@ func GetProviderRegistry() *ProviderRegistry {
 
 func (pr *ProviderRegistry) Register(provider types.Provider, saveConfig bool) error {
 	pr.mu.Lock()
-	defer pr.mu.Unlock()
-
 	pr.providers[provider.GetInstanceID()] = provider
+	shouldSave := saveConfig
+	pr.mu.Unlock()
 
-	if saveConfig {
-		if err := pr.saveConfigAsync(); err != nil {
-			log.Warn().Err(err).Msg("Failed to save config after provider registration")
-		}
+	if shouldSave {
+		go pr.saveConfigAsync()
 	}
 
 	log.Debug().Str("provider", provider.GetInstanceID()).Msg("Provider registered")
@@ -69,19 +67,17 @@ func (pr *ProviderRegistry) GetProvider(instanceID string) (types.Provider, erro
 
 func (pr *ProviderRegistry) SetActive(instanceID string) (types.Provider, error) {
 	pr.mu.Lock()
-	defer pr.mu.Unlock()
-
 	provider, exists := pr.providers[instanceID]
 	if !exists {
+		pr.mu.Unlock()
 		return nil, fmt.Errorf("provider '%s' not found", instanceID)
 	}
 
 	pr.activeProvider = provider
 	pr.activeProviders[instanceID] = struct{}{}
+	pr.mu.Unlock()
 
-	if err := pr.saveConfigAsync(); err != nil {
-		log.Warn().Err(err).Msg("Failed to save config after setting active provider")
-	}
+	go pr.saveConfigAsync()
 
 	log.Debug().Str("provider", instanceID).Msg("Provider set as active")
 	return provider, nil
@@ -99,10 +95,9 @@ func (pr *ProviderRegistry) GetActive() (types.Provider, error) {
 
 func (pr *ProviderRegistry) AddActive(instanceID string) (types.Provider, error) {
 	pr.mu.Lock()
-	defer pr.mu.Unlock()
-
 	provider, exists := pr.providers[instanceID]
 	if !exists {
+		pr.mu.Unlock()
 		return nil, fmt.Errorf("provider '%s' not found", instanceID)
 	}
 
@@ -110,18 +105,15 @@ func (pr *ProviderRegistry) AddActive(instanceID string) (types.Provider, error)
 	if pr.activeProvider == nil {
 		pr.activeProvider = provider
 	}
+	pr.mu.Unlock()
 
-	if err := pr.saveConfigAsync(); err != nil {
-		log.Warn().Err(err).Msg("Failed to save config after adding active provider")
-	}
+	go pr.saveConfigAsync()
 
 	return provider, nil
 }
 
 func (pr *ProviderRegistry) RemoveActive(instanceID string) error {
 	pr.mu.Lock()
-	defer pr.mu.Unlock()
-
 	delete(pr.activeProviders, instanceID)
 	if pr.activeProvider != nil && pr.activeProvider.GetInstanceID() == instanceID {
 		// Pick another active provider as the primary, or nil
@@ -133,10 +125,9 @@ func (pr *ProviderRegistry) RemoveActive(instanceID string) error {
 			}
 		}
 	}
+	pr.mu.Unlock()
 
-	if err := pr.saveConfigAsync(); err != nil {
-		log.Warn().Err(err).Msg("Failed to save config after removing active provider")
-	}
+	go pr.saveConfigAsync()
 
 	return nil
 }
@@ -195,15 +186,14 @@ func (pr *ProviderRegistry) GetProviderMap() map[string]types.Provider {
 
 func (pr *ProviderRegistry) Rename(oldInstanceID, newInstanceID string) error {
 	pr.mu.Lock()
-	defer pr.mu.Unlock()
-
 	provider, exists := pr.providers[oldInstanceID]
 	if !exists {
+		pr.mu.Unlock()
 		return fmt.Errorf("provider '%s' not found", oldInstanceID)
 	}
 
-	// Check if target instanceID already exists
 	if _, exists := pr.providers[newInstanceID]; exists {
+		pr.mu.Unlock()
 		log.Warn().Str("old", oldInstanceID).Str("new", newInstanceID).Msg("Cannot rename provider: target already exists")
 		return fmt.Errorf("cannot rename %s to %s: target already exists", oldInstanceID, newInstanceID)
 	}
@@ -215,35 +205,25 @@ func (pr *ProviderRegistry) Rename(oldInstanceID, newInstanceID string) error {
 		delete(pr.activeProviders, oldInstanceID)
 		pr.activeProviders[newInstanceID] = struct{}{}
 	}
+	pr.mu.Unlock()
 
-	if pr.activeProvider != nil && pr.activeProvider.GetInstanceID() == newInstanceID {
-		// Provider object was mutated in place, so already updated
-	}
-
-	if err := pr.saveConfigAsync(); err != nil {
-		log.Warn().Err(err).Msg("Failed to save config after provider rename")
-	}
+	go pr.saveConfigAsync()
 
 	return nil
 }
 
 func (pr *ProviderRegistry) Remove(instanceID string) error {
 	pr.mu.Lock()
-	defer pr.mu.Unlock()
-
 	_, exists := pr.providers[instanceID]
 	if !exists {
+		pr.mu.Unlock()
 		return fmt.Errorf("provider '%s' not found", instanceID)
 	}
 
-	// Remove from registry
 	delete(pr.providers, instanceID)
-
-	// Remove from active providers
 	delete(pr.activeProviders, instanceID)
 	if pr.activeProvider != nil && pr.activeProvider.GetInstanceID() == instanceID {
 		pr.activeProvider = nil
-		// Pick another active provider if available
 		for id := range pr.activeProviders {
 			if p, exists := pr.providers[id]; exists {
 				pr.activeProvider = p
@@ -251,17 +231,15 @@ func (pr *ProviderRegistry) Remove(instanceID string) error {
 			}
 		}
 	}
+	pr.mu.Unlock()
 
-	// Clean up token file
+	// Clean up token file (outside lock)
 	tokenStore := database.NewTokenStore()
 	if err := tokenStore.Delete(instanceID); err != nil {
 		log.Warn().Str("instance", instanceID).Err(err).Msg("Failed to clean up token")
 	}
 
-	// Save config after removal
-	if err := pr.saveConfigAsync(); err != nil {
-		log.Warn().Err(err).Msg("Failed to save config after provider removal")
-	}
+	go pr.saveConfigAsync()
 
 	log.Debug().Str("provider", instanceID).Msg("Provider removed")
 	return nil
@@ -304,9 +282,21 @@ func (pr *ProviderRegistry) NextInstanceID(providerType string) string {
 }
 
 func (pr *ProviderRegistry) saveConfigAsync() error {
+	// Snapshot data under lock to avoid holding it during I/O
+	pr.mu.RLock()
+	providers := make(map[string]types.Provider, len(pr.providers))
+	for k, v := range pr.providers {
+		providers[k] = v
+	}
+	activeProviders := make(map[string]struct{}, len(pr.activeProviders))
+	for k, v := range pr.activeProviders {
+		activeProviders[k] = v
+	}
+	pr.mu.RUnlock()
+
 	// Save provider instances and activation state to database
-	for id, provider := range pr.providers {
-		_, isActive := pr.activeProviders[id]
+	for id, provider := range providers {
+		_, isActive := activeProviders[id]
 
 		record := &database.ProviderInstanceRecord{
 			InstanceID: id,
@@ -326,8 +316,8 @@ func (pr *ProviderRegistry) saveConfigAsync() error {
 	}
 
 	// Save active provider IDs to config store
-	activeIDs := make([]string, 0, len(pr.activeProviders))
-	for id := range pr.activeProviders {
+	activeIDs := make([]string, 0, len(activeProviders))
+	for id := range activeProviders {
 		activeIDs = append(activeIDs, id)
 	}
 

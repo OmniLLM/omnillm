@@ -1,10 +1,17 @@
 package ingestion
 
 import (
+	"encoding/json"
 	"testing"
 
 	"omnillm/internal/cif"
 )
+
+func mustRawR(t *testing.T, v any) json.RawMessage {
+	t.Helper()
+	b, _ := json.Marshal(v)
+	return b
+}
 
 func TestParseResponsesPayload_TranslatesInstructionsMessagesAndTools(t *testing.T) {
 	stream := true
@@ -53,7 +60,7 @@ func TestParseResponsesPayload_TranslatesInstructionsMessagesAndTools(t *testing
 		},
 	}
 
-	req, err := ParseResponsesPayload(payload)
+	req, err := ParseResponsesPayload(mustRawR(t, payload))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -108,10 +115,10 @@ func TestParseResponsesPayload_TranslatesInstructionsMessagesAndTools(t *testing
 }
 
 func TestParseResponsesPayload_AcceptsStringInput(t *testing.T) {
-	req, err := ParseResponsesPayload(map[string]interface{}{
+	req, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
 		"model": "gpt-5.4-mini",
 		"input": "Hello from responses",
-	})
+	}))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -128,8 +135,96 @@ func TestParseResponsesPayload_AcceptsStringInput(t *testing.T) {
 	}
 }
 
+func TestParseResponsesPayload_AcceptsDeveloperRole(t *testing.T) {
+	req, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
+		"model": "gpt-5.4-mini",
+		"input": []interface{}{
+			map[string]interface{}{
+				"type":    "message",
+				"role":    "developer",
+				"content": []interface{}{map[string]interface{}{"type": "input_text", "text": "You are a coding assistant."}},
+			},
+			map[string]interface{}{
+				"type":    "message",
+				"role":    "user",
+				"content": "Hello",
+			},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(req.Messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(req.Messages))
+	}
+	systemMsg, ok := req.Messages[0].(cif.CIFSystemMessage)
+	if !ok {
+		t.Fatalf("expected first message to be system, got %T", req.Messages[0])
+	}
+	if systemMsg.Content != "You are a coding assistant." {
+		t.Fatalf("unexpected system content: %q", systemMsg.Content)
+	}
+	userMsg, ok := req.Messages[1].(cif.CIFUserMessage)
+	if !ok {
+		t.Fatalf("expected second message to be user, got %T", req.Messages[1])
+	}
+	textPart := userMsg.Content[0].(cif.CIFTextPart)
+	if textPart.Text != "Hello" {
+		t.Fatalf("unexpected user text content: %q", textPart.Text)
+	}
+}
+
+func TestParseResponsesPayload_RejectsUnknownContentBlockType(t *testing.T) {
+	_, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
+		"model": "gpt-5.4-mini",
+		"input": []interface{}{
+			map[string]interface{}{
+				"type": "message",
+				"role": "user",
+				"content": []interface{}{
+					map[string]interface{}{"type": "input_image", "text": "ignored"},
+				},
+			},
+		},
+	}))
+	if err == nil {
+		t.Fatal("expected unknown content block type to fail")
+	}
+}
+
+func TestParseResponsesPayload_FunctionCallOutputBecomesToolResult(t *testing.T) {
+	req, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
+		"model": "gpt-5.4-mini",
+		"input": []interface{}{
+			map[string]interface{}{
+				"type":    "function_call_output",
+				"call_id": "call_123",
+				"name":    "get_weather",
+				"output":  "Sunny",
+			},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(req.Messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(req.Messages))
+	}
+	userMsg, ok := req.Messages[0].(cif.CIFUserMessage)
+	if !ok {
+		t.Fatalf("expected user message, got %T", req.Messages[0])
+	}
+	toolResult, ok := userMsg.Content[0].(cif.CIFToolResultPart)
+	if !ok {
+		t.Fatalf("expected tool result part, got %#v", userMsg.Content[0])
+	}
+	if toolResult.ToolCallID != "call_123" || toolResult.ToolName != "get_weather" || toolResult.Content != "Sunny" {
+		t.Fatalf("unexpected tool result: %#v", toolResult)
+	}
+}
+
 func TestParseResponsesPayload_FunctionCallRequiresIdentifier(t *testing.T) {
-	_, err := ParseResponsesPayload(map[string]interface{}{
+	_, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
 		"model": "gpt-5.4-mini",
 		"input": []interface{}{
 			map[string]interface{}{
@@ -138,7 +233,7 @@ func TestParseResponsesPayload_FunctionCallRequiresIdentifier(t *testing.T) {
 				"arguments": `{"location":"Boston"}`,
 			},
 		},
-	})
+	}))
 	if err == nil {
 		t.Fatal("expected missing function_call id to fail")
 	}
