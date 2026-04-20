@@ -5,8 +5,8 @@ import {
   Field,
   inputStyle,
   smallInputStyle,
-} from "../../frontend/src/pages/config/components/Field"
-import { Section } from "../../frontend/src/pages/config/components/Section"
+} from "../../frontend/src/components/Field"
+import { Section } from "../../frontend/src/components/Section"
 
 describe("rendered config components", () => {
   test("Field renders label and child content", () => {

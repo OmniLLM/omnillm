@@ -1,4 +1,23 @@
-import { ReactNode } from "react"
+import { CSSProperties, ReactNode } from "react"
+
+export const inputStyle: CSSProperties = {
+  fontFamily: "var(--font-mono)",
+  padding: "6px 10px",
+  fontSize: 13,
+  background: "var(--color-bg-elevated)",
+  border: "1px solid var(--color-border)",
+  borderRadius: 6,
+  color: "var(--color-text-primary)",
+  width: "100%",
+  boxSizing: "border-box",
+}
+
+export const smallInputStyle: CSSProperties = {
+  ...inputStyle,
+  fontSize: 11,
+  padding: "4px 8px",
+  background: "var(--color-bg-elevated)",
+}
 
 interface FieldProps {
   label: string
