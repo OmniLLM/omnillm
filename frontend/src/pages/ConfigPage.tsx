@@ -308,14 +308,41 @@ function serializeTOML(config: CodexConfig, originalContent: string): string {
   const lines = originalContent.split("\n")
   const result: Array<string> = []
   let currentSection = ""
+  let keepCurrentSection = true // skip entire section if deleted from config
 
   for (const line of lines) {
     const sectionMatch = line.trim().match(/^\[([^\]]+)\]$/)
     if (sectionMatch) {
       currentSection = sectionMatch[1].replaceAll(/^["']|["']$/g, "")
-      result.push(line)
+
+      // Determine whether this section still exists in the config
+      if (currentSection.startsWith("model_providers.")) {
+        const name = currentSection
+          .replace("model_providers.", "")
+          .replaceAll(/^["']|["']$/g, "")
+        keepCurrentSection = Boolean(config.model_providers?.[name])
+      } else if (currentSection.startsWith("profiles.")) {
+        const name = currentSection
+          .replace("profiles.", "")
+          .replaceAll(/^["']|["']$/g, "")
+        keepCurrentSection = Boolean(config.profiles?.[name])
+      } else if (currentSection.startsWith("projects.")) {
+        const name = currentSection
+          .replace("projects.", "")
+          .replaceAll(/^["']|["']$/g, "")
+        keepCurrentSection = Boolean(config.projects?.[name])
+      } else {
+        keepCurrentSection = true
+      }
+
+      if (keepCurrentSection) {
+        result.push(line)
+      }
       continue
     }
+
+    // Skip key-value lines belonging to a deleted section
+    if (!keepCurrentSection) continue
 
     const kvMatch = line.trim().match(/^([\w.]+)\s*=\s*\S.*$/)
     if (kvMatch) {
@@ -2815,37 +2842,51 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
         }
 
         // Re-parse JSON configs from the content we just saved
-        if (activeConfig === "claude-code") {
-          try {
-            setClaudeSettings(JSON.parse(content))
-          } catch {
-            setClaudeSettings(null)
+        switch (activeConfig) {
+          case "claude-code": {
+            try {
+              setClaudeSettings(JSON.parse(content))
+            } catch {
+              setClaudeSettings(null)
+            }
+
+            break
           }
-        } else if (activeConfig === "opencode") {
-          try {
-            setOpenCodeConfig(JSON.parse(content))
-          } catch {
-            setOpenCodeConfig(null)
+          case "opencode": {
+            try {
+              setOpenCodeConfig(JSON.parse(content))
+            } catch {
+              setOpenCodeConfig(null)
+            }
+
+            break
           }
-        } else if (activeConfig === "amp") {
-          try {
-            setAMPConfig(JSON.parse(content))
-          } catch {
-            setAMPConfig(null)
+          case "amp": {
+            try {
+              setAMPConfig(JSON.parse(content))
+            } catch {
+              setAMPConfig(null)
+            }
+
+            break
           }
-        } else if (activeConfig === "droid") {
-          try {
-            setDroidConfig(JSON.parse(content))
-          } catch {
-            setDroidConfig(null)
+          case "droid": {
+            try {
+              setDroidConfig(JSON.parse(content))
+            } catch {
+              setDroidConfig(null)
+            }
+
+            break
           }
+          // No default
         }
 
         // Reload the config list to update the "exists" status
         return listConfigFiles()
       })
       .then((r) => {
-        if (r) setConfigs(r.configs)
+        setConfigs(r.configs)
       })
       .catch((err: Error) => showToast(`Save failed: ${err.message}`, "error"))
       .finally(() => setSaving(false))
@@ -2854,36 +2895,53 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
   const handleReset = () => {
     setRawContent(originalContent)
     setDirty(false)
-    if (activeConfig === "claude-code") {
-      try {
-        setClaudeSettings(JSON.parse(originalContent))
-      } catch {
-        /* ignore */
+    switch (activeConfig) {
+      case "claude-code": {
+        try {
+          setClaudeSettings(JSON.parse(originalContent))
+        } catch {
+          /* ignore */
+        }
+
+        break
       }
-    } else if (activeConfig === "codex") {
-      try {
-        setCodexConfig(parseTOML(originalContent))
-      } catch {
-        /* ignore */
+      case "codex": {
+        try {
+          setCodexConfig(parseTOML(originalContent))
+        } catch {
+          /* ignore */
+        }
+
+        break
       }
-    } else if (activeConfig === "opencode") {
-      try {
-        setOpenCodeConfig(JSON.parse(originalContent))
-      } catch {
-        /* ignore */
+      case "opencode": {
+        try {
+          setOpenCodeConfig(JSON.parse(originalContent))
+        } catch {
+          /* ignore */
+        }
+
+        break
       }
-    } else if (activeConfig === "amp") {
-      try {
-        setAMPConfig(JSON.parse(originalContent))
-      } catch {
-        /* ignore */
+      case "amp": {
+        try {
+          setAMPConfig(JSON.parse(originalContent))
+        } catch {
+          /* ignore */
+        }
+
+        break
       }
-    } else if (activeConfig === "droid") {
-      try {
-        setDroidConfig(JSON.parse(originalContent))
-      } catch {
-        /* ignore */
+      case "droid": {
+        try {
+          setDroidConfig(JSON.parse(originalContent))
+        } catch {
+          /* ignore */
+        }
+
+        break
       }
+      // No default
     }
   }
 
