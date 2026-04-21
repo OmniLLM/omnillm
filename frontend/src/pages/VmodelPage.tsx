@@ -391,8 +391,12 @@ export function VmodelPage({ showToast }: Props) {
                     style={{
                       textAlign: "left",
                       padding: 16,
-                      background: "var(--color-bg-elevated)",
+                      background:
+                        isSelected ?
+                          "var(--color-blue-fill)"
+                        : "var(--color-bg-elevated)",
                       cursor: "pointer",
+                      transition: "all 0.15s var(--ease)",
                     }}
                   >
                     <div
@@ -546,13 +550,24 @@ export function VmodelPage({ showToast }: Props) {
                       </div>
                       <button
                         type="button"
-                        className="btn btn-ghost btn-sm"
+                        className="btn btn-icon btn-icon-ghost btn-icon-danger"
+                        title={`Delete ${vm.virtual_model_id}`}
                         onClick={(e) => {
                           e.stopPropagation()
                           handleDelete(vm.virtual_model_id)
                         }}
                       >
-                        Delete
+                        <svg
+                          width="13"
+                          height="13"
+                          viewBox="0 0 14 14"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                        >
+                          <path d="M2 3.5h10M5.5 3.5V2.5a.5.5 0 01.5-.5h2a.5.5 0 01.5.5v1M5.5 6v4M8.5 6v4M3 3.5l.7 7a1 1 0 001 .9h4.6a1 1 0 001-.9l.7-7" />
+                        </svg>
                       </button>
                     </div>
                   </div>

@@ -199,30 +199,58 @@ export function AboutPage({
             gap: 12,
           }}
         >
-          <div style={{ ...card, padding: "16px 18px" }}>
-            <div style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
+          <div
+            style={{
+              ...card,
+              padding: "16px 18px",
+              borderTop: "2px solid var(--color-blue)",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                textTransform: "uppercase",
+                letterSpacing: "0.06em",
+                color: "var(--color-text-tertiary)",
+              }}
+            >
               Version
             </div>
             <div
               style={{
-                marginTop: 6,
-                fontSize: 18,
+                marginTop: 8,
+                fontSize: 20,
                 fontWeight: 700,
-                color: "var(--color-text)",
+                color: "var(--color-blue)",
                 fontFamily: "var(--font-mono)",
               }}
             >
               {info?.version ?? "—"}
             </div>
           </div>
-          <div style={{ ...card, padding: "16px 18px" }}>
-            <div style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
+          <div
+            style={{
+              ...card,
+              padding: "16px 18px",
+              borderTop: "2px solid var(--color-green)",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                textTransform: "uppercase",
+                letterSpacing: "0.06em",
+                color: "var(--color-text-tertiary)",
+              }}
+            >
               Active Provider
             </div>
             <div
               style={{
-                marginTop: 6,
-                fontSize: 18,
+                marginTop: 8,
+                fontSize: 20,
                 fontWeight: 700,
                 color: "var(--color-text)",
               }}
@@ -230,14 +258,28 @@ export function AboutPage({
               {displayedProvider}
             </div>
           </div>
-          <div style={{ ...card, padding: "16px 18px" }}>
-            <div style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
+          <div
+            style={{
+              ...card,
+              padding: "16px 18px",
+              borderTop: "2px solid var(--color-purple)",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                textTransform: "uppercase",
+                letterSpacing: "0.06em",
+                color: "var(--color-text-tertiary)",
+              }}
+            >
               Available Models
             </div>
             <div
               style={{
-                marginTop: 6,
-                fontSize: 18,
+                marginTop: 8,
+                fontSize: 20,
                 fontWeight: 700,
                 color: "var(--color-text)",
               }}

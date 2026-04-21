@@ -237,7 +237,7 @@ export function LoggingPage({
           alignItems: "flex-start",
           justifyContent: "space-between",
           gap: 18,
-          marginBottom: 28,
+          marginBottom: 24,
           flexWrap: "wrap",
         }}
       >
@@ -265,12 +265,96 @@ export function LoggingPage({
           </p>
         </div>
 
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          {/* Connection badge */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {connecting ?
+              <Spin />
+            : <span
+                className={`status-dot ${connected ? "status-dot-active" : "status-dot-inactive"}`}
+              />
+            }
+            <span
+              style={{
+                fontSize: 12,
+                fontWeight: 600,
+                padding: "3px 10px",
+                borderRadius: "var(--radius-pill)",
+                background:
+                  connected ?
+                    "var(--color-green-fill)"
+                  : "var(--color-orange-fill)",
+                color: connected ? "var(--color-green)" : "var(--color-orange)",
+              }}
+            >
+              {/* eslint-disable-next-line no-nested-ternary */}
+              {connecting ?
+                "Connecting"
+              : connected ?
+                "Live"
+              : "Retrying"}
+            </span>
+          </div>
+
+          {/* Log Level inline */}
+          <select
+            value={logLevel ?? "info"}
+            onChange={async (e) => {
+              const newLevel = e.target.value as LogLevel
+              try {
+                log.info("changing log level", { from: logLevel, to: newLevel })
+                await updateLogLevel(newLevel)
+                setLogLevelState(newLevel)
+                showToast(
+                  `Log level → ${LOG_LEVELS.find((l) => l.value === newLevel)?.label ?? newLevel}`,
+                )
+              } catch (error) {
+                log.error("failed to update log level", error)
+                const errMsg =
+                  error instanceof Error ? error.message : String(error)
+                showToast(`Failed to update log level: ${errMsg}`, "error")
+              }
+            }}
+            className="sys-select"
+            style={{
+              width: "auto",
+              fontSize: 12,
+              height: 28,
+              padding: "0 28px 0 10px",
+            }}
+          >
+            {LOG_LEVELS.map((level) => (
+              <option key={level.value} value={level.value}>
+                {level.label}
+              </option>
+            ))}
+          </select>
+
+          <div
+            style={{
+              width: 1,
+              height: 20,
+              background: "var(--color-separator-opaque)",
+            }}
+          />
+
           <button
             className="btn btn-ghost btn-sm"
             onClick={() => setAutoScroll((prev) => !prev)}
+            title={
+              autoScroll ?
+                "Auto-scroll is on — click to disable"
+              : "Auto-scroll is off — click to enable"
+            }
           >
-            {autoScroll ? "Auto-scroll On" : "Auto-scroll Off"}
+            {autoScroll ? "⬇ Auto" : "Manual"}
           </button>
           <button
             className="btn btn-ghost btn-sm"
@@ -288,7 +372,11 @@ export function LoggingPage({
           >
             ↓ Bottom
           </button>
-          <button className="btn btn-ghost btn-sm" onClick={clearLogs}>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={clearLogs}
+            disabled={lines.length === 0}
+          >
             Clear
           </button>
           <button
@@ -301,164 +389,8 @@ export function LoggingPage({
         </div>
       </div>
 
-      {/* Stream State moved to top */}
-      <div style={{ marginBottom: 24 }}>
-        <div
-          style={{
-            fontSize: 12,
-            fontWeight: 600,
-            color: "var(--color-text-secondary)",
-            marginBottom: 10,
-          }}
-        >
-          Stream State
-        </div>
-        <div
-          style={{
-            ...card,
-            display: "flex",
-            alignItems: "center",
-            padding: "12px 16px",
-            gap: 24,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span
-              style={{ fontSize: 13, color: "var(--color-text-secondary)" }}
-            >
-              Connection
-            </span>
-            <span
-              style={{
-                fontSize: 12,
-                fontWeight: 600,
-                padding: "3px 10px",
-                borderRadius: "var(--radius-pill)",
-                background:
-                  connected ?
-                    "var(--color-green-fill)"
-                  : "var(--color-orange-fill)",
-                color: connected ? "var(--color-green)" : "var(--color-orange)",
-              }}
-            >
-              {
-                /* eslint-disable-next-line no-nested-ternary */
-                connecting ?
-                  "Connecting"
-                : connected ?
-                  "Live"
-                : "Retrying"
-              }
-            </span>
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span
-              style={{ fontSize: 13, color: "var(--color-text-secondary)" }}
-            >
-              Visible Lines
-            </span>
-            <span
-              style={{
-                fontSize: 13,
-                fontFamily: "var(--font-mono)",
-                color: "var(--color-text)",
-                fontWeight: 600,
-              }}
-            >
-              {lines.length}
-            </span>
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span
-              style={{ fontSize: 13, color: "var(--color-text-secondary)" }}
-            >
-              Log Level
-            </span>
-            <select
-              value={logLevel ?? "info"}
-              onChange={async (e) => {
-                const newLevel = e.target.value as LogLevel
-                try {
-                  log.info("changing log level", {
-                    from: logLevel,
-                    to: newLevel,
-                  })
-                  await updateLogLevel(newLevel)
-                  setLogLevelState(newLevel)
-                  showToast(
-                    `Log level changed to ${LOG_LEVELS.find((level) => level.value === newLevel)?.label ?? newLevel}`,
-                  )
-                } catch (error) {
-                  log.error("failed to update log level", error)
-                  showToast(
-                    `Failed to update log level: ${error instanceof Error ? error.message : String(error)}`,
-                    "error",
-                  )
-                }
-              }}
-              style={{
-                fontSize: 12,
-                fontFamily: "var(--font-mono)",
-                color: "var(--color-blue)",
-                fontWeight: 600,
-                background: "transparent",
-                border: "1px solid var(--color-separator)",
-                borderRadius: "var(--radius-sm)",
-                padding: "4px 8px",
-                cursor: "pointer",
-              }}
-            >
-              {LOG_LEVELS.map((level) => (
-                <option key={level.value} value={level.value}>
-                  {level.value} {level.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              marginLeft: "auto",
-            }}
-          >
-            {connecting ?
-              <Spin />
-            : <span
-                className={`status-dot ${
-                  connected ? "status-dot-active" : "status-dot-inactive"
-                }`}
-              />
-            }
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: "var(--color-text-tertiary)",
-              }}
-            >
-              /api/admin/logs/stream
-            </span>
-          </div>
-        </div>
-      </div>
-
       {/* Full-width logging area */}
       <section>
-        <div
-          style={{
-            fontSize: 12,
-            fontWeight: 600,
-            color: "var(--color-text-secondary)",
-            marginBottom: 10,
-          }}
-        >
-          Live Output
-        </div>
         <div style={card}>
           <div
             style={{
@@ -466,7 +398,7 @@ export function LoggingPage({
               alignItems: "center",
               justifyContent: "space-between",
               gap: 12,
-              padding: "11px 16px",
+              padding: "10px 16px",
               borderBottom: "1px solid var(--color-separator)",
               background: "rgba(255,255,255,0.02)",
             }}
@@ -483,36 +415,44 @@ export function LoggingPage({
               {connecting ?
                 <Spin />
               : <span
-                  className={`status-dot ${
-                    connected ? "status-dot-active" : "status-dot-inactive"
-                  }`}
+                  className={`status-dot ${connected ? "status-dot-active" : "status-dot-inactive"}`}
                 />
               }
-              {
-                /* eslint-disable-next-line no-nested-ternary */
-                connecting ?
-                  "Opening stream..."
-                : connected ?
-                  "Receiving new log lines"
-                : "Waiting for reconnect"
-              }
+              {/* eslint-disable-next-line no-nested-ternary */}
+              {connecting ?
+                "Opening stream…"
+              : connected ?
+                "Receiving new log lines"
+              : "Waiting for reconnect"}
             </div>
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: "var(--color-text-tertiary)",
-              }}
-            >
-              Buffer: {lines.length}/{MAX_LINES} lines
-            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                  color: "var(--color-text-tertiary)",
+                }}
+              >
+                {lines.length}/{MAX_LINES} lines
+              </span>
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 10,
+                  color: "var(--color-text-tertiary)",
+                  opacity: 0.7,
+                }}
+              >
+                /api/admin/logs/stream
+              </span>
+            </div>
           </div>
 
           <div
             ref={logViewportRef}
             style={{
               minHeight: 500,
-              maxHeight: "calc(100vh - 280px)",
+              maxHeight: "calc(100vh - 260px)",
               overflow: "auto",
               background:
                 "linear-gradient(180deg, rgba(255,255,255,0.015), rgba(255,255,255,0.005))",
@@ -531,13 +471,14 @@ export function LoggingPage({
                   fontSize: 13,
                 }}
               >
-                {connecting ?
+                {connecting && (
                   <div
                     style={{ display: "flex", alignItems: "center", gap: 10 }}
                   >
                     <Spin /> Connecting to log stream...
                   </div>
-                : "No log lines received yet."}
+                )}
+                {!connecting && "No log lines received yet."}
               </div>
             : <div
                 style={{

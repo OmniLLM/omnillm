@@ -3001,7 +3001,7 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(5, 1fr)", // Exactly 5 equal columns for all tools
+          gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
           gap: 14,
           marginBottom: 24,
         }}
@@ -3101,8 +3101,18 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
                 </button>
               )}
               {dirty && (
-                <span style={{ fontSize: 11, color: "var(--color-amber)" }}>
-                  unsaved changes
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: "var(--color-orange)",
+                    background: "var(--color-orange-fill)",
+                    border: "1px solid rgba(210,153,34,0.2)",
+                    borderRadius: "var(--radius-pill)",
+                    padding: "2px 10px",
+                  }}
+                >
+                  ● unsaved
                 </span>
               )}
               {dirty && (

@@ -676,21 +676,25 @@ export function ChatPage({ showToast }: ChatPageProps) {
                 <MessageAvatar role="assistant" />
                 <div
                   style={{
-                    padding: "12px 16px",
+                    padding: "14px 18px",
                     borderRadius: "var(--radius-lg)",
                     background: "var(--color-surface)",
                     border: "1px solid var(--color-separator)",
-                    color: "var(--color-text-secondary)",
-                    fontSize: 14,
-                    fontStyle: "italic",
+                    color: "var(--color-text-tertiary)",
                     boxShadow: "var(--shadow-btn)",
                     display: "flex",
                     alignItems: "center",
-                    gap: 8,
+                    gap: 10,
                   }}
                 >
-                  <span className="spinner" aria-hidden="true" />
-                  Thinking…
+                  <span style={{ fontSize: 12, fontStyle: "italic" }}>
+                    Thinking
+                  </span>
+                  <span className="thinking-dots" aria-hidden="true">
+                    <span />
+                    <span />
+                    <span />
+                  </span>
                 </div>
               </div>
             </div>
@@ -702,14 +706,17 @@ export function ChatPage({ showToast }: ChatPageProps) {
         {/* Input */}
         <div
           style={{
-            padding: "20px 24px",
+            padding: "12px 16px 16px",
             borderTop: "1px solid var(--color-separator)",
             background: "var(--color-surface)",
             borderBottomLeftRadius: "var(--radius-lg)",
             borderBottomRightRadius: "var(--radius-lg)",
           }}
         >
-          <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
+          <div
+            className="chat-input-wrapper"
+            style={{ display: "flex", alignItems: "flex-end", gap: 8 }}
+          >
             <div style={{ flex: 1 }}>
               <label
                 htmlFor="chat-input"
@@ -738,6 +745,7 @@ export function ChatPage({ showToast }: ChatPageProps) {
                   !selectedModel ? "model-required-hint" : undefined
                 }
                 className="chat-textarea"
+                style={{ minHeight: 52 }}
               />
             </div>
             <button
@@ -745,17 +753,19 @@ export function ChatPage({ showToast }: ChatPageProps) {
               disabled={!inputValue.trim() || !selectedModel || isLoading}
               className="btn btn-primary"
               style={{
-                width: 44,
-                height: 44,
+                width: 40,
+                height: 40,
                 padding: 0,
                 flexShrink: 0,
-                borderRadius: "var(--radius-lg)",
+                borderRadius: "var(--radius-md)",
+                marginBottom: 6,
+                marginRight: 6,
               }}
               aria-label={isLoading ? "Sending message…" : "Send message"}
             >
               {isLoading ?
-                <Loader2 size={18} className="animate-spin" />
-              : <SendIcon size={18} />}
+                <Loader2 size={16} className="animate-spin" />
+              : <SendIcon size={16} />}
             </button>
           </div>
           {!selectedModel && (

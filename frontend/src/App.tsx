@@ -383,24 +383,54 @@ export default function AppComponent() {
             zIndex: 30,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <Icon
-              size={16}
-              style={{ color: "var(--color-blue)", flexShrink: 0 }}
-            />
-            <h1
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span
               style={{
-                fontSize: 14,
-                fontWeight: 600,
-                color: "var(--color-text)",
-                margin: 0,
-                fontFamily: "var(--font-display)",
-                letterSpacing: "-0.02em",
+                fontSize: 12,
+                color: "var(--color-text-tertiary)",
+                fontFamily: "var(--font-text)",
               }}
             >
-              {currentNavItem.label}
-            </h1>
+              OmniLLM
+            </span>
+            <span
+              style={{ fontSize: 12, color: "var(--color-separator-opaque)" }}
+            >
+              /
+            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <Icon
+                size={14}
+                style={{ color: "var(--color-blue)", flexShrink: 0 }}
+              />
+              <h1
+                style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: "var(--color-text)",
+                  margin: 0,
+                  fontFamily: "var(--font-display)",
+                  letterSpacing: "-0.02em",
+                }}
+              >
+                {currentNavItem.label}
+              </h1>
+            </div>
           </div>
+          {info && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div className="status-dot status-dot-active" />
+              <span
+                style={{
+                  fontSize: 11,
+                  color: "var(--color-text-tertiary)",
+                  fontFamily: "var(--font-mono)",
+                }}
+              >
+                :{info.port}
+              </span>
+            </div>
+          )}
         </header>
 
         <MuiThemeWrapper isDark={theme === "dark"}>
