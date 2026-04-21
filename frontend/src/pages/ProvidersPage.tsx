@@ -2960,31 +2960,7 @@ function AddFlowCopilotForm({
         flow — no token needed.
       </AddFlowHint>
 
-      {/* Divider */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-        }}
-      >
-        <div
-          style={{ flex: 1, height: 1, background: "var(--color-separator)" }}
-        />
-        <span
-          style={{
-            fontSize: 11,
-            color: "var(--color-text-tertiary)",
-            textTransform: "uppercase",
-            letterSpacing: "0.05em",
-          }}
-        >
-          or use a token
-        </span>
-        <div
-          style={{ flex: 1, height: 1, background: "var(--color-separator)" }}
-        />
-      </div>
+      <div className="divider-label">or use a token</div>
 
       {/* Secondary: Token */}
       <FormRow label="GitHub Token">

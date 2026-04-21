@@ -307,16 +307,8 @@ export default function AppComponent() {
                 </div>
                 <button
                   onClick={toggleTheme}
-                  title={
-                    theme === "dark" ?
-                      "Switch to light theme"
-                    : "Switch to dark theme"
-                  }
-                  aria-label={
-                    theme === "dark" ?
-                      "Switch to light theme"
-                    : "Switch to dark theme"
-                  }
+                  title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+                  aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
                   className="btn btn-icon btn-icon-ghost"
                 >
                   {theme === "dark" ?

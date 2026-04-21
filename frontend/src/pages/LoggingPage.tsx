@@ -123,9 +123,13 @@ export function LoggingPage({
 
   useEffect(() => {
     let es: EventSource | null = null
+    let retryTimer: ReturnType<typeof setTimeout> | null = null
+    let mounted = true
 
-    const setupLogStream = async () => {
+    const connect = async () => {
+      if (!mounted) return
       log.info("setting up log stream")
+      setConnecting(true)
       try {
         es = await subscribeToLogs((line) => {
           setLines((prev) => [...prev.slice(-(MAX_LINES - 1)), line])
@@ -139,26 +143,31 @@ export function LoggingPage({
           setConnecting(false)
         })
 
-        es.addEventListener("error", (e) => {
-          log.error("EventSource error", e)
+        es.addEventListener("error", () => {
+          log.error("log stream error, will retry")
           setConnected(false)
           setConnecting(false)
+          if (es) {
+            es.close()
+            es = null
+          }
+          if (mounted) {
+            retryTimer = setTimeout(connect, 3000)
+          }
         })
       } catch (error) {
-        log.error("failed to setup log stream", error)
+        log.error("failed to setup log stream, will retry", error)
         setConnected(false)
         setConnecting(false)
-        showToast(
-          "Failed to connect to log stream: "
-            + (error instanceof Error ? error.message : String(error)),
-          "error",
-        )
+        retryTimer = setTimeout(connect, 3000)
       }
     }
 
-    void setupLogStream()
+    void connect()
 
     return () => {
+      mounted = false
+      if (retryTimer) clearTimeout(retryTimer)
       if (es) {
         log.debug("closing log stream")
         es.close()
