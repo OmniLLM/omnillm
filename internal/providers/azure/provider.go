@@ -120,21 +120,9 @@ func stringSliceFromConfig(config map[string]interface{}, key string) []string {
 	}
 }
 
-// IsResponsesAPIModel returns true if the model should use the Responses API
-// rather than the chat completions endpoint.
-func IsResponsesAPIModel(model string) bool {
-	modelLower := strings.ToLower(model)
-	patterns := []string{
-		"gpt-5.1-codex",
-		"gpt-5.2-codex",
-		"gpt-5.3-codex",
-		"gpt-5-codex",
-		"gpt-5.4",
-	}
-	for _, p := range patterns {
-		if strings.Contains(modelLower, p) {
-			return true
-		}
-	}
-	return false
+// IsResponsesAPIModel returns true for all Azure OpenAI models.
+// Azure OpenAI uses the Responses API exclusively — this is the canonical
+// API shape for this provider as defined in internal/providers/providermodels.
+func IsResponsesAPIModel(_ string) bool {
+	return true
 }

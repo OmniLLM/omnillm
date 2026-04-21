@@ -19,6 +19,7 @@ import (
 	"omnillm/internal/cif"
 	"omnillm/internal/database"
 	"omnillm/internal/providers/openaicompat"
+	"omnillm/internal/providers/providermodels"
 	"omnillm/internal/providers/shared"
 	"omnillm/internal/providers/types"
 	"omnillm/internal/security"
@@ -286,24 +287,32 @@ func (a *Adapter) chatCompletionsConfig(request *cif.CanonicalRequest, stream bo
 }
 
 func (a *Adapter) selectedUpstreamAPI(request *cif.CanonicalRequest) string {
+	// 1. Per-request escape hatch: caller explicitly forces chat completions.
 	if a.forceChatCompletions(request) {
 		return openAICompatChatCompletionsAPI
 	}
 
-	switch a.configuredAPIFormat() {
-	case openAICompatResponsesAPI:
-		return openAICompatResponsesAPI
-	case openAICompatChatCompletionsAPI:
-		return openAICompatChatCompletionsAPI
+	// 2. Per-instance override stored in config (set via admin UI or SetupAuth).
+	//    This lets operators pin a specific endpoint to a particular API shape.
+	if configured := a.configuredAPIFormat(); configured != "" {
+		return configured
 	}
 
-	switch a.inboundAPIShape(request) {
-	case "anthropic", "responses":
-		if isOfficialOpenAIBaseURL(a.provider.baseURL) {
+	// 3. Official api.openai.com: consult the providermodels table.
+	//    For openai-compatible endpoints that resolve to api.openai.com we treat
+	//    the provider as "openai-compatible" in the table — currently that always
+	//    returns chat.completions, but individual model entries can override it.
+	if isOfficialOpenAIBaseURL(a.provider.baseURL) {
+		model := a.RemapModel("")
+		if request != nil {
+			model = a.RemapModel(request.Model)
+		}
+		if providermodels.IsResponses("openai-compatible", model) {
 			return openAICompatResponsesAPI
 		}
 	}
 
+	// 4. Default: chat completions.
 	return openAICompatChatCompletionsAPI
 }
 

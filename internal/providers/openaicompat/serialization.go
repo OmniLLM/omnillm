@@ -381,7 +381,9 @@ func ParseSSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 
 		for _, tc := range delta.ToolCalls {
 			idx := tc.Index
-			if tc.ID != "" {
+			// DashScope sends call_id instead of id; accept either.
+			toolCallID := firstNonEmpty(tc.ID, tc.CallID)
+			if toolCallID != "" {
 				contentBlockIndex++
 				providerToolIndexToBlock[idx] = contentBlockIndex
 				toolCallsSeen[idx] = true
@@ -390,7 +392,7 @@ func ParseSSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 					Index: contentBlockIndex,
 					ContentBlock: cif.CIFToolCallPart{
 						Type:          "tool_call",
-						ToolCallID:    tc.ID,
+						ToolCallID:    toolCallID,
 						ToolName:      tc.Function.Name,
 						ToolArguments: map[string]interface{}{},
 					},

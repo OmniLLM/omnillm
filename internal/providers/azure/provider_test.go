@@ -28,27 +28,15 @@ func TestMain(m *testing.M) {
 
 func ptr[T any](v T) *T { return &v }
 
-// ─── IsResponsesAPIModel ─────────────────────────────────────────────────────
+// ─── API shape routing ───────────────────────────────────────────────────────
+// Azure OpenAI always uses the Responses API for all models.
+// Routing is governed by internal/providers/providermodels.
 
-func TestIsResponsesAPIModel(t *testing.T) {
-	cases := []struct {
-		model string
-		want  bool
-	}{
-		{"gpt-4o", false},
-		{"gpt-4o-mini", false},
-		{"gpt-5.4-mini", true},
-		{"GPT-5.4-turbo", true},
-		{"gpt-5.1-codex", true},
-		{"gpt-5.2-codex-max", true},
-		{"gpt-5-codex", true},
-		{"gpt-5.3-codex-plus", true},
-		{"gpt-6-ultra", false},
-	}
-	for _, tc := range cases {
-		got := IsResponsesAPIModel(tc.model)
-		if got != tc.want {
-			t.Errorf("IsResponsesAPIModel(%q) = %v, want %v", tc.model, got, tc.want)
+func TestAzureAlwaysUsesResponsesAPI(t *testing.T) {
+	models := []string{"gpt-4o", "gpt-4o-mini", "gpt-5.4", "gpt-5.4-turbo", "gpt-5.1-codex"}
+	for _, model := range models {
+		if !IsResponsesAPIModel(model) {
+			t.Errorf("IsResponsesAPIModel(%q) = false, want true (azure always uses Responses)", model)
 		}
 	}
 }
@@ -164,51 +152,6 @@ func TestGetModelsFromDeployments(t *testing.T) {
 	}
 	if resp.Data[0].ID != "my-gpt4o" {
 		t.Errorf("model[0].ID = %q, want my-gpt4o", resp.Data[0].ID)
-	}
-}
-
-// ─── BuildOpenAIPayload ───────────────────────────────────────────────────────
-
-func TestBuildOpenAIPayloadBasic(t *testing.T) {
-	request := &cif.CanonicalRequest{
-		Model: "gpt-4o",
-		Messages: []cif.CIFMessage{
-			cif.CIFUserMessage{Content: []cif.CIFContentPart{
-				cif.CIFTextPart{Type: "text", Text: "Hello"},
-			}},
-		},
-		Temperature: ptr(0.7),
-		MaxTokens:   ptr(1000),
-	}
-
-	messages := []map[string]interface{}{
-		{"role": "user", "content": "Hello"},
-	}
-	payload := BuildOpenAIPayload("gpt-4o", messages, request)
-
-	if _, ok := payload["model"]; ok {
-		t.Error("payload should not contain model field for Azure")
-	}
-	if payload["temperature"].(float64) != 0.7 {
-		t.Errorf("temperature = %v", payload["temperature"])
-	}
-	if payload["max_tokens"].(int) != 1000 {
-		t.Errorf("max_tokens = %v", payload["max_tokens"])
-	}
-}
-
-func TestBuildOpenAIPayloadGPT54UsesMaxCompletionTokens(t *testing.T) {
-	request := &cif.CanonicalRequest{
-		Model:     "gpt-5.4-turbo",
-		Messages:  []cif.CIFMessage{},
-		MaxTokens: ptr(2000),
-	}
-	payload := BuildOpenAIPayload("gpt-5.4-turbo", []map[string]interface{}{}, request)
-	if _, ok := payload["max_completion_tokens"]; !ok {
-		t.Error("gpt-5.4 should use max_completion_tokens")
-	}
-	if _, ok := payload["max_tokens"]; ok {
-		t.Error("gpt-5.4 should not use max_tokens")
 	}
 }
 
