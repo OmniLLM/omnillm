@@ -287,6 +287,22 @@ func TestParseOpenAI_UnknownRole(t *testing.T) {
 	}
 }
 
+func TestParseOpenAI_RejectsMalformedContentPart(t *testing.T) {
+	payload := map[string]interface{}{
+		"model": "gpt-4o",
+		"messages": []interface{}{
+			map[string]interface{}{
+				"role":    "user",
+				"content": []interface{}{"not-a-map"},
+			},
+		},
+	}
+	_, err := ParseOpenAIChatCompletions(mustRaw(t, payload))
+	if err == nil {
+		t.Fatal("expected malformed OpenAI content part to fail")
+	}
+}
+
 // ─── ParseAnthropicMessages ───
 
 func TestParseAnthropic_SimpleUserMessage(t *testing.T) {

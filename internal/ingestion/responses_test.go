@@ -237,3 +237,81 @@ func TestParseResponsesPayload_FunctionCallRequiresIdentifier(t *testing.T) {
 		t.Fatal("expected missing function_call id to fail")
 	}
 }
+
+func TestParseResponsesPayload_InfersMissingMessageType(t *testing.T) {
+	req, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
+		"model": "gpt-5.4-mini",
+		"input": []interface{}{
+			map[string]interface{}{
+				"role":    "user",
+				"content": []interface{}{map[string]interface{}{"type": "text", "text": "Hello from Droid"}},
+			},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(req.Messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(req.Messages))
+	}
+	userMsg, ok := req.Messages[0].(cif.CIFUserMessage)
+	if !ok {
+		t.Fatalf("expected user message, got %T", req.Messages[0])
+	}
+	textPart := userMsg.Content[0].(cif.CIFTextPart)
+	if textPart.Text != "Hello from Droid" {
+		t.Fatalf("unexpected text content: %q", textPart.Text)
+	}
+}
+
+func TestParseResponsesPayload_InfersMissingFunctionCallType(t *testing.T) {
+	req, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
+		"model": "gpt-5.4-mini",
+		"input": []interface{}{
+			map[string]interface{}{
+				"id":        "call_123",
+				"name":      "get_weather",
+				"arguments": `{"location":"Boston"}`,
+			},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	assistantMsg := req.Messages[0].(cif.CIFAssistantMessage)
+	toolCall := assistantMsg.Content[0].(cif.CIFToolCallPart)
+	if toolCall.ToolCallID != "call_123" || toolCall.ToolName != "get_weather" {
+		t.Fatalf("unexpected tool call: %#v", toolCall)
+	}
+}
+
+func TestParseResponsesPayload_InfersMissingFunctionCallOutputType(t *testing.T) {
+	req, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
+		"model": "gpt-5.4-mini",
+		"input": []interface{}{
+			map[string]interface{}{
+				"call_id": "call_123",
+				"name":    "get_weather",
+				"output":  "Sunny",
+			},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	userMsg := req.Messages[0].(cif.CIFUserMessage)
+	toolResult := userMsg.Content[0].(cif.CIFToolResultPart)
+	if toolResult.ToolCallID != "call_123" || toolResult.Content != "Sunny" {
+		t.Fatalf("unexpected tool result: %#v", toolResult)
+	}
+}
+
+func TestParseResponsesPayload_RejectsMalformedInputItem(t *testing.T) {
+	_, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
+		"model": "gpt-5.4-mini",
+		"input": []interface{}{"not-a-map"},
+	}))
+	if err == nil {
+		t.Fatal("expected malformed input item to fail")
+	}
+}

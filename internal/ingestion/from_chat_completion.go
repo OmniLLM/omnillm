@@ -158,13 +158,15 @@ func convertOpenAIMessage(msg OpenAIMessage) (cif.CIFMessage, error) {
 			})
 		case []interface{}:
 			for _, part := range content {
-				if partMap, ok := part.(map[string]interface{}); ok {
-					cifPart, err := convertOpenAIContentPart(partMap)
-					if err != nil {
-						return nil, fmt.Errorf("failed to convert content part: %w", err)
-					}
-					contentParts = append(contentParts, cifPart)
+				partMap, ok := part.(map[string]interface{})
+				if !ok {
+					return nil, fmt.Errorf("invalid OpenAI content part type: %T", part)
 				}
+				cifPart, err := convertOpenAIContentPart(partMap)
+				if err != nil {
+					return nil, fmt.Errorf("failed to convert content part: %w", err)
+				}
+				contentParts = append(contentParts, cifPart)
 			}
 		}
 
