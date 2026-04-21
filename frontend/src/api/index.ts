@@ -832,3 +832,9 @@ export const saveConfigFile = (name: string, content: string) =>
       body: JSON.stringify({ content }),
     },
   )
+
+export const backupConfigFile = (name: string) =>
+  apiFetch<{ success: boolean; backup: string; message: string }>(
+    `/api/admin/config/${encodeURIComponent(name)}/backup`,
+    { method: "POST" },
+  )

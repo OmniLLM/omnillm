@@ -12,6 +12,7 @@ import {
   Key,
   Plug,
   Code,
+  Copy,
 } from "lucide-react"
 import { CSSProperties, useEffect, useState } from "react"
 
@@ -19,6 +20,7 @@ import {
   listConfigFiles,
   getConfigFile,
   saveConfigFile,
+  backupConfigFile,
   type ConfigFileEntry,
 } from "@/api"
 
@@ -2483,10 +2485,12 @@ function ToolCard({
   entry,
   isActive,
   onClick,
+  onBackup,
 }: {
   entry: ConfigFileEntry
   isActive: boolean
   onClick: () => void
+  onBackup: () => void
 }) {
   const Icon = entry.language === "json" ? FileJson : FileText
 
@@ -2634,6 +2638,31 @@ function ToolCard({
         >
           {entry.language}
         </span>
+        {entry.exists && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onBackup()
+            }}
+            title="Download backup"
+            style={{
+              marginLeft: "auto",
+              display: "flex",
+              alignItems: "center",
+              padding: "2px 6px",
+              borderRadius: "var(--radius-sm)",
+              border: "1px solid var(--color-separator)",
+              background: "var(--color-surface-2)",
+              color: "var(--color-text-secondary)",
+              fontSize: 9,
+              gap: 3,
+              cursor: "pointer",
+            }}
+          >
+            <Copy size={10} />
+            backup
+          </button>
+        )}
       </div>
     </button>
   )
@@ -2888,6 +2917,14 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
     setActiveConfig(name)
   }
 
+  const handleBackup = (name: string) => {
+    backupConfigFile(name)
+      .then((resp) => showToast(resp.message, "success"))
+      .catch((err: Error) =>
+        showToast(`Backup failed: ${err.message}`, "error"),
+      )
+  }
+
   const markDirty = () => setDirty(true)
 
   const activeEntry = configs.find((c) => c.name === activeConfig)
@@ -2942,6 +2979,7 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
             entry={cfg}
             isActive={cfg.name === activeConfig}
             onClick={() => handleCardClick(cfg.name)}
+            onBackup={() => handleBackup(cfg.name)}
           />
         ))}
       </div>
