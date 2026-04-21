@@ -29,6 +29,14 @@ Route AI traffic through a controlled internal endpoint instead of binding appli
 
 ![OmniLLM Admin Console](docs/assets/admin-console.png)
 
+### Chat
+
+![Chat Interface](docs/assets/chat.png)
+
+### Virtual Models
+
+![Virtual Models](docs/assets/virtual-models.png)
+
 ## Quick Start
 
 ### Prerequisites
@@ -501,6 +509,8 @@ Or in `.claude/settings.json`:
 ## ToolConfig - AI Assistant Configuration Management
 
 OmniLLM provides a unified **ToolConfig** interface in the admin UI for managing configuration files of popular AI coding assistants. Access it at `http://localhost:5080/admin/` → **ToolConfig**.
+
+![ToolConfig Interface](docs/assets/toolconfig.png)
 
 ### Supported Tools
 
