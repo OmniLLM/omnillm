@@ -35,7 +35,7 @@ type StreamOptions struct {
 // Message is one conversation turn (system / user / assistant / tool).
 type Message struct {
 	Role             string     `json:"role"`
-	Content          any        `json:"content"` // string or []ContentPart
+	Content          any        `json:"content,omitempty"` // string or []ContentPart; omit nil so pure tool-call turns don't send "content":null
 	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID       string     `json:"tool_call_id,omitempty"`
 	ReasoningContent string     `json:"reasoning_content,omitempty"` // Qwen3 / o1-style
@@ -132,6 +132,7 @@ type MessageDelta struct {
 type ToolCallDelta struct {
 	Index    int                   `json:"index"`
 	ID       string                `json:"id,omitempty"`
+	CallID   string                `json:"call_id,omitempty"` // DashScope alias for id
 	Type     string                `json:"type,omitempty"`
 	Function FunctionCallDeltaSpec `json:"function"`
 }

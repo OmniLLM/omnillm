@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -247,5 +248,43 @@ func handleImportConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": fmt.Sprintf("Configuration imported to %s", filePath),
+	})
+}
+
+// handleBackupConfig creates a timestamped copy of the config file in the same directory.
+func handleBackupConfig(c *gin.Context) {
+	name := c.Param("name")
+
+	filePath, ok := configFilePaths[name]
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("Unknown config: %s", name)})
+		return
+	}
+
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Config file does not exist yet"})
+		return
+	}
+
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to read file: %v", err)})
+		return
+	}
+
+	ext := filepath.Ext(filePath)
+	base := strings.TrimSuffix(filePath, ext)
+	timestamp := time.Now().Format("20060102_150405")
+	backupPath := fmt.Sprintf("%s.%s%s", base, timestamp, ext)
+
+	if err := os.WriteFile(backupPath, data, 0o600); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to create backup: %v", err)})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"backup":  backupPath,
+		"message": fmt.Sprintf("Backup saved to %s", backupPath),
 	})
 }

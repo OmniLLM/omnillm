@@ -216,6 +216,22 @@ func TestParseAnthropic_NormalizesSystemMetadataAndToolChoice(t *testing.T) {
 	}
 }
 
+func TestParseAnthropic_RejectsMalformedContentBlock(t *testing.T) {
+	payload := map[string]interface{}{
+		"model": "claude-3-5-sonnet-20241022",
+		"messages": []interface{}{
+			map[string]interface{}{
+				"role": "assistant",
+				"content": []interface{}{"not-a-map"},
+			},
+		},
+	}
+	_, err := ParseAnthropicMessages(mustRawM(t, payload))
+	if err == nil {
+		t.Fatal("expected malformed Anthropic content block to fail")
+	}
+}
+
 func TestParseAnthropic_PreservesThinkingToolResultsAndNormalizesSchemas(t *testing.T) {
 	isError := true
 	payload := map[string]interface{}{

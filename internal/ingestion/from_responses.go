@@ -102,15 +102,15 @@ func translateResponsesInput(input interface{}) ([]cif.CIFMessage, error) {
 		for _, item := range v {
 			itemMap, ok := item.(map[string]interface{})
 			if !ok {
-				continue
+				return nil, fmt.Errorf("invalid input item type: %T", item)
 			}
 			itemBytes, err := json.Marshal(itemMap)
 			if err != nil {
-				continue
+				return nil, fmt.Errorf("failed to marshal input item: %w", err)
 			}
 			var inputItem InputItem
 			if err := json.Unmarshal(itemBytes, &inputItem); err != nil {
-				continue
+				return nil, fmt.Errorf("failed to decode input item: %w", err)
 			}
 			msgs, err := translateInputItem(inputItem)
 			if err != nil {
@@ -125,7 +125,19 @@ func translateResponsesInput(input interface{}) ([]cif.CIFMessage, error) {
 }
 
 func translateInputItem(item InputItem) ([]cif.CIFMessage, error) {
-	switch item.Type {
+	itemType := item.Type
+	if itemType == "" {
+		switch {
+		case item.Role != "" && item.Content != nil:
+			itemType = "message"
+		case item.Output != "" && item.CallID != "":
+			itemType = "function_call_output"
+		case item.Name != "" && (item.Arguments != "" || item.ID != "" || item.CallID != ""):
+			itemType = "function_call"
+		}
+	}
+
+	switch itemType {
 	case "message":
 		content, err := translateInputContent(item.Content)
 		if err != nil {
@@ -203,18 +215,18 @@ func translateInputContent(content interface{}) ([]cif.CIFContentPart, error) {
 		for _, block := range v {
 			blockMap, ok := block.(map[string]interface{})
 			if !ok {
-				continue
+				return nil, fmt.Errorf("invalid input content block type: %T", block)
 			}
 			blockBytes, err := json.Marshal(blockMap)
 			if err != nil {
-				continue
+				return nil, fmt.Errorf("failed to marshal input content block: %w", err)
 			}
 			var cb InputContentBlock
 			if err := json.Unmarshal(blockBytes, &cb); err != nil {
-				continue
+				return nil, fmt.Errorf("failed to decode input content block: %w", err)
 			}
 			switch cb.Type {
-			case "input_text", "output_text":
+			case "input_text", "output_text", "text":
 				parts = append(parts, cif.CIFTextPart{Type: "text", Text: cb.Text})
 			default:
 				return nil, fmt.Errorf("unknown input content block type: %s", cb.Type)

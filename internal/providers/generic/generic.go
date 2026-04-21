@@ -499,14 +499,7 @@ func (a *GenericAdapter) Execute(ctx context.Context, request *cif.CanonicalRequ
 		}
 		return a.executeOpenAI(ctx, a.alibabaURL(), a.provider.alibabaHeaders(false), request)
 	case "azure-openai":
-		if azurepkg.IsResponsesAPIModel(a.RemapModel(request.Model)) {
-			return a.executeAzureResponses(ctx, request)
-		}
-		url, err := a.azureURL(a.RemapModel(request.Model))
-		if err != nil {
-			return nil, err
-		}
-		return a.executeOpenAI(ctx, url, a.azureHeaders(), request)
+		return a.executeAzureResponses(ctx, request)
 	case "google":
 		return googlepkg.Execute(ctx, a.provider.token, a.provider.baseURL, request)
 	case "kimi":
@@ -527,14 +520,7 @@ func (a *GenericAdapter) ExecuteStream(ctx context.Context, request *cif.Canonic
 		}
 		return a.streamOpenAI(ctx, a.alibabaURL(), a.provider.alibabaHeaders(true), request)
 	case "azure-openai":
-		if azurepkg.IsResponsesAPIModel(a.RemapModel(request.Model)) {
-			return a.streamAzureResponses(ctx, request)
-		}
-		url, err := a.azureURL(a.RemapModel(request.Model))
-		if err != nil {
-			return nil, err
-		}
-		return a.streamOpenAI(ctx, url, a.azureHeaders(), request)
+		return a.streamAzureResponses(ctx, request)
 	case "google":
 		return googlepkg.Stream(ctx, a.provider.token, a.provider.baseURL, request)
 	case "kimi":
@@ -564,18 +550,6 @@ func (a *GenericAdapter) kimiURL() string {
 
 func (a *GenericAdapter) kimiHeaders(stream bool) map[string]string {
 	return kimipkg.Headers(a.provider.token, stream, a.provider.config)
-}
-
-func (a *GenericAdapter) azureURL(deployment string) (string, error) {
-	apiVersion := ""
-	if v, ok := firstString(a.provider.config, "api_version", "apiVersion"); ok {
-		apiVersion = v
-	}
-	return azurepkg.ChatURL(a.provider.baseURL, deployment, apiVersion)
-}
-
-func (a *GenericAdapter) azureHeaders() map[string]string {
-	return azurepkg.Headers(a.provider.token)
 }
 
 func (a *GenericAdapter) azureResponsesURL() (string, error) {
@@ -668,10 +642,6 @@ func (a *GenericAdapter) buildOpenAIPayload(request *cif.CanonicalRequest) map[s
 		return payload
 	}
 
-	if a.provider.id == "azure-openai" {
-		return azurepkg.BuildOpenAIPayload(model, messages, request)
-	}
-
 	// Default OpenAI-compatible payload
 	payload := map[string]interface{}{
 		"model":    model,
@@ -718,22 +688,12 @@ func (a *GenericAdapter) buildOpenAIPayload(request *cif.CanonicalRequest) map[s
 }
 
 func (a *GenericAdapter) executeOpenAI(ctx context.Context, url string, headers map[string]string, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
-	if a.provider.id == "azure-openai" {
-		return azurepkg.ExecuteOpenAI(ctx, url, headers, request)
-	}
-	return a.executeOpenAIGeneric(ctx, url, headers, request)
-}
-
-func (a *GenericAdapter) executeOpenAIGeneric(ctx context.Context, url string, headers map[string]string, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
 	payload := a.buildOpenAIPayload(request)
 	payload["stream"] = false
 	return executeOpenAIWithPayload(ctx, url, headers, payload, request.Model)
 }
 
 func (a *GenericAdapter) streamOpenAI(ctx context.Context, url string, headers map[string]string, request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
-	if a.provider.id == "azure-openai" {
-		return azurepkg.StreamOpenAI(ctx, url, headers, request)
-	}
 	return a.streamOpenAIGeneric(ctx, url, headers, request)
 }
 
@@ -797,26 +757,6 @@ func sanitizeGeminiSchema(schema map[string]interface{}) map[string]interface{} 
 	return shared.SanitizeGeminiSchema(schema)
 }
 
-// cifMessagesToOpenAI converts CIF messages to OpenAI format.
-func cifMessagesToOpenAI(messages []cif.CIFMessage) []map[string]interface{} {
-	return shared.CIFMessagesToOpenAI(messages)
-}
-
-// openAIRespToCIF converts an OpenAI response to CIF format.
-func openAIRespToCIF(resp map[string]interface{}) *cif.CanonicalResponse {
-	return shared.OpenAIRespToCIF(resp)
-}
-
-// openAIStopReason converts an OpenAI finish_reason to a CIF stop reason.
-func openAIStopReason(reason string) cif.CIFStopReason {
-	return shared.OpenAIStopReason(reason)
-}
-
-// randomID generates a random ID.
-func randomID() string {
-	return shared.RandomID()
-}
-
 // googleStopReason converts a Google finish reason to CIF stop reason.
 func googleStopReason(reason string) cif.CIFStopReason {
 	return googlepkg.StopReason(reason)
@@ -825,15 +765,6 @@ func googleStopReason(reason string) cif.CIFStopReason {
 // antigravityStopReason converts an Antigravity finish reason to CIF stop reason.
 func antigravityStopReason(reason string) cif.CIFStopReason {
 	return antigravitypkg.StopReason(reason)
-}
-
-// parseOpenAISSE parses an OpenAI SSE stream.
-func parseOpenAISSE(body interface {
-	Read([]byte) (int, error)
-	Close() error
-}, eventCh chan cif.CIFStreamEvent,
-) {
-	shared.ParseOpenAISSE(body, eventCh)
 }
 
 // parseGoogleGeminiSSE parses a Google Gemini SSE stream.
@@ -912,11 +843,7 @@ func (p *GenericProvider) alibabaHeaders(stream bool) map[string]string {
 	return alibabapkg.Headers(token, stream, p.config)
 }
 
-// ─── Azure helpers (kept for white-box test access) ───────────────────────────
-
-func isAzureResponsesApiModel(model string) bool {
-	return azurepkg.IsResponsesAPIModel(model)
-}
+// ─── Azure helpers ────────────────────────────────────────────────────────────
 
 func stringSliceFromConfig(config map[string]interface{}, key string) []string {
 	if config == nil {
@@ -946,43 +873,6 @@ func stringSliceFromConfig(config map[string]interface{}, key string) []string {
 
 func (p *GenericProvider) fetchGoogleModels() (*types.ModelsResponse, error) {
 	return googlepkg.FetchModels(p.instanceID, p.token, p.baseURL)
-}
-
-// ─── OpenAI payload helper (kept for white-box test access) ───────────────────
-
-// openAIMessageContentText is kept for the Alibaba OAuth system message merging tests.
-func openAIMessageContentText(content interface{}) string {
-	// Delegate to alibaba package's internal logic
-	return openAIContentTextHelper(content)
-}
-
-func openAIContentTextHelper(content interface{}) string {
-	switch value := content.(type) {
-	case string:
-		return strings.TrimSpace(value)
-	case map[string]interface{}:
-		if text, ok := value["text"].(string); ok {
-			return strings.TrimSpace(text)
-		}
-		if nested, ok := value["content"]; ok {
-			return openAIContentTextHelper(nested)
-		}
-	case []interface{}:
-		parts := make([]string, 0, len(value))
-		for _, item := range value {
-			text := openAIContentTextHelper(item)
-			if text != "" {
-				parts = append(parts, text)
-			}
-		}
-		return strings.Join(parts, "\n\n")
-	}
-	return ""
-}
-
-// convertCanonicalToolChoiceToOpenAI is kept for white-box tests.
-func convertCanonicalToolChoiceToOpenAI(toolChoice interface{}) interface{} {
-	return shared.ConvertCanonicalToolChoiceToOpenAI(toolChoice)
 }
 
 // ─── HTTP execution helpers ───────────────────────────────────────────────────

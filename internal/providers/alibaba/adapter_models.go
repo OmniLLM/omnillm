@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"omnillm/internal/cif"
 	"omnillm/internal/providers/openaicompat"
+	"omnillm/internal/providers/shared"
 	"omnillm/internal/providers/types"
 	"strings"
 
@@ -41,11 +42,15 @@ func (a *Adapter) ExecuteStream(ctx context.Context, request *cif.CanonicalReque
 	if !IsChatCompletionsModel(a.RemapModel(request.Model)) {
 		return nil, fmt.Errorf("alibaba: model %q is realtime-only", request.Model)
 	}
-	cr, err := a.buildRequest(request, true)
+	// DashScope's streaming endpoint is unreliable for OmniLLM's chat-completions
+	// bridge and can reject otherwise valid payloads with HTTP 400 before any SSE
+	// data is emitted. Execute upstream non-streaming and let the route layer
+	// re-stream the completed CIF response to the client.
+	response, err := a.Execute(ctx, request)
 	if err != nil {
 		return nil, err
 	}
-	return openaicompat.Stream(ctx, ChatURL(a.provider.baseURL), Headers(a.provider.token, true, a.provider.config), cr)
+	return shared.StreamResponse(response), nil
 }
 
 // buildRequest converts a CIF request into an openaicompat.ChatRequest with

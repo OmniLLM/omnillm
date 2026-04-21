@@ -177,6 +177,7 @@ func SetupAdminRoutes(router *gin.RouterGroup, port int) {
 	router.GET("/config/:name", handleGetConfig)
 	router.PUT("/config/:name", handleSaveConfig)
 	router.POST("/config/:name/import", handleImportConfig)
+	router.POST("/config/:name/backup", handleBackupConfig)
 }
 
 type providerModelView struct {

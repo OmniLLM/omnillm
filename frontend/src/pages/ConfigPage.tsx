@@ -12,6 +12,7 @@ import {
   Key,
   Plug,
   Code,
+  Copy,
 } from "lucide-react"
 import { CSSProperties, useEffect, useState } from "react"
 
@@ -19,6 +20,7 @@ import {
   listConfigFiles,
   getConfigFile,
   saveConfigFile,
+  backupConfigFile,
   type ConfigFileEntry,
 } from "@/api"
 
@@ -520,6 +522,15 @@ const inputStyle: CSSProperties = {
   fontSize: 12,
   fontFamily: "var(--font-mono)",
 }
+
+const DROID_PROVIDER_OPTIONS = [
+  { value: "anthropic", label: "Anthropic (v1/messages)" },
+  { value: "openai", label: "OpenAI (Responses API)" },
+  {
+    value: "generic-chat-completion-api",
+    label: "Generic (Chat Completions API)",
+  },
+]
 
 const smallInputStyle: CSSProperties = {
   ...inputStyle,
@@ -2283,7 +2294,6 @@ function DroidEditor({
               { key: "displayName", label: "Display Name" },
               { key: "baseUrl", label: "Base URL" },
               { key: "apiKey", label: "API Key" },
-              { key: "provider", label: "Provider" },
             ].map(({ key, label }) => (
               <div
                 key={key}
@@ -2317,6 +2327,47 @@ function DroidEditor({
                 />
               </div>
             ))}
+            {/* Provider dropdown */}
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                alignItems: "center",
+                marginBottom: 6,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 11,
+                  color: "var(--color-text-tertiary)",
+                  minWidth: 90,
+                }}
+              >
+                Provider
+              </span>
+              <select
+                value={model.provider}
+                onChange={(e) =>
+                  onChange({
+                    ...config,
+                    customModels: models.map((m, i) =>
+                      i === idx ? { ...m, provider: e.target.value } : m,
+                    ),
+                  })
+                }
+                style={{
+                  ...smallInputStyle,
+                  flex: 1,
+                  cursor: "pointer",
+                }}
+              >
+                {DROID_PROVIDER_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
             {/* Model Parameters */}
             <div
               style={{
@@ -2403,7 +2454,7 @@ function DroidEditor({
               id: `model-${models.length + 1}`,
               baseUrl: "http://localhost:5000/v1",
               apiKey: "${OMNILLM_API_KEY}",
-              provider: "openai",
+              provider: "anthropic",
               displayName: "New Model",
             }
             onChange({ ...config, customModels: [...models, newModel] })
@@ -2740,59 +2791,61 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
     setSaving(true)
     saveConfigFile(activeConfig, content)
       .then(() => {
+        setRawContent(content)
         setOriginalContent(content)
         setDirty(false)
         showToast("Configuration saved", "success")
+
+        // For JSON configs, re-parse the content we just saved to ensure
+        // in-memory state matches what was written to disk.
+        // For TOML (codex), reload from disk since serialization depends
+        // on the original file content.
+        if (activeConfig === "codex") {
+          return getConfigFile(activeConfig).then((resp) => {
+            if (resp.content) {
+              setRawContent(resp.content)
+              setOriginalContent(resp.content)
+              try {
+                setCodexConfig(parseTOML(resp.content))
+              } catch {
+                /* ignore */
+              }
+            }
+          })
+        }
+
+        // Re-parse JSON configs from the content we just saved
+        if (activeConfig === "claude-code") {
+          try {
+            setClaudeSettings(JSON.parse(content))
+          } catch {
+            setClaudeSettings(null)
+          }
+        } else if (activeConfig === "opencode") {
+          try {
+            setOpenCodeConfig(JSON.parse(content))
+          } catch {
+            setOpenCodeConfig(null)
+          }
+        } else if (activeConfig === "amp") {
+          try {
+            setAMPConfig(JSON.parse(content))
+          } catch {
+            setAMPConfig(null)
+          }
+        } else if (activeConfig === "droid") {
+          try {
+            setDroidConfig(JSON.parse(content))
+          } catch {
+            setDroidConfig(null)
+          }
+        }
 
         // Reload the config list to update the "exists" status
         return listConfigFiles()
       })
       .then((r) => {
-        setConfigs(r.configs)
-
-        // Reload the current config to ensure we have the latest data
-        if (activeConfig) {
-          return getConfigFile(activeConfig)
-        }
-      })
-      .then((resp) => {
-        if (resp) {
-          setRawContent(resp.content)
-          setOriginalContent(resp.content)
-
-          // Re-parse structured data
-          if (activeConfig === "claude-code" && resp.content) {
-            try {
-              setClaudeSettings(JSON.parse(resp.content))
-            } catch {
-              setClaudeSettings(null)
-            }
-          } else if (activeConfig === "codex" && resp.content) {
-            try {
-              setCodexConfig(parseTOML(resp.content))
-            } catch {
-              setCodexConfig(null)
-            }
-          } else if (activeConfig === "opencode" && resp.content) {
-            try {
-              setOpenCodeConfig(JSON.parse(resp.content))
-            } catch {
-              setOpenCodeConfig(null)
-            }
-          } else if (activeConfig === "amp" && resp.content) {
-            try {
-              setAMPConfig(JSON.parse(resp.content))
-            } catch {
-              setAMPConfig(null)
-            }
-          } else if (activeConfig === "droid" && resp.content) {
-            try {
-              setDroidConfig(JSON.parse(resp.content))
-            } catch {
-              setDroidConfig(null)
-            }
-          }
-        }
+        if (r) setConfigs(r.configs)
       })
       .catch((err: Error) => showToast(`Save failed: ${err.message}`, "error"))
       .finally(() => setSaving(false))
@@ -2801,31 +2854,31 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
   const handleReset = () => {
     setRawContent(originalContent)
     setDirty(false)
-    if (activeConfig === "claude-code" && originalContent) {
+    if (activeConfig === "claude-code") {
       try {
         setClaudeSettings(JSON.parse(originalContent))
       } catch {
         /* ignore */
       }
-    } else if (activeConfig === "codex" && originalContent) {
+    } else if (activeConfig === "codex") {
       try {
         setCodexConfig(parseTOML(originalContent))
       } catch {
         /* ignore */
       }
-    } else if (activeConfig === "opencode" && originalContent) {
+    } else if (activeConfig === "opencode") {
       try {
         setOpenCodeConfig(JSON.parse(originalContent))
       } catch {
         /* ignore */
       }
-    } else if (activeConfig === "amp" && originalContent) {
+    } else if (activeConfig === "amp") {
       try {
         setAMPConfig(JSON.parse(originalContent))
       } catch {
         /* ignore */
       }
-    } else if (activeConfig === "droid" && originalContent) {
+    } else if (activeConfig === "droid") {
       try {
         setDroidConfig(JSON.parse(originalContent))
       } catch {
@@ -2837,6 +2890,14 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
   const handleCardClick = (name: string) => {
     if (name === activeConfig) return
     setActiveConfig(name)
+  }
+
+  const handleBackup = (name: string) => {
+    backupConfigFile(name)
+      .then((resp) => showToast(resp.message, "success"))
+      .catch((err: Error) =>
+        showToast(`Backup failed: ${err.message}`, "error"),
+      )
   }
 
   const markDirty = () => setDirty(true)
@@ -2962,6 +3023,25 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
               </span>
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              {activeEntry.exists && (
+                <button
+                  onClick={() => handleBackup(activeConfig)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 5,
+                    padding: "5px 12px",
+                    borderRadius: "var(--radius-md)",
+                    border: "1px solid var(--color-separator)",
+                    background: "var(--color-surface-2)",
+                    color: "var(--color-text-secondary)",
+                    fontSize: 12,
+                    cursor: "pointer",
+                  }}
+                >
+                  <Copy size={11} /> Backup
+                </button>
+              )}
               {dirty && (
                 <span style={{ fontSize: 11, color: "var(--color-amber)" }}>
                   unsaved changes

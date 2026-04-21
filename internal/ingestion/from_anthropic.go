@@ -148,7 +148,7 @@ func convertAnthropicMessageContent(content interface{}) ([]cif.CIFContentPart, 
 		for _, blockRaw := range raw {
 			blockMap, ok := blockRaw.(map[string]interface{})
 			if !ok {
-				continue
+				return nil, fmt.Errorf("invalid Anthropic content block type: %T", blockRaw)
 			}
 			// Build typed block directly from the map to avoid a
 			// marshal→unmarshal roundtrip for each content block.

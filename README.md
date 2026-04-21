@@ -6,6 +6,7 @@
   <a href="#quick-start">Quick Start</a> |
   <a href="#core-capabilities">Capabilities</a> |
   <a href="#supported-providers">Providers</a> |
+  <a href="#architecture">Architecture</a> |
   <a href="#toolconfig---ai-assistant-configuration-management">ToolConfig</a> |
   <a href="#api-compatibility-surface">API Reference</a> |
   <a href="#security">Security</a> |
@@ -14,9 +15,19 @@
 
 ---
 
-OmniLLM acts as a control plane and gateway for model access. It exposes OpenAI-compatible and Anthropic-compatible APIs, centralizes provider administration, enables live backend switching, and provides a redesigned web admin console for authentication, model inspection, and runtime visibility.
+OmniLLM is a unified control plane and gateway for LLM model access. It sits between your applications/agents and upstream LLM providers, translating requests through a **Canonical Intermediate Format (CIF)** so any client can talk to any provider regardless of API shape.
+
+**What it does:**
+
+- Exposes **OpenAI-compatible** (`/v1/chat/completions`, `/v1/models`, `/v1/embeddings`, `/v1/responses`) and **Anthropic-compatible** (`/v1/messages`, `/v1/messages/count_tokens`) endpoints from a single gateway
+- Routes AI traffic across **7+ provider types** (GitHub Copilot, Alibaba DashScope, Azure OpenAI, Google, Kimi, Antigravity, any OpenAI-compatible endpoint) with priority-based failover
+- Centralizes provider authentication, model discovery, and runtime administration
+- Provides a redesigned web admin console for live provider switching, log streaming, config editing, and virtual model management
+- Manages configuration files for popular AI coding agents (Claude Code, Codex, Droid, OpenCode, AMP)
 
 Route AI traffic through a controlled internal endpoint instead of binding applications directly to individual providers.
+
+![OmniLLM Admin Console](docs/assets/admin-console.png)
 
 ## Quick Start
 
@@ -136,29 +147,41 @@ docker run -p 4141:4141 -e OMNILLM_API_KEY=my-secret-key omnillm
 
 ## Core Capabilities
 
+### Canonical Intermediate Format (CIF)
+
+All incoming requests — regardless of API shape (OpenAI or Anthropic) — are parsed into a **Canonical Intermediate Format** (`internal/cif/types.go`). This normalized data model is what every provider adapter reads and writes, eliminating the need for pairwise format translations between N providers. Adding a new provider only requires implementing two adapters (to/from CIF) rather than 2N pairwise converters.
+
 ### Unified API compatibility
 
-OpenAI-style (`/v1/chat/completions`, `/v1/models`, `/v1/embeddings`, `/v1/responses`) and Anthropic-style (`/v1/messages`, `/v1/messages/count_tokens`) endpoints from a single gateway. Existing applications migrate with minimal integration changes.
+OpenAI-style (`/v1/chat/completions`, `/v1/models`, `/v1/embeddings`, `/v1/responses`) and Anthropic-style (`/v1/messages`, `/v1/messages/count_tokens`) endpoints from a single gateway. Existing applications migrate with minimal integration changes — just point `OPENAI_BASE_URL` or `ANTHROPIC_BASE_URL` at OmniLLM.
 
-### Multi-provider routing
+### Multi-provider routing with automatic failover
 
-Manage multiple providers simultaneously. Switch the active backend without restarting. Provider priorities enable automatic failover.
+Manage multiple providers simultaneously. Switch the active backend without restarting. Provider priorities enable automatic failover — when a provider fails mid-request, OmniLLM transparently tries the next candidate in priority order.
+
+### Virtual models
+
+Define abstract model IDs that map to specific provider models with configurable load-balancing strategies (round-robin, random, priority, weighted). This creates an abstraction layer between application code and upstream providers, enabling model swaps without touching client configuration.
 
 ### Centralized authentication
 
-Provider authentication through CLI and admin workflows — OAuth device flow for GitHub Copilot, API key for Alibaba DashScope, and token-based auth for all others. Credentials are persisted in SQLite and restored on restart.
+Provider authentication through CLI and admin workflows — OAuth device flow for GitHub Copilot, API key for Alibaba DashScope, and token-based auth for all others. Credentials are persisted in SQLite (pure Go, no CGO) and restored on restart.
 
 ### Operational visibility
 
-Admin console with provider status, model discovery, usage visibility, runtime metadata, live log streaming via SSE, and dynamic log-level control.
+Admin console with provider status, model discovery, usage visibility, runtime metadata, live log streaming via SSE and WebSocket, and dynamic log-level control. Request logs include client IP and User-Agent for identifying which tool (Claude Code, Codex, Droid, etc.) is making requests.
 
-### Config file management
+### Config file management (ToolConfig)
 
-View, edit, and import configuration files for popular AI coding agents directly from the admin UI: Claude Code, Codex, Droid, OpenCode, and Amp. Editing is gated behind the `--enable-config-edit` flag.
+View, edit, import, and backup configuration files for popular AI coding agents directly from the admin UI: Claude Code, Codex, Droid, OpenCode, and Amp. Structured editors provide intuitive UI for each config format. Editing is gated behind the `--enable-config-edit` flag. Config backup creates timestamped copies in the same directory.
+
+### Streaming resilience
+
+If an upstream SSE stream fails before any data is sent (connection error, timeout), OmniLLM automatically retries as a non-streaming request and re-streams the completed response locally to the client. This is used by the Alibaba adapter to work around DashScope SSE reliability issues.
 
 ### Developer and agent integration
 
-Works as a local gateway for Claude Code and other clients. Auto-generated API key injected into the admin UI via `<meta>` tag for seamless frontend authentication.
+Works as a local gateway for Claude Code and other clients. Auto-generated API key injected into the admin UI via `<meta>` tag for seamless frontend authentication. The frontend auto-detects the backend port at runtime by probing known ports.
 
 ---
 
@@ -184,17 +207,84 @@ New providers are registered with canonical instance IDs derived from their endp
 Clients / Agents / Internal Apps
             |
             v
-        OmniLLM
-   - API compatibility layer (OpenAI + Anthropic)
-   - inbound API key auth (Bearer / x-api-key / SSE query)
-   - provider auth management (OAuth, API key, token)
-   - active provider selection + priority-based failover
-   - admin control surface + log streaming
-   - SSRF protection for openai-compatible endpoints
+        OmniLLM Gateway
+   ┌─────────────────────────────────────────┐
+   │  Inbound API Key Auth                   │
+   │  (Bearer / x-api-key / SSE query)       │
+   ├─────────────────────────────────────────┤
+   │  Ingestion Layer                        │
+   │  OpenAI format ──┐                      │
+   │  Anthropic format├─► CIF (Canonical     │
+   │  Responses API  ─┘   Intermediate       │
+   │                      Format)            │
+   ├─────────────────────────────────────────┤
+   │  Model Routing + Priority Failover      │
+   │  Virtual Model Resolution               │
+   │  Rate Limiting + Manual Approval        │
+   ├─────────────────────────────────────────┤
+   │  Provider CIF Adapters                  │
+   │  (Execute / ExecuteStream)              │
+   ├─────────────────────────────────────────┤
+   │  Serialization Layer                    │
+   │  CIF ──► OpenAI format / Anthropic      │
+   │         format (SSE or non-streaming)   │
+   ├─────────────────────────────────────────┤
+   │  Admin Console + SSE/WS Log Streaming   │
+   │  SQLite Persistence (provider, tokens,  │
+   │  configs, chat sessions, vmodels)       │
+   └─────────────────────────────────────────┘
             |
             v
-  GitHub Copilot / Alibaba / Ollama / vLLM / OpenAI / Azure / Google / Kimi
+  GitHub Copilot / Alibaba DashScope / Azure OpenAI
+  / Google / Kimi / Antigravity / Ollama / vLLM
+  / OpenAI / any OpenAI-compatible endpoint
 ```
+
+### Key Components
+
+| Package | Path | Purpose |
+|---|---|---|
+| **Server** | `internal/server/` | Gin HTTP server, route registration, CORS, auth middleware, admin UI serving, SSE/WebSocket log streaming |
+| **Routes** | `internal/routes/` | HTTP handlers for chat, models, embeddings, messages, responses, usage, token, admin, config files, virtual models |
+| **Ingestion** | `internal/ingestion/` | Parses incoming OpenAI/Anthropic/Responses requests into `cif.CanonicalRequest` with fail-fast validation for malformed input |
+| **CIF** | `internal/cif/` | Canonical Intermediate Format — the normalized request/response data model all providers translate to/from |
+| **Serialization** | `internal/serialization/` | Converts CIF responses back to the client's expected API format (OpenAI SSE, Anthropic SSE, non-streaming JSON) |
+| **Providers** | `internal/providers/` | Per-provider implementations (Copilot, Alibaba, Azure, Google, Kimi, Antigravity, OpenAI-Compatible, Generic) |
+| **Registry** | `internal/registry/` | Thread-safe `ProviderRegistry` — manages registered providers, active provider selection, failover |
+| **Model Routing** | `internal/lib/modelrouting/` | Resolves model names to candidate providers with caching |
+| **Virtual Model Routing** | `internal/lib/vmodelrouting/` | Routes abstract virtual model IDs to specific provider models with load-balancing strategies |
+| **Database** | `internal/database/` | SQLite persistence via `modernc.org/sqlite` (pure Go, no CGO) — provider instances, tokens, configs, chat sessions, virtual models |
+| **Security** | `internal/security/` | SSRF protection for OpenAI-compatible endpoints |
+| **Rate Limiting** | `internal/lib/ratelimit/` | Configurable rate limiter with optional queue-on-reject behavior |
+| **Approval** | `internal/lib/approval/` | Manual request approval mode (`--manual` flag) |
+| **GitHub Service** | `internal/services/github/` | GitHub Copilot-specific logic (token refresh, usage, quota) |
+| **Frontend** | `frontend/` | React 19 + Vite + MUI/Tailwind v4 admin console |
+
+### Request Flow
+
+1. Client sends request (e.g., `POST /v1/chat/completions`) to OmniLLM
+2. Auth middleware validates inbound API key (Bearer / x-api-key / query param)
+3. Logging middleware generates request ID, captures client IP and User-Agent
+4. Rate limiter checks throttling; if `--manual` mode, prompts for operator approval
+5. Ingestion parser deserializes body into `cif.CanonicalRequest`
+6. Model routing normalizes model name, resolves candidate providers from registry
+7. Provider iteration loops through candidates in priority order:
+   - Gets provider's CIF adapter via `GetAdapter()`
+   - Remaps model name to provider's internal naming
+   - Calls `Execute()` (non-streaming) or `ExecuteStream()` (streaming, returns Go channel)
+   - On failure, tries next candidate (automatic failover)
+8. Serialization converts CIF response back to client's expected API format
+9. Response sent back with structured logging of the full lifecycle
+
+### Tech Stack
+
+**Backend:** Go 1.23, Gin, zerolog, Cobra CLI, modernc.org/sqlite (pure Go SQLite)
+
+**Frontend:** React 19, Vite, MUI v7, Tailwind v4, Radix UI, Lucide icons, Sonner, TypeScript
+
+**Tooling:** Bun (runtime + package manager), ESLint, simple-git-hooks + lint-staged
+
+**Deployment:** Multi-stage Dockerfile (`golang:1.23-alpine` → `oven/bun:1.2.19-alpine` → `alpine:3.20`), standalone binary, or `bunx omnillm@latest`
 
 ---
 
@@ -345,6 +435,7 @@ External config file editing (Claude Code, OpenCode, etc.) is disabled by defaul
 | `GET` | `/api/admin/config/:name` | Read a config file |
 | `PUT` | `/api/admin/config/:name` | Save a config file |
 | `POST` | `/api/admin/config/:name/import` | Import config from uploaded file |
+| `POST` | `/api/admin/config/:name/backup` | Create timestamped backup in same directory |
 | `GET` | `/api/admin/vmodels` | List virtual models |
 | `POST` | `/api/admin/vmodels` | Create virtual model |
 | `GET` | `/api/admin/vmodels/:id` | Get virtual model detail |
@@ -423,11 +514,13 @@ OmniLLM provides a unified **ToolConfig** interface in the admin UI for managing
 
 ### Features
 
-✅ **Structured Editors** - Intuitive UI for editing configs without manual JSON/TOML editing  
-✅ **Template Files** - Ready-to-use examples for quick setup ([see all templates](docs/CONFIG_TEMPLATES.md))  
-✅ **Real-time Validation** - Catch errors before saving  
-✅ **Auto-create Files** - Configs are created automatically if they don't exist  
-✅ **Import/Export** - Backup and restore configurations  
+- **Structured Editors** — Intuitive UI for editing configs without manual JSON/TOML editing
+- **Provider Dropdown** — Droid config includes a dropdown for the 3 Droid-supported provider types: Anthropic (v1/messages), OpenAI (Responses API), Generic (Chat Completions API)
+- **Backup Button** — One-click backup creates a timestamped copy in the same directory (e.g., `~/.codex/config.20060102_150405.toml`)
+- **Template Files** — Ready-to-use examples for quick setup ([see all templates](docs/CONFIG_TEMPLATES.md))
+- **Real-time Validation** — Catch errors before saving
+- **Auto-create Files** — Configs are created automatically if they don't exist
+- **Import/Export** — Backup and restore configurations  
 
 ### Quick Start with ToolConfig
 
@@ -443,6 +536,7 @@ OmniLLM provides a unified **ToolConfig** interface in the admin UI for managing
 3. **Configure Your Tools:**
    - Click on any tool card (shows "○ new" if config doesn't exist)
    - Edit settings in the structured editor
+   - Click **Backup** (next to Save) to create a timestamped copy before making changes
    - Click **Save** to persist changes
 
 4. **Use Templates (Optional):**

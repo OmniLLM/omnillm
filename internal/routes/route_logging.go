@@ -27,15 +27,17 @@ func prepareCanonicalRequest(c *gin.Context, request *cif.CanonicalRequest, apiS
 	originalModel := ""
 	if request != nil {
 		originalModel = request.Model
-		logRequestReceived(c.GetString("request_id"), apiShape, request)
+		logRequestReceived(c, c.GetString("request_id"), apiShape, request)
 	}
 	return originalModel
 }
 
-func logRequestReceived(requestID, apiShape string, request *cif.CanonicalRequest) {
+func logRequestReceived(c *gin.Context, requestID, apiShape string, request *cif.CanonicalRequest) {
 	if request == nil {
 		return
 	}
+	client := c.ClientIP()
+	userAgent := c.GetHeader("User-Agent")
 	log.Info().
 		Str("request_id", requestID).
 		Str("api_shape", apiShape).
@@ -43,6 +45,8 @@ func logRequestReceived(requestID, apiShape string, request *cif.CanonicalReques
 		Int("messages", len(request.Messages)).
 		Int("tools", len(request.Tools)).
 		Bool("stream", request.Stream).
+		Str("client", client).
+		Str("user_agent", userAgent).
 		Msg("\x1b[33m-->\x1b[0m REQUEST")
 }
 

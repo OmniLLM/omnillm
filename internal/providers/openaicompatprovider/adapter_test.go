@@ -13,7 +13,8 @@ import (
 )
 
 func TestAdapterUpstreamAPISelection(t *testing.T) {
-	t.Run("official openai anthropic requests use responses automatically", func(t *testing.T) {
+	t.Run("official openai gpt-4o uses chat completions", func(t *testing.T) {
+		// gpt-4o is not in the providermodels Responses table — stays on chat completions.
 		p := NewProvider("test-openai", "Test")
 		p.baseURL = "https://api.openai.com/v1"
 		p.configLoaded = true
@@ -21,8 +22,8 @@ func TestAdapterUpstreamAPISelection(t *testing.T) {
 		adapter := p.GetAdapter().(*Adapter)
 		req := requestWithInboundShape("anthropic")
 
-		if got := adapter.UpstreamAPI(req, "gpt-4o"); got != openAICompatResponsesAPI {
-			t.Fatalf("UpstreamAPI() = %q, want %q", got, openAICompatResponsesAPI)
+		if got := adapter.UpstreamAPI(req, "gpt-4o"); got != openAICompatChatCompletionsAPI {
+			t.Fatalf("UpstreamAPI() = %q, want %q", got, openAICompatChatCompletionsAPI)
 		}
 	})
 
