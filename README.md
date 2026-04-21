@@ -79,6 +79,7 @@ bun run omni restart --rebuild --server-port 5000 --frontend-port 5080 -v
 # macOS / Linux
 mkdir -p ~/.config/omnillm
 echo -n "my-secret-key" > ~/.config/omnillm/api-key
+bun run omni restart --rebuild --server-port 5000 --frontend-port 5080 -v
 ```
 
 On Windows (PowerShell):
@@ -86,11 +87,24 @@ On Windows (PowerShell):
 ```powershell
 New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.config\omnillm"
 "my-secret-key" | Set-Content -NoNewline -Path "$env:USERPROFILE\.config\omnillm\api-key"
+bun run omni restart --rebuild --server-port 5000 --frontend-port 5080 -v
 ```
 
 **Option C: Use the auto-generated key**
 
-Start normally, then read the key from the persisted file:
+Start the server without specifying a key — OmniLLM generates a random one and persists it:
+
+```sh
+bun run omni restart --rebuild --server-port 5000 --frontend-port 5080 -v
+```
+
+On Windows (PowerShell):
+
+```powershell
+bun run omni restart --rebuild --server-port 5000 --frontend-port 5080 -v
+```
+
+Then read the key from the persisted file:
 
 ```sh
 # macOS / Linux
