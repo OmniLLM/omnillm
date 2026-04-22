@@ -528,6 +528,172 @@ func TestAlibabaQwen36PlusProviderIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("chat completions tool loop completes after tool message", func(t *testing.T) {
+		before := upstream.chatRequestCount()
+
+		firstResp := postJSON(
+			t,
+			backend.URL+"/v1/chat/completions",
+			`{"model":"qwen3.6-plus","messages":[{"role":"user","content":"Explain codebase in detail"}],"tools":[{"type":"function","function":{"name":"Read","parameters":{"type":"object","properties":{"file_path":{"type":"string"}},"required":["file_path"]}}}]}`,
+			nil,
+		)
+		firstBody := readBody(t, firstResp)
+		if firstResp.StatusCode != http.StatusOK {
+			t.Fatalf("expected first turn 200, got %d: %s", firstResp.StatusCode, firstBody)
+		}
+
+		var firstPayload struct {
+			Choices []struct {
+				FinishReason *string `json:"finish_reason"`
+				Message      struct {
+					ToolCalls []struct {
+						ID       string `json:"id"`
+						Type     string `json:"type"`
+						Function struct {
+							Name      string `json:"name"`
+							Arguments string `json:"arguments"`
+						} `json:"function"`
+					} `json:"tool_calls"`
+				} `json:"message"`
+			} `json:"choices"`
+		}
+		if err := json.Unmarshal([]byte(firstBody), &firstPayload); err != nil {
+			t.Fatalf("invalid first chat response JSON: %v", err)
+		}
+		if len(firstPayload.Choices) != 1 || firstPayload.Choices[0].FinishReason == nil || *firstPayload.Choices[0].FinishReason != "tool_calls" {
+			t.Fatalf("unexpected first chat tool response: %#v", firstPayload)
+		}
+		if len(firstPayload.Choices[0].Message.ToolCalls) != 1 {
+			t.Fatalf("expected one tool call in first turn, got %#v", firstPayload.Choices[0].Message.ToolCalls)
+		}
+		firstToolCall := firstPayload.Choices[0].Message.ToolCalls[0]
+		if firstToolCall.ID != "call_qwen_read" || firstToolCall.Type != "function" {
+			t.Fatalf("unexpected first tool call metadata: %#v", firstToolCall)
+		}
+		if firstToolCall.Function.Name != "Read" || firstToolCall.Function.Arguments != `{"file_path":"README.md"}` {
+			t.Fatalf("unexpected first tool call function payload: %#v", firstToolCall)
+		}
+		if upstream.chatRequestCount() != before+1 {
+			t.Fatalf("expected one upstream request after first chat turn, got before=%d after=%d", before, upstream.chatRequestCount())
+		}
+
+		firstUpstreamReq := upstream.lastChatRequest(t)
+		if _, exists := firstUpstreamReq.Payload["enable_thinking"]; exists {
+			t.Fatalf("did not expect enable_thinking on first chat tool-use turn, got %#v", firstUpstreamReq.Payload["enable_thinking"])
+		}
+		if stream, _ := firstUpstreamReq.Payload["stream"].(bool); stream {
+			t.Fatalf("did not expect upstream streaming on buffered chat turn, got payload %#v", firstUpstreamReq.Payload)
+		}
+		if firstUpstreamReq.Accept != "application/json" {
+			t.Fatalf("expected upstream Accept application/json on first chat turn, got %q", firstUpstreamReq.Accept)
+		}
+
+		secondResp := postJSON(
+			t,
+			backend.URL+"/v1/chat/completions",
+			`{"model":"qwen3.6-plus","messages":[{"role":"user","content":"Explain codebase in detail"},{"role":"assistant","content":"","tool_calls":[{"id":"call_qwen_read","type":"function","function":{"name":"Read","arguments":"{\"file_path\":\"README.md\"}"}}]},{"role":"tool","tool_call_id":"call_qwen_read","content":"README.md says this project exposes OpenAI and Anthropic compatible endpoints over a shared CIF routing core."},{"role":"user","content":"Finish the explanation briefly."}],"tools":[{"type":"function","function":{"name":"Read","parameters":{"type":"object","properties":{"file_path":{"type":"string"}},"required":["file_path"]}}}]}`,
+			nil,
+		)
+		secondBody := readBody(t, secondResp)
+		if secondResp.StatusCode != http.StatusOK {
+			t.Fatalf("expected second turn 200, got %d: %s", secondResp.StatusCode, secondBody)
+		}
+
+		var secondPayload struct {
+			Choices []struct {
+				FinishReason *string `json:"finish_reason"`
+				Message      struct {
+					Content   string `json:"content"`
+					ToolCalls []struct {
+						ID string `json:"id"`
+					} `json:"tool_calls"`
+				} `json:"message"`
+			} `json:"choices"`
+		}
+		if err := json.Unmarshal([]byte(secondBody), &secondPayload); err != nil {
+			t.Fatalf("invalid second chat response JSON: %v", err)
+		}
+		if len(secondPayload.Choices) != 1 || secondPayload.Choices[0].FinishReason == nil || *secondPayload.Choices[0].FinishReason != "stop" {
+			t.Fatalf("unexpected second chat response: %#v", secondPayload)
+		}
+		if len(secondPayload.Choices[0].Message.ToolCalls) != 0 {
+			t.Fatalf("did not expect tool calls in second chat turn, got %#v", secondPayload.Choices[0].Message.ToolCalls)
+		}
+		wantFinalText := "This codebase exposes an OpenAI-compatible and Anthropic-compatible proxy. It normalizes requests into CIF, routes by model, and adapts provider-specific upstreams."
+		if secondPayload.Choices[0].Message.Content != wantFinalText {
+			t.Fatalf("unexpected second chat answer:\nwant: %q\ngot:  %q", wantFinalText, secondPayload.Choices[0].Message.Content)
+		}
+		if upstream.chatRequestCount() != before+2 {
+			t.Fatalf("expected two upstream requests across chat tool loop, got before=%d after=%d", before, upstream.chatRequestCount())
+		}
+
+		secondUpstreamReq := upstream.lastChatRequest(t)
+		if _, exists := secondUpstreamReq.Payload["enable_thinking"]; exists {
+			t.Fatalf("did not expect enable_thinking on second chat tool-result turn, got %#v", secondUpstreamReq.Payload["enable_thinking"])
+		}
+		if stream, _ := secondUpstreamReq.Payload["stream"].(bool); stream {
+			t.Fatalf("did not expect upstream streaming on second buffered chat turn, got payload %#v", secondUpstreamReq.Payload)
+		}
+		if secondUpstreamReq.Accept != "application/json" {
+			t.Fatalf("expected upstream Accept application/json on second chat turn, got %q", secondUpstreamReq.Accept)
+		}
+
+		upstreamMessages := asInterfaceSlice(secondUpstreamReq.Payload["messages"])
+		if len(upstreamMessages) != 4 {
+			t.Fatalf("expected 4 upstream messages on second chat turn, got %#v", upstreamMessages)
+		}
+
+		firstMsg, _ := upstreamMessages[0].(map[string]interface{})
+		if role, _ := firstMsg["role"].(string); role != "user" {
+			t.Fatalf("expected first upstream chat message role=user, got %#v", firstMsg)
+		}
+		if content, _ := firstMsg["content"].(string); content != "Explain codebase in detail" {
+			t.Fatalf("unexpected first upstream chat content: %#v", firstMsg)
+		}
+
+		assistantMsg, _ := upstreamMessages[1].(map[string]interface{})
+		if role, _ := assistantMsg["role"].(string); role != "assistant" {
+			t.Fatalf("expected assistant upstream chat message, got %#v", assistantMsg)
+		}
+		if content, _ := assistantMsg["content"].(string); content != "" {
+			t.Fatalf("expected assistant content placeholder to remain empty string, got %#v", assistantMsg["content"])
+		}
+		assistantToolCalls := asInterfaceSlice(assistantMsg["tool_calls"])
+		if len(assistantToolCalls) != 1 {
+			t.Fatalf("expected one upstream chat assistant tool_call, got %#v", assistantMsg)
+		}
+		assistantToolCall, _ := assistantToolCalls[0].(map[string]interface{})
+		if id, _ := assistantToolCall["id"].(string); id != "call_qwen_read" {
+			t.Fatalf("unexpected upstream chat tool call id: %#v", assistantToolCall)
+		}
+		assistantFunction, _ := assistantToolCall["function"].(map[string]interface{})
+		if name, _ := assistantFunction["name"].(string); name != "Read" {
+			t.Fatalf("unexpected upstream chat tool function: %#v", assistantToolCall)
+		}
+		if args, _ := assistantFunction["arguments"].(string); args != `{"file_path":"README.md"}` {
+			t.Fatalf("unexpected upstream chat tool arguments: %#v", assistantToolCall)
+		}
+
+		toolMsg, _ := upstreamMessages[2].(map[string]interface{})
+		if role, _ := toolMsg["role"].(string); role != "tool" {
+			t.Fatalf("expected upstream chat tool message role=tool, got %#v", toolMsg)
+		}
+		if toolCallID, _ := toolMsg["tool_call_id"].(string); toolCallID != "call_qwen_read" {
+			t.Fatalf("unexpected upstream chat tool_call_id: %#v", toolMsg)
+		}
+		if content, _ := toolMsg["content"].(string); !strings.Contains(content, "shared CIF routing core") {
+			t.Fatalf("unexpected upstream chat tool result content: %#v", toolMsg)
+		}
+
+		finalUserMsg, _ := upstreamMessages[3].(map[string]interface{})
+		if role, _ := finalUserMsg["role"].(string); role != "user" {
+			t.Fatalf("expected final upstream chat message role=user, got %#v", finalUserMsg)
+		}
+		if content, _ := finalUserMsg["content"].(string); content != "Finish the explanation briefly." {
+			t.Fatalf("unexpected final upstream chat content: %#v", finalUserMsg)
+		}
+	})
+
 	t.Run("anthropic streaming tool use survives qwen reasoning content", func(t *testing.T) {
 		before := upstream.chatRequestCount()
 		resp := postJSON(

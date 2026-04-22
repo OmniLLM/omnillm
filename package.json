@@ -32,6 +32,7 @@
     "test:frontend:pages": "bun test tests/frontend/pages/",
     "test:frontend:watch": "bun test --watch tests/frontend/",
     "test:qwen36:agent-sdk": "bun run scripts/test-qwen36-claude-agent-sdk.ts",
+    "test:qwen36:chat-live": "bun run scripts/test-qwen36-chat-completions-live.ts",
     "typecheck": "tsc -p frontend/tsconfig.json"
   },
   "simple-git-hooks": {
