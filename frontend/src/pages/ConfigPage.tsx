@@ -2526,6 +2526,7 @@ function DroidEditor({
               </button>
             </div>
             {[
+              { key: "id", label: "ID" },
               { key: "model", label: "Model ID" },
               { key: "displayName", label: "Display Name" },
               { key: "baseUrl", label: "Base URL" },
@@ -2639,6 +2640,22 @@ function DroidEditor({
                   min: 0,
                   max: 1,
                 },
+                {
+                  key: "maxOutputTokens",
+                  label: "Max Output Tokens",
+                  type: "number",
+                  step: 1,
+                  min: 0,
+                  max: undefined,
+                },
+                {
+                  key: "presencePenalty",
+                  label: "Presence Penalty",
+                  type: "number",
+                  step: 0.1,
+                  min: 0,
+                  max: 2,
+                },
               ].map(({ key, label, type, step, min, max }) => (
                 <div
                   key={key}
@@ -2680,6 +2697,39 @@ function DroidEditor({
                   />
                 </div>
               ))}
+              {/* No Image Support toggle */}
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  alignItems: "center",
+                  marginTop: 6,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 11,
+                    color: "var(--color-text-tertiary)",
+                    minWidth: 90,
+                  }}
+                >
+                  No Image Support
+                </span>
+                <input
+                  type="checkbox"
+                  checked={Boolean(model.noImageSupport)}
+                  onChange={(e) =>
+                    onChange({
+                      ...config,
+                      customModels: models.map((m, i) =>
+                        i === idx ?
+                          { ...m, noImageSupport: e.target.checked }
+                        : m,
+                      ),
+                    })
+                  }
+                />
+              </div>
             </div>
           </div>
         ))}
