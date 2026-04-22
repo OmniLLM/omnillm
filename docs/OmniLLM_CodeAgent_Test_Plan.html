@@ -35,8 +35,8 @@
     }
 
     .wrap {
-      width: min(1200px, calc(100% - 28px));
-      margin: 28px auto 32px;
+      width: min(1860px, calc(100% - 14px));
+      margin: 18px auto 22px;
     }
 
     .hero {
@@ -114,7 +114,8 @@
       margin-top: 16px;
       border: 1px solid var(--line);
       border-radius: var(--radius);
-      overflow: auto;
+      overflow-x: hidden;
+      overflow-y: auto;
       background: var(--panel);
       box-shadow: var(--shadow);
     }
@@ -122,29 +123,28 @@
     table {
       width: 100%;
       border-collapse: collapse;
-      min-width: 820px;
       table-layout: fixed;
     }
 
     thead th {
       text-align: left;
-      font-size: 0.8rem;
+      font-size: 0.77rem;
       letter-spacing: 0.06em;
       text-transform: uppercase;
       color: #374151;
       background: #f9fafb;
       border-bottom: 1px solid var(--line);
-      padding: 12px 12px;
+      padding: 10px 8px;
       position: sticky;
       top: 0;
       z-index: 1;
     }
 
     tbody td {
-      padding: 12px;
+      padding: 10px 8px;
       border-bottom: 1px solid #f1f5f9;
       vertical-align: middle;
-      font-size: 0.93rem;
+      font-size: 0.88rem;
       word-break: break-word;
     }
 
@@ -156,24 +156,25 @@
       background: #f8fafc;
     }
 
-    th:nth-child(1), td:nth-child(1) { width: 16%; }
-    th:nth-child(2), td:nth-child(2) { width: 20%; }
-    th:nth-child(3), td:nth-child(3) { width: 16%; }
-    th:nth-child(4), td:nth-child(4) { width: 32%; }
-    th:nth-child(5), td:nth-child(5) { width: 16%; }
+    th:nth-child(1), td:nth-child(1) { width: 12%; }
+    th:nth-child(2), td:nth-child(2) { width: 16%; }
+    th:nth-child(3), td:nth-child(3) { width: 13%; }
+    th:nth-child(4), td:nth-child(4) { width: 28%; }
+    th:nth-child(5), td:nth-child(5) { width: 14%; }
+    th:nth-child(6), td:nth-child(6) { width: 17%; }
 
-    .status-cell { min-width: 140px; }
+    .status-cell { min-width: 120px; }
 
     .toggle-group {
       display: inline-flex;
-      gap: 8px;
+      gap: 6px;
     }
 
     .chip {
       border: 1px solid #d1d5db;
       border-radius: 999px;
-      padding: 6px 12px;
-      font-size: 0.82rem;
+      padding: 5px 10px;
+      font-size: 0.78rem;
       line-height: 1;
       cursor: pointer;
       user-select: none;
@@ -243,7 +244,7 @@
       }
 
       table {
-        min-width: 760px;
+        table-layout: auto;
       }
     }
   </style>
@@ -287,9 +288,10 @@
             <th>Provider</th>
             <th>Model</th>
             <th>Passed</th>
+            <th>Endpoint</th>
           </tr>
         </thead>
-        <tbody id="plan-body"><tr><td>Claude Code</td><td>anthropic(v1/messages)</td><td>GitHub Models</td><td>claude-haiku-4.5</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="true">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td></tr><tr><td>Claude Code</td><td>anthropic(v1/messages)</td><td>Azure OpenAI</td><td>gpt-5.4</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td></tr><tr><td>Claude Code</td><td>anthropic(v1/messages)</td><td>Alibaba Qwen</td><td>qwen3.6</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td></tr><tr><td>Codex</td><td>responses</td><td>GitHub Models</td><td>gpt-5-mini</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td></tr><tr><td>Codex</td><td>responses</td><td>Azure OpenAI</td><td>gpt-5.4</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td></tr><tr><td>Codex</td><td>responses</td><td>Alibaba Qwen</td><td>qwen3.6</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td></tr><tr><td>Droid</td><td>anthropic(v1/messages)</td><td>Alibaba Qwen</td><td>qwen3.6</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td></tr><tr><td>Droid</td><td>anthropic(v1/messages)</td><td>Azure OpenAI</td><td>gpt-5.4</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td></tr><tr><td>Droid</td><td>anthropic(v1/messages)</td><td>GitHub Models</td><td>claude-haiku-4.5, gpt-5-mini</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td></tr><tr><td>Droid</td><td>chat completions</td><td>Alibaba Qwen</td><td>qwen3.6</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td></tr><tr><td>Droid</td><td>chat completions</td><td>Azure OpenAI</td><td>gpt-5.4</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td></tr><tr><td>Droid</td><td>chat completions</td><td>GitHub Models</td><td>claude-haiku-4.5, gpt-5-mini</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td></tr><tr><td>Droid</td><td>responses</td><td>Alibaba Qwen</td><td>qwen3.6</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td></tr><tr><td>Droid</td><td>responses</td><td>Azure OpenAI</td><td>gpt-5.4</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td></tr><tr><td>Droid</td><td>responses</td><td>GitHub Models</td><td>claude-haiku-4.5, gpt-5-mini</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td></tr></tbody>
+        <tbody id="plan-body"><tr><td>Claude Code</td><td>anthropic(v1/messages)</td><td>GitHub Models</td><td>claude-haiku-4.5</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="true">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Claude Code</td><td>anthropic(v1/messages)</td><td>Azure OpenAI</td><td>gpt-5.4</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Claude Code</td><td>anthropic(v1/messages)</td><td>Alibaba Qwen</td><td>qwen3.6</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Codex</td><td>responses</td><td>GitHub Models</td><td>gpt-5-mini</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Codex</td><td>responses</td><td>Azure OpenAI</td><td>gpt-5.4</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Codex</td><td>responses</td><td>Alibaba Qwen</td><td>qwen3.6</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Droid</td><td>anthropic(v1/messages)</td><td>Alibaba Qwen</td><td>qwen3.6</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Droid</td><td>anthropic(v1/messages)</td><td>Azure OpenAI</td><td>gpt-5.4</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Droid</td><td>anthropic(v1/messages)</td><td>GitHub Models</td><td>claude-haiku-4.5, gpt-5-mini</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Droid</td><td>chat completions</td><td>Alibaba Qwen</td><td>qwen3.6</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Droid</td><td>chat completions</td><td>Azure OpenAI</td><td>gpt-5.4</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Droid</td><td>chat completions</td><td>GitHub Models</td><td>claude-haiku-4.5, gpt-5-mini</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Droid</td><td>responses</td><td>Alibaba Qwen</td><td>qwen3.6</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td>http://localhost:5000/v1</td></tr><tr><td>Droid</td><td>responses</td><td>Azure OpenAI</td><td>gpt-5.4</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td>http://localhost:5000/v1</td></tr><tr><td>Droid</td><td>responses</td><td>GitHub Models</td><td>claude-haiku-4.5, gpt-5-mini</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td>http://localhost:5000/v1</td></tr></tbody>
       </table>
     </section>
 
@@ -634,6 +636,10 @@
           updateStats(fresh);
         });
 
+        const endpointTd = document.createElement("td");
+        endpointTd.textContent = row[0] === "Droid" && row[1] === "responses" ? "http://localhost:5000/v1" : "";
+        tr.appendChild(endpointTd);
+
         body.appendChild(tr);
       });
 
@@ -657,11 +663,12 @@
 
     function exportCsv() {
       const state = loadState();
-      const lines = [["CodeAgent", "API Shape", "Provider", "Model", "Passed"]];
+      const lines = [["CodeAgent", "API Shape", "Provider", "Model", "Passed", "Endpoint"]];
       rows.forEach((r) => {
         const val = state[rowKey(r)] || "";
         const passed = val === "yes" ? "Yes" : val === "no" ? "No" : "";
-        lines.push([r[0], r[1], r[2], r[3], passed]);
+        const endpoint = r[0] === "Droid" && r[1] === "responses" ? "http://localhost:5000/v1" : "";
+        lines.push([r[0], r[1], r[2], r[3], passed, endpoint]);
       });
 
       const csv = lines
