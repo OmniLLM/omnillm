@@ -99,6 +99,20 @@ func translateResponsesInput(input interface{}) ([]cif.CIFMessage, error) {
 		}, nil
 	case []interface{}:
 		var messages []cif.CIFMessage
+		var pendingAssistantParts []cif.CIFContentPart
+
+		flushAssistant := func() {
+			if len(pendingAssistantParts) == 0 {
+				return
+			}
+			content := append([]cif.CIFContentPart(nil), pendingAssistantParts...)
+			messages = append(messages, cif.CIFAssistantMessage{
+				Role:    "assistant",
+				Content: content,
+			})
+			pendingAssistantParts = nil
+		}
+
 		for _, item := range v {
 			itemMap, ok := item.(map[string]interface{})
 			if !ok {
@@ -112,19 +126,75 @@ func translateResponsesInput(input interface{}) ([]cif.CIFMessage, error) {
 			if err := json.Unmarshal(itemBytes, &inputItem); err != nil {
 				return nil, fmt.Errorf("failed to decode input item: %w", err)
 			}
-			msgs, err := translateInputItem(inputItem)
-			if err != nil {
-				return nil, err
+
+			switch inputItemType(inputItem) {
+			case "message":
+				content, err := translateInputContent(inputItem.Content)
+				if err != nil {
+					return nil, err
+				}
+
+				switch inputItem.Role {
+				case "system", "developer":
+					flushAssistant()
+					messages = append(messages, cif.CIFSystemMessage{
+						Role:    "system",
+						Content: extractInputText(inputItem.Content),
+					})
+				case "user":
+					flushAssistant()
+					messages = append(messages, cif.CIFUserMessage{
+						Role:    "user",
+						Content: content,
+					})
+				case "assistant":
+					pendingAssistantParts = append(pendingAssistantParts, content...)
+				default:
+					return nil, fmt.Errorf("unknown input item role: %s", inputItem.Role)
+				}
+
+			case "function_call":
+				toolCallID := inputItem.CallID
+				if toolCallID == "" {
+					toolCallID = inputItem.ID
+				}
+				if toolCallID == "" {
+					return nil, fmt.Errorf("function_call item missing call_id and id")
+				}
+
+				pendingAssistantParts = append(pendingAssistantParts, cif.CIFToolCallPart{
+					Type:          "tool_call",
+					ToolCallID:    toolCallID,
+					ToolName:      inputItem.Name,
+					ToolArguments: parseToolArguments(inputItem.Arguments),
+				})
+
+			case "function_call_output":
+				flushAssistant()
+				messages = append(messages, cif.CIFUserMessage{
+					Role: "user",
+					Content: []cif.CIFContentPart{
+						cif.CIFToolResultPart{
+							Type:       "tool_result",
+							ToolCallID: inputItem.CallID,
+							ToolName:   inputItem.Name,
+							Content:    inputItem.Output,
+						},
+					},
+				})
+
+			default:
+				return nil, fmt.Errorf("unknown input item type: %s", inputItem.Type)
 			}
-			messages = append(messages, msgs...)
 		}
+		flushAssistant()
 		return messages, nil
 	default:
 		return nil, fmt.Errorf("invalid input type")
 	}
 }
 
-func translateInputItem(item InputItem) ([]cif.CIFMessage, error) {
+func inputItemType(item InputItem) string {
 	itemType := item.Type
 	if itemType == "" {
 		switch {
@@ -136,74 +206,7 @@ func translateInputItem(item InputItem) ([]cif.CIFMessage, error) {
 			itemType = "function_call"
 		}
 	}
-
-	switch itemType {
-	case "message":
-		content, err := translateInputContent(item.Content)
-		if err != nil {
-			return nil, err
-		}
-
-		switch item.Role {
-		case "system", "developer":
-			text := extractInputText(item.Content)
-			return []cif.CIFMessage{
-				cif.CIFSystemMessage{Role: "system", Content: text},
-			}, nil
-		case "user":
-			return []cif.CIFMessage{
-				cif.CIFUserMessage{Role: "user", Content: content},
-			}, nil
-		case "assistant":
-			return []cif.CIFMessage{
-				cif.CIFAssistantMessage{Role: "assistant", Content: content},
-			}, nil
-		default:
-			return nil, fmt.Errorf("unknown input item role: %s", item.Role)
-		}
-
-	case "function_call":
-		toolCallID := item.CallID
-		if toolCallID == "" {
-			toolCallID = item.ID
-		}
-		if toolCallID == "" {
-			return nil, fmt.Errorf("function_call item missing call_id and id")
-		}
-
-		args := parseToolArguments(item.Arguments)
-		return []cif.CIFMessage{
-			cif.CIFAssistantMessage{
-				Role: "assistant",
-				Content: []cif.CIFContentPart{
-					cif.CIFToolCallPart{
-						Type:          "tool_call",
-						ToolCallID:    toolCallID,
-						ToolName:      item.Name,
-						ToolArguments: args,
-					},
-				},
-			},
-		}, nil
-
-	case "function_call_output":
-		return []cif.CIFMessage{
-			cif.CIFUserMessage{
-				Role: "user",
-				Content: []cif.CIFContentPart{
-					cif.CIFToolResultPart{
-						Type:       "tool_result",
-						ToolCallID: item.CallID,
-						ToolName:   item.Name,
-						Content:    item.Output,
-					},
-				},
-			},
-		}, nil
-
-	default:
-		return nil, fmt.Errorf("unknown input item type: %s", item.Type)
-	}
+	return itemType
 }
 
 func translateInputContent(content interface{}) ([]cif.CIFContentPart, error) {

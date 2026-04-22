@@ -19,6 +19,7 @@ type ResponsesResponse struct {
 type ResponsesOutputItem struct {
 	Type      string                  `json:"type"`
 	ID        string                  `json:"id"`
+	CallID    string                  `json:"call_id,omitempty"`
 	Role      string                  `json:"role"`
 	Content   []ResponsesContentBlock `json:"content,omitempty"`
 	Name      string                  `json:"name,omitempty"`
@@ -57,6 +58,7 @@ func SerializeToResponses(response *cif.CanonicalResponse) (*ResponsesResponse, 
 			outputItems = append(outputItems, ResponsesOutputItem{
 				Type:      "function_call",
 				ID:        p.ToolCallID,
+				CallID:    p.ToolCallID,
 				Role:      "assistant",
 				Name:      p.ToolName,
 				Arguments: string(args),
@@ -100,6 +102,7 @@ type ResponsesStreamState struct {
 	CurrentToolItemID  string
 	CurrentContentText string
 	MessageItemAdded   bool
+	outputItems        []map[string]interface{}
 }
 
 func CreateResponsesStreamState() *ResponsesStreamState {
@@ -116,6 +119,7 @@ func ConvertCIFEventToResponsesSSE(event cif.CIFStreamEvent, state *ResponsesStr
 		state.CurrentItemID = fmt.Sprintf("%s-message", e.ID)
 		state.CurrentContentText = ""
 		state.MessageItemAdded = false
+		state.outputItems = nil
 
 		events = append(events, map[string]interface{}{
 			"type": "response.created",
@@ -153,18 +157,20 @@ func ConvertCIFEventToResponsesSSE(event cif.CIFStreamEvent, state *ResponsesStr
 					state.MessageItemAdded = true
 				}
 			case cif.CIFToolCallPart:
-				toolItemID := fmt.Sprintf("%s-tool-%s", state.ResponseID, cb.ToolCallID)
+				toolItem := map[string]interface{}{
+					"type":      "function_call",
+					"id":        cb.ToolCallID,
+					"call_id":   cb.ToolCallID,
+					"role":      "assistant",
+					"name":      cb.ToolName,
+					"arguments": "",
+				}
 				events = append(events, map[string]interface{}{
 					"type": "response.output_item.added",
-					"item": map[string]interface{}{
-						"type":      "function_call",
-						"id":        toolItemID,
-						"role":      "assistant",
-						"name":      cb.ToolName,
-						"arguments": "",
-					},
+					"item": toolItem,
 				})
-				state.CurrentToolItemID = toolItemID
+				state.CurrentToolItemID = cb.ToolCallID
+				state.outputItems = append(state.outputItems, toolItem)
 			}
 		}
 
@@ -182,6 +188,19 @@ func ConvertCIFEventToResponsesSSE(event cif.CIFStreamEvent, state *ResponsesStr
 				"delta": d.Thinking,
 			})
 		case cif.ToolArgumentsDelta:
+			if state.CurrentToolItemID != "" {
+				// Accumulate arguments onto the last tool item for the completed event
+				for _, item := range state.outputItems {
+					if item["call_id"] == state.CurrentToolItemID {
+						item["arguments"] = item["arguments"].(string) + d.PartialJSON
+						break
+					}
+				}
+				events = append(events, map[string]interface{}{
+					"type":  "response.function_call_arguments.delta",
+					"delta": d.PartialJSON,
+				})
+			}
 		}
 
 	case cif.CIFContentBlockStop:
@@ -190,17 +209,19 @@ func ConvertCIFEventToResponsesSSE(event cif.CIFStreamEvent, state *ResponsesStr
 				"type": "response.output_text.done",
 				"text": state.CurrentContentText,
 			})
+			messageItem := map[string]interface{}{
+				"type": "message",
+				"id":   state.CurrentItemID,
+				"role": "assistant",
+				"content": []map[string]interface{}{
+					{"type": "output_text", "text": state.CurrentContentText},
+				},
+			}
 			events = append(events, map[string]interface{}{
 				"type": "response.output_item.done",
-				"item": map[string]interface{}{
-					"type": "message",
-					"id":   state.CurrentItemID,
-					"role": "assistant",
-					"content": []map[string]interface{}{
-						{"type": "output_text", "text": state.CurrentContentText},
-					},
-				},
+				"item": messageItem,
 			})
+			state.outputItems = append([]map[string]interface{}{messageItem}, state.outputItems...)
 		}
 
 	case cif.CIFStreamEnd:
@@ -209,17 +230,28 @@ func ConvertCIFEventToResponsesSSE(event cif.CIFStreamEvent, state *ResponsesStr
 				"type": "response.output_text.done",
 				"text": state.CurrentContentText,
 			})
+			messageItem := map[string]interface{}{
+				"type": "message",
+				"id":   state.CurrentItemID,
+				"role": "assistant",
+				"content": []map[string]interface{}{
+					{"type": "output_text", "text": state.CurrentContentText},
+				},
+			}
 			events = append(events, map[string]interface{}{
 				"type": "response.output_item.done",
-				"item": map[string]interface{}{
-					"type": "message",
-					"id":   state.CurrentItemID,
-					"role": "assistant",
-					"content": []map[string]interface{}{
-						{"type": "output_text", "text": state.CurrentContentText},
-					},
-				},
+				"item": messageItem,
 			})
+			state.outputItems = append([]map[string]interface{}{messageItem}, state.outputItems...)
+		}
+
+		// Build output slice for response.completed — include all accumulated items
+		var output []interface{}
+		for _, item := range state.outputItems {
+			output = append(output, item)
+		}
+		if output == nil {
+			output = []interface{}{}
 		}
 
 		completedResp := map[string]interface{}{
@@ -228,7 +260,7 @@ func ConvertCIFEventToResponsesSSE(event cif.CIFStreamEvent, state *ResponsesStr
 				"id":         state.ResponseID,
 				"object":     "realtime.response",
 				"model":      state.Model,
-				"output":     []interface{}{},
+				"output":     output,
 				"created_at": time.Now().Unix(),
 			},
 		}

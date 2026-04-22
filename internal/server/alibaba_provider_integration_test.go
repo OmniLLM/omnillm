@@ -60,53 +60,33 @@ func newFakeAlibabaQwenUpstream(t *testing.T) *fakeAlibabaQwenUpstream {
 			stream, _ := payload["stream"].(bool)
 			hasTools := len(asInterfaceSlice(payload["tools"])) > 0
 
-			if stream && requestContainsToolResult(payload) {
-				writeFakeQwenFinalAnswerStream(w)
+			if requestContainsToolResult(payload) {
+				if stream {
+					writeFakeQwenFinalAnswerStream(w)
+				} else {
+					writeFakeQwenFinalAnswerResponse(w)
+				}
 				return
 			}
 
-			if stream && hasTools {
-				if requestHasToolNamed(payload, "Read") {
-					writeFakeQwenReadToolStream(w)
+			if hasTools {
+				if stream {
+					if requestHasToolNamed(payload, "Read") {
+						writeFakeQwenReadToolStream(w)
+					} else {
+						writeFakeQwenToolStream(w)
+					}
 				} else {
-					writeFakeQwenToolStream(w)
+					if requestHasToolNamed(payload, "Read") {
+						writeFakeQwenReadToolResponse(w)
+					} else {
+						writeFakeQwenToolResponse(w)
+					}
 				}
 				return
 			}
 
 			w.Header().Set("Content-Type", "application/json")
-			if hasTools {
-				_ = json.NewEncoder(w).Encode(map[string]interface{}{
-					"id":    "chatcmpl_qwen_tool",
-					"model": "qwen3.6-plus",
-					"choices": []map[string]interface{}{
-						{
-							"index": 0,
-							"message": map[string]interface{}{
-								"role": "assistant",
-								"tool_calls": []map[string]interface{}{
-									{
-										"id":   "call_qwen_weather",
-										"type": "function",
-										"function": map[string]interface{}{
-											"name":      "get_weather",
-											"arguments": `{"location":"Shanghai"}`,
-										},
-									},
-								},
-							},
-							"finish_reason": "tool_calls",
-						},
-					},
-					"usage": map[string]interface{}{
-						"prompt_tokens":     21,
-						"completion_tokens": 7,
-						"total_tokens":      28,
-					},
-				})
-				return
-			}
-
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"id":    "chatcmpl_qwen_text",
 				"model": "qwen3.6-plus",
@@ -156,6 +136,70 @@ func (u *fakeAlibabaQwenUpstream) chatRequestCount() int {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	return len(u.chatRequests)
+}
+
+func writeFakeQwenToolResponse(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"id":    "chatcmpl_qwen_tool",
+		"model": "qwen3.6-plus",
+		"choices": []map[string]interface{}{
+			{
+				"index": 0,
+				"message": map[string]interface{}{
+					"role": "assistant",
+					"tool_calls": []map[string]interface{}{
+						{
+							"id":   "call_qwen_weather",
+							"type": "function",
+							"function": map[string]interface{}{
+								"name":      "get_weather",
+								"arguments": `{"location":"Shanghai"}`,
+							},
+						},
+					},
+				},
+				"finish_reason": "tool_calls",
+			},
+		},
+		"usage": map[string]interface{}{
+			"prompt_tokens":     21,
+			"completion_tokens": 7,
+			"total_tokens":      28,
+		},
+	})
+}
+
+func writeFakeQwenReadToolResponse(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"id":    "chatcmpl_qwen_read_tool",
+		"model": "qwen3.6-plus",
+		"choices": []map[string]interface{}{
+			{
+				"index": 0,
+				"message": map[string]interface{}{
+					"role": "assistant",
+					"tool_calls": []map[string]interface{}{
+						{
+							"id":   "call_qwen_read",
+							"type": "function",
+							"function": map[string]interface{}{
+								"name":      "Read",
+								"arguments": `{"file_path":"README.md"}`,
+							},
+						},
+					},
+				},
+				"finish_reason": "tool_calls",
+			},
+		},
+		"usage": map[string]interface{}{
+			"prompt_tokens":     41,
+			"completion_tokens": 11,
+			"total_tokens":      52,
+		},
+	})
 }
 
 func writeFakeQwenToolStream(w http.ResponseWriter) {
@@ -216,6 +260,29 @@ func writeFakeQwenFinalAnswerStream(w http.ResponseWriter) {
 			flusher.Flush()
 		}
 	}
+}
+
+func writeFakeQwenFinalAnswerResponse(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"id":    "chatcmpl_qwen_final",
+		"model": "qwen3.6-plus",
+		"choices": []map[string]interface{}{
+			{
+				"index": 0,
+				"message": map[string]interface{}{
+					"role":    "assistant",
+					"content": "This codebase exposes an OpenAI-compatible and Anthropic-compatible proxy. It normalizes requests into CIF, routes by model, and adapts provider-specific upstreams.",
+				},
+				"finish_reason": "stop",
+			},
+		},
+		"usage": map[string]interface{}{
+			"prompt_tokens":     67,
+			"completion_tokens": 24,
+			"total_tokens":      91,
+		},
+	})
 }
 
 type parsedSSEEvent struct {
@@ -542,11 +609,11 @@ func TestAlibabaQwen36PlusProviderIntegration(t *testing.T) {
 			t.Fatalf("did not expect enable_thinking in streaming tool request, got %#v", lastReq.Payload["enable_thinking"])
 		}
 		stream, _ := lastReq.Payload["stream"].(bool)
-		if !stream {
-			t.Fatalf("expected upstream streaming request, got payload %#v", lastReq.Payload)
+		if stream {
+			t.Fatalf("expected buffered upstream request to disable stream, got payload %#v", lastReq.Payload)
 		}
-		if !strings.Contains(lastReq.Accept, "text/event-stream") {
-			t.Fatalf("expected upstream Accept header to request SSE, got %q", lastReq.Accept)
+		if lastReq.Accept != "application/json" {
+			t.Fatalf("expected buffered upstream Accept header, got %q", lastReq.Accept)
 		}
 	})
 
@@ -609,6 +676,12 @@ func TestAlibabaQwen36PlusProviderIntegration(t *testing.T) {
 		firstUpstreamReq := upstream.lastChatRequest(t)
 		if _, exists := firstUpstreamReq.Payload["enable_thinking"]; exists {
 			t.Fatalf("did not expect enable_thinking on first tool-use turn, got %#v", firstUpstreamReq.Payload["enable_thinking"])
+		}
+		if firstUpstreamReq.Accept != "application/json" {
+			t.Fatalf("expected buffered upstream Accept header on first turn, got %q", firstUpstreamReq.Accept)
+		}
+		if stream, _ := firstUpstreamReq.Payload["stream"].(bool); stream {
+			t.Fatalf("expected first buffered upstream request to disable stream, got payload %#v", firstUpstreamReq.Payload)
 		}
 
 		secondResp := postJSON(
@@ -679,6 +752,12 @@ func TestAlibabaQwen36PlusProviderIntegration(t *testing.T) {
 		secondUpstreamReq := upstream.lastChatRequest(t)
 		if _, exists := secondUpstreamReq.Payload["enable_thinking"]; exists {
 			t.Fatalf("did not expect enable_thinking on second tool-result turn, got %#v", secondUpstreamReq.Payload["enable_thinking"])
+		}
+		if secondUpstreamReq.Accept != "application/json" {
+			t.Fatalf("expected buffered upstream Accept header on second turn, got %q", secondUpstreamReq.Accept)
+		}
+		if stream, _ := secondUpstreamReq.Payload["stream"].(bool); stream {
+			t.Fatalf("expected second buffered upstream request to disable stream, got payload %#v", secondUpstreamReq.Payload)
 		}
 
 		upstreamMessages := asInterfaceSlice(secondUpstreamReq.Payload["messages"])

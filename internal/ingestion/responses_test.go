@@ -222,6 +222,82 @@ func TestParseResponsesPayload_FunctionCallOutputBecomesToolResult(t *testing.T)
 	}
 }
 
+func TestParseResponsesPayload_MergesAssistantFunctionCallsIntoSingleTurn(t *testing.T) {
+	req, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
+		"model": "gpt-5.4-mini",
+		"input": []interface{}{
+			map[string]interface{}{
+				"type":    "message",
+				"role":    "assistant",
+				"content": []interface{}{map[string]interface{}{"type": "output_text", "text": "Let me check."}},
+			},
+			map[string]interface{}{
+				"type":      "function_call",
+				"call_id":   "call_1",
+				"name":      "tool_a",
+				"arguments": `{"x":1}`,
+			},
+			map[string]interface{}{
+				"type":      "function_call",
+				"call_id":   "call_2",
+				"name":      "tool_b",
+				"arguments": `{"y":2}`,
+			},
+			map[string]interface{}{
+				"type":    "function_call_output",
+				"call_id": "call_1",
+				"name":    "tool_a",
+				"output":  "one",
+			},
+			map[string]interface{}{
+				"type":    "function_call_output",
+				"call_id": "call_2",
+				"name":    "tool_b",
+				"output":  "two",
+			},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(req.Messages) != 3 {
+		t.Fatalf("expected assistant turn plus two tool results, got %d messages", len(req.Messages))
+	}
+
+	assistantMsg, ok := req.Messages[0].(cif.CIFAssistantMessage)
+	if !ok {
+		t.Fatalf("expected first message to be assistant, got %T", req.Messages[0])
+	}
+	if len(assistantMsg.Content) != 3 {
+		t.Fatalf("expected assistant turn to include text plus two tool calls, got %d parts", len(assistantMsg.Content))
+	}
+
+	textPart, ok := assistantMsg.Content[0].(cif.CIFTextPart)
+	if !ok || textPart.Text != "Let me check." {
+		t.Fatalf("unexpected assistant text part: %#v", assistantMsg.Content[0])
+	}
+
+	firstToolCall, ok := assistantMsg.Content[1].(cif.CIFToolCallPart)
+	if !ok || firstToolCall.ToolCallID != "call_1" || firstToolCall.ToolName != "tool_a" {
+		t.Fatalf("unexpected first tool call: %#v", assistantMsg.Content[1])
+	}
+
+	secondToolCall, ok := assistantMsg.Content[2].(cif.CIFToolCallPart)
+	if !ok || secondToolCall.ToolCallID != "call_2" || secondToolCall.ToolName != "tool_b" {
+		t.Fatalf("unexpected second tool call: %#v", assistantMsg.Content[2])
+	}
+
+	toolResultOne := req.Messages[1].(cif.CIFUserMessage).Content[0].(cif.CIFToolResultPart)
+	if toolResultOne.ToolCallID != "call_1" || toolResultOne.Content != "one" {
+		t.Fatalf("unexpected first tool result: %#v", toolResultOne)
+	}
+
+	toolResultTwo := req.Messages[2].(cif.CIFUserMessage).Content[0].(cif.CIFToolResultPart)
+	if toolResultTwo.ToolCallID != "call_2" || toolResultTwo.Content != "two" {
+		t.Fatalf("unexpected second tool result: %#v", toolResultTwo)
+	}
+}
+
 func TestParseResponsesPayload_FunctionCallRequiresIdentifier(t *testing.T) {
 	_, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
 		"model": "gpt-5.4-mini",
