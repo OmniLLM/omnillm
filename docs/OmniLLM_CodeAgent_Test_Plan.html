@@ -1,8 +1,7 @@
 <!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+<html lang="en"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>OmniLLM CodeAgent Test Plan</title>
   <style>
     :root {
@@ -262,15 +261,15 @@
         <button class="btn" id="save-html" type="button">Save HTML</button>
         <button class="btn" id="export-csv" type="button">Export CSV</button>
       </div>
-      <div class="save-status" id="save-status"></div>
+      <div class="save-status" id="save-status">File connection was cancelled.</div>
       <div class="stats">
         <div class="stat">
           <span class="label">Total</span>
-          <span class="value" id="stat-total">0</span>
+          <span class="value" id="stat-total">15</span>
         </div>
         <div class="stat">
           <span class="label">Passed (Yes)</span>
-          <span class="value" id="stat-yes">0</span>
+          <span class="value" id="stat-yes">1</span>
         </div>
         <div class="stat">
           <span class="label">Failed (No)</span>
@@ -290,7 +289,7 @@
             <th>Passed</th>
           </tr>
         </thead>
-        <tbody id="plan-body"></tbody>
+        <tbody id="plan-body"><tr><td>Claude Code</td><td>anthropic(v1/messages)</td><td>GitHub Models</td><td>claude-haiku-4.5</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="true">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td></tr><tr><td>Claude Code</td><td>anthropic(v1/messages)</td><td>Azure OpenAI</td><td>gpt-5.4</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td></tr><tr><td>Claude Code</td><td>anthropic(v1/messages)</td><td>Alibaba Qwen</td><td>qwen3.6</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td></tr><tr><td>Codex</td><td>responses</td><td>GitHub Models</td><td>gpt-5-mini</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td></tr><tr><td>Codex</td><td>responses</td><td>Azure OpenAI</td><td>gpt-5.4</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td></tr><tr><td>Codex</td><td>responses</td><td>Alibaba Qwen</td><td>qwen3.6</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td></tr><tr><td>Droid</td><td>anthropic(v1/messages)</td><td>Alibaba Qwen</td><td>qwen3.6</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td></tr><tr><td>Droid</td><td>anthropic(v1/messages)</td><td>Azure OpenAI</td><td>gpt-5.4</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td></tr><tr><td>Droid</td><td>anthropic(v1/messages)</td><td>GitHub Models</td><td>claude-haiku-4.5, gpt-5-mini</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td></tr><tr><td>Droid</td><td>chat completions</td><td>Alibaba Qwen</td><td>qwen3.6</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td></tr><tr><td>Droid</td><td>chat completions</td><td>Azure OpenAI</td><td>gpt-5.4</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td></tr><tr><td>Droid</td><td>chat completions</td><td>GitHub Models</td><td>claude-haiku-4.5, gpt-5-mini</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td></tr><tr><td>Droid</td><td>responses</td><td>Alibaba Qwen</td><td>qwen3.6</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td></tr><tr><td>Droid</td><td>responses</td><td>Azure OpenAI</td><td>gpt-5.4</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td></tr><tr><td>Droid</td><td>responses</td><td>GitHub Models</td><td>claude-haiku-4.5, gpt-5-mini</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td></tr></tbody>
       </table>
     </section>
 
@@ -304,11 +303,18 @@
     </section>
   </main>
 
-  <script id="embedded-state" type="application/json">{}</script>
+  <script id="embedded-state" type="application/json">
+{
+  "Claude Code|anthropic(v1/messages)|GitHub Models|claude-haiku-4.5": "yes"
+}
+</script>
 
   <script>
     const STORAGE_KEY = "omnillm_codeagent_test_plan_v1";
     const EMBEDDED_STATE_ID = "embedded-state";
+    const HANDLE_DB_NAME = "omnillm_codeagent_handles";
+    const HANDLE_STORE_NAME = "fileHandles";
+    const HANDLE_KEY = "testPlanHtmlFile";
 
     const rows = [
       ["Claude Code", "anthropic(v1/messages)", "GitHub Models", "claude-haiku-4.5"],
@@ -335,6 +341,87 @@
     const saveStatus = document.getElementById("save-status");
 
     let connectedFileHandle = null;
+
+    function openHandleDb() {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(HANDLE_DB_NAME, 1);
+
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains(HANDLE_STORE_NAME)) {
+            db.createObjectStore(HANDLE_STORE_NAME);
+          }
+        };
+
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function idbGetHandle() {
+      if (!window.indexedDB) {
+        return null;
+      }
+
+      const db = await openHandleDb();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(HANDLE_STORE_NAME, "readonly");
+        const store = tx.objectStore(HANDLE_STORE_NAME);
+        const req = store.get(HANDLE_KEY);
+
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function idbSetHandle(handle) {
+      if (!window.indexedDB) {
+        return;
+      }
+
+      const db = await openHandleDb();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(HANDLE_STORE_NAME, "readwrite");
+        const store = tx.objectStore(HANDLE_STORE_NAME);
+        const req = store.put(handle, HANDLE_KEY);
+
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function idbClearHandle() {
+      if (!window.indexedDB) {
+        return;
+      }
+
+      const db = await openHandleDb();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(HANDLE_STORE_NAME, "readwrite");
+        const store = tx.objectStore(HANDLE_STORE_NAME);
+        const req = store.delete(HANDLE_KEY);
+
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function ensurePermission(handle, request) {
+      if (!handle) {
+        return false;
+      }
+
+      const opts = { mode: "readwrite" };
+      if (await handle.queryPermission(opts) === "granted") {
+        return true;
+      }
+
+      if (!request) {
+        return false;
+      }
+
+      return (await handle.requestPermission(opts)) === "granted";
+    }
 
     function rowKey(row) {
       return row.join("|");
@@ -412,6 +499,7 @@
             accept: { "text/html": [".html"] }
           }]
         });
+        await idbSetHandle(connectedFileHandle);
         await saveHtmlToConnectedFile(loadState(), false);
         setSaveStatus("Connected. Yes/No changes now auto-save to the selected HTML file.");
       } catch {
@@ -432,7 +520,35 @@
         }
       } catch {
         connectedFileHandle = null;
+        await idbClearHandle();
         setSaveStatus("Could not write to file. Reconnect file or use Save HTML download.");
+      }
+    }
+
+    async function initAutoFileConnection() {
+      if (!window.showSaveFilePicker || !window.indexedDB) {
+        setSaveStatus("Click Save HTML to download, or use a browser that supports file write permissions.");
+        return;
+      }
+
+      try {
+        const storedHandle = await idbGetHandle();
+        if (!storedHandle) {
+          setSaveStatus("Tip: click Connect HTML File once. Future opens can auto-save this file.");
+          return;
+        }
+
+        const granted = await ensurePermission(storedHandle, false);
+        if (!granted) {
+          setSaveStatus("Click Connect HTML File once to re-grant permission for auto-save.");
+          return;
+        }
+
+        connectedFileHandle = storedHandle;
+        setSaveStatus("Auto-connected to saved HTML file. Yes/No clicks now auto-save.");
+      } catch {
+        await idbClearHandle();
+        setSaveStatus("Could not restore saved file handle. Click Connect HTML File.");
       }
     }
 
@@ -540,7 +656,8 @@
     }
 
     function clearAll() {
-      localStorage.removeItem(STORAGE_KEY);
+      const state = {};
+      saveState(state);
       buildTable();
     }
 
@@ -576,7 +693,7 @@
     document.getElementById("export-csv").addEventListener("click", exportCsv);
 
     buildTable();
-    setSaveStatus("Tip: click Connect HTML File once to auto-save Yes/No changes into a real HTML file.");
+    initAutoFileConnection();
   </script>
-</body>
-</html>
+
+</body></html>
