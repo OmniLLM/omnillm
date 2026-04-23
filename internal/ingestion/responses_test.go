@@ -403,6 +403,42 @@ func TestParseResponsesPayload_InfersMissingFunctionCallOutputType(t *testing.T)
 	}
 }
 
+
+func TestParseResponsesPayload_IgnoresReasoningItems(t *testing.T) {
+	req, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
+		"model": "gpt-5.4-mini",
+		"input": []interface{}{
+			map[string]interface{}{
+				"type": "reasoning",
+				"id":   "rs_123",
+			},
+			map[string]interface{}{
+				"type":    "message",
+				"role":    "assistant",
+				"content": []interface{}{map[string]interface{}{"type": "output_text", "text": "Plan updated"}},
+			},
+			map[string]interface{}{
+				"type":      "function_call",
+				"call_id":   "call_1",
+				"name":      "Glob",
+				"arguments": `{"pattern":"src/**"}`,
+			},
+			map[string]interface{}{
+				"type":    "function_call_output",
+				"call_id": "call_1",
+				"name":    "Glob",
+				"output":  "src/a.ts",
+			},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(req.Messages) != 2 {
+		t.Fatalf("expected assistant turn plus tool result, got %d messages", len(req.Messages))
+	}
+}
+
 func TestParseResponsesPayload_RejectsMalformedInputItem(t *testing.T) {
 	_, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
 		"model": "gpt-5.4-mini",
@@ -412,3 +448,4 @@ func TestParseResponsesPayload_RejectsMalformedInputItem(t *testing.T) {
 		t.Fatal("expected malformed input item to fail")
 	}
 }
+

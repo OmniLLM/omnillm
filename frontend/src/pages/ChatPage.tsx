@@ -64,20 +64,16 @@ function extractMessageContent(
   }
   if ("output" in response && Array.isArray(response.output)) {
     const messageItems = response.output.filter(
-      (item): item is { type: string; content?: Array<unknown> } =>
-        Boolean(item)
-        && typeof item === "object"
-        && "type" in item
-        && item.type === "message",
+      (item) => Boolean(item) && item.type === "message",
     )
     if (messageItems.length > 0 && Array.isArray(messageItems[0].content)) {
       const textBlocks = messageItems[0].content.filter(
-        (block): block is { type: string; text?: string } =>
+        (block) =>
           Boolean(block)
           && typeof block === "object"
           && "type" in block
           && block.type === "output_text",
-      )
+      ) as Array<{ type: "output_text"; text?: string }>
       return textBlocks.map((block) => block.text || "").join("")
     }
   }

@@ -80,33 +80,25 @@ func ParseResponsesPayload(raw json.RawMessage) (*cif.CanonicalRequest, error) {
 		Stream:      req.Stream != nil && *req.Stream,
 	}
 
-	// previous_response_id: forwarded as-is for providers that support chaining.
-	// We store it in the canonical request so routing / adapters can use it.
 	if req.PreviousResponseID != nil && *req.PreviousResponseID != "" {
 		canonical.PreviousResponseID = req.PreviousResponseID
 	}
 
-	// text.format → structured output (mirrors response_format in Chat Completions)
 	if req.Text != nil && req.Text.Format != nil {
 		canonical.ResponseFormat = translateResponsesTextFormat(req.Text.Format)
 	}
 
-	// Set system prompt from instructions
 	if req.Instructions != nil && *req.Instructions != "" {
 		canonical.SystemPrompt = req.Instructions
 	}
 
-	// Convert input to messages
 	messages, err := translateResponsesInput(req.Input)
 	if err != nil {
 		return nil, fmt.Errorf("failed to translate input: %w", err)
 	}
 	canonical.Messages = messages
 
-	// Convert tools
 	canonical.Tools = translateResponsesTools(req.Tools)
-
-	// Convert tool choice
 	canonical.ToolChoice = translateResponsesToolChoice(req.ToolChoice)
 
 	log.Debug().
@@ -214,6 +206,9 @@ func translateResponsesInput(input interface{}) ([]cif.CIFMessage, error) {
 					},
 				})
 
+			case "reasoning":
+				continue
+
 			default:
 				return nil, fmt.Errorf("unknown input item type: %s", inputItem.Type)
 			}
@@ -266,11 +261,6 @@ func translateInputContent(content interface{}) ([]cif.CIFContentPart, error) {
 				part := cif.CIFImagePart{Type: "image"}
 				if cb.ImageURL != "" {
 					part.URL = &cb.ImageURL
-					// Detect base64 data URIs vs plain URLs
-					if len(cb.ImageURL) > 5 && cb.ImageURL[:5] == "data:" {
-						// data:<mediaType>;base64,<data>
-						part.URL = &cb.ImageURL
-					}
 				}
 				parts = append(parts, part)
 			default:
@@ -364,9 +354,6 @@ func translateResponsesToolChoice(toolChoice interface{}) interface{} {
 
 // translateResponsesTextFormat converts the Responses API text.format object
 // into the canonical response_format map used by outbound adapters.
-// The Responses API shape is flat (name/schema at top level) whereas
-// Chat Completions wraps them inside a json_schema sub-object; this function
-// normalises to the Chat Completions shape so existing adapters can reuse it.
 func translateResponsesTextFormat(f *ResponsesTextFormat) map[string]interface{} {
 	if f == nil {
 		return nil

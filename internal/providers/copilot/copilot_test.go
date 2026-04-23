@@ -254,6 +254,84 @@ func TestCopilotAdapterExecuteStream_DisableAuthRetryMakesSingleAttempt(t *testi
 	}
 }
 
+
+func TestCopilotAdapterExecute_ConvertsResponsesStyleHistoryToChatCompletions(t *testing.T) {
+	var capturedPayload map[string]interface{}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&capturedPayload); err != nil {
+			t.Fatalf("failed to decode request payload: %v", err)
+		}
+
+		messages, ok := capturedPayload["messages"].([]interface{})
+		if !ok {
+			t.Fatalf("expected messages array, got %#v", capturedPayload["messages"])
+		}
+		if len(messages) != 3 {
+			t.Fatalf("expected 3 chat-completions messages, got %d: %#v", len(messages), messages)
+		}
+
+		assistant, ok := messages[1].(map[string]interface{})
+		if !ok || assistant["role"] != "assistant" {
+			t.Fatalf("expected assistant message at index 1, got %#v", messages[1])
+		}
+		toolCalls, ok := assistant["tool_calls"].([]interface{})
+		if !ok || len(toolCalls) != 1 {
+			t.Fatalf("expected one assistant tool_call, got %#v", assistant["tool_calls"])
+		}
+
+		toolMsg, ok := messages[2].(map[string]interface{})
+		if !ok || toolMsg["role"] != "tool" {
+			t.Fatalf("expected tool message at index 2, got %#v", messages[2])
+		}
+		if toolMsg["tool_call_id"] != "call_123" || toolMsg["content"] != "README summary" {
+			t.Fatalf("unexpected tool message payload: %#v", toolMsg)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":    "chatcmpl_responses_history",
+			"model": "gpt-5-mini",
+			"choices": []map[string]interface{}{{
+				"index": 0,
+				"message": map[string]interface{}{
+					"role":    "assistant",
+					"content": "done",
+				},
+				"finish_reason": "stop",
+			}},
+		})
+	}))
+	defer server.Close()
+
+	provider := NewGitHubCopilotProvider("github-copilot-test")
+	provider.baseURL = server.URL
+	provider.token = "test-token"
+	adapter := provider.GetAdapter().(*CopilotAdapter)
+
+	_, err := adapter.Execute(context.Background(), &cif.CanonicalRequest{
+		Model: "gpt-5-mini",
+		Messages: []cif.CIFMessage{
+			cif.CIFUserMessage{Role: "user", Content: []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: "explain codebase"}}},
+			cif.CIFAssistantMessage{Role: "assistant", Content: []cif.CIFContentPart{
+				cif.CIFTextPart{Type: "text", Text: "Plan updated"},
+				cif.CIFToolCallPart{Type: "tool_call", ToolCallID: "call_123", ToolName: "Glob", ToolArguments: map[string]interface{}{"pattern": "src/**"}},
+			}},
+			cif.CIFUserMessage{Role: "user", Content: []cif.CIFContentPart{
+				cif.CIFToolResultPart{Type: "tool_result", ToolCallID: "call_123", ToolName: "Glob", Content: "src/a.ts"},
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+}
+
 func TestCopilotAdapterExecute_AliasesLongToolNamesForChatCompletions(t *testing.T) {
 	var capturedPayload map[string]interface{}
 	var upstreamToolName string
@@ -470,3 +548,4 @@ data: {"id":"chatcmpl_stream_long_tool","model":"claude-haiku-4.5","choices":[{"
 		t.Fatalf("expected streamed tool name to be restored to %q, got %q", originalToolName, restoredToolName)
 	}
 }
+

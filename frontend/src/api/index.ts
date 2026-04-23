@@ -152,20 +152,27 @@ export interface ResponsesRequest {
 
 export interface ResponsesResponse {
   id: string
-  object: "realtime.response"
+  object: "response"
   model: string
+  status?: "in_progress" | "completed" | "incomplete" | "failed"
+  output_text?: string
   output: Array<{
-    type: "message"
+    type: "message" | "function_call"
     id: string
     role: "assistant"
-    content: Array<{
+    status?: "in_progress" | "completed" | "incomplete"
+    name?: string
+    arguments?: string
+    content?: Array<{
       type: "output_text"
       text: string
+      annotations?: Array<unknown>
     }>
   }>
   usage?: {
     input_tokens: number
     output_tokens: number
+    total_tokens?: number
   }
   created_at?: number
 }

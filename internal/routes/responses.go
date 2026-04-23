@@ -98,6 +98,7 @@ func handleResponses(c *gin.Context) {
 		}
 
 		providerRequest := *canonicalRequest
+		applyGitHubCopilotSingleUpstreamMode(provider, &providerRequest)
 
 		log.Debug().
 			Str("request_id", requestIDStr).

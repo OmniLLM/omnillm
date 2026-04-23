@@ -784,3 +784,4 @@ func assertCanonicalHistoryMessages(t *testing.T, shapeName string, messages []c
 		t.Fatalf("%s: unexpected final user content: %#v", shapeName, finalUser.Content)
 	}
 }
+
