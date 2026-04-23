@@ -37,6 +37,10 @@ Route AI traffic through a controlled internal endpoint instead of binding appli
 
 ![Virtual Models](docs/assets/virtual-models.png)
 
+### Admin Demo Video
+
+[OmniLLM Admin Demo (MP4)](pages/admin/assets/OmniLLM%20Admin.mp4)
+
 ## Quick Start
 
 ### Prerequisites
@@ -70,7 +74,7 @@ On Windows (PowerShell), set the environment variable before running:
 
 ```powershell
 $env:OMNILLM_API_KEY = "my-secret-key"
-bun run omni restart --rebuild --server-port 5000 --frontend-port 5080 -v
+bun run omni restart --rebuild --host localhost --server-port 5000 --frontend-port 5080 -v
 ```
 
 **Option B: Pre-create the key file**
@@ -79,7 +83,7 @@ bun run omni restart --rebuild --server-port 5000 --frontend-port 5080 -v
 # macOS / Linux
 mkdir -p ~/.config/omnillm
 echo -n "my-secret-key" > ~/.config/omnillm/api-key
-bun run omni restart --rebuild --server-port 5000 --frontend-port 5080 -v
+bun run omni restart --rebuild --host localhost --server-port 5000 --frontend-port 5080 -v
 ```
 
 On Windows (PowerShell):
@@ -87,7 +91,7 @@ On Windows (PowerShell):
 ```powershell
 New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.config\omnillm"
 "my-secret-key" | Set-Content -NoNewline -Path "$env:USERPROFILE\.config\omnillm\api-key"
-bun run omni restart --rebuild --server-port 5000 --frontend-port 5080 -v
+bun run omni restart --rebuild --host localhost --server-port 5000 --frontend-port 5080 -v
 ```
 
 **Option C: Use the auto-generated key**
@@ -95,13 +99,13 @@ bun run omni restart --rebuild --server-port 5000 --frontend-port 5080 -v
 Start the server without specifying a key — OmniLLM generates a random one and persists it:
 
 ```sh
-bun run omni restart --rebuild --server-port 5000 --frontend-port 5080 -v
+bun run omni restart --rebuild --host localhost --server-port 5000 --frontend-port 5080 -v
 ```
 
 On Windows (PowerShell):
 
 ```powershell
-bun run omni restart --rebuild --server-port 5000 --frontend-port 5080 -v
+bun run omni restart --rebuild --host localhost --server-port 5000 --frontend-port 5080 -v
 ```
 
 Then read the key from the persisted file:
@@ -143,7 +147,7 @@ bun run omni start          # start both services
 bun run omni status         # check status
 bun run omni stop           # stop all services
 bun run omni restart        # restart services
-bun run omni restart --rebuild  # rebuild Go binary + frontend, then restart
+bun run omni restart --rebuild --host localhost  # rebuild Go binary + frontend, then restart
 ```
 
 ### Run with bunx

@@ -29,6 +29,7 @@ import (
 
 type StartOptions struct {
 	Port                int
+	Host                string
 	Verbose             bool
 	AccountType         string
 	Manual              bool
@@ -98,13 +99,19 @@ func RunServer(options StartOptions) error {
 
 	r := buildRouter(options.Port, options.APIKey, chatOptions)
 
+	bindHost := options.Host
+	if bindHost == "" {
+		bindHost = "127.0.0.1"
+	}
+	bindAddr := fmt.Sprintf("%s:%d", bindHost, options.Port)
+
 	// Claude Code mode output
 	if options.ClaudeCode {
-		serverURL := fmt.Sprintf("http://localhost:%d", options.Port)
+		serverURL := fmt.Sprintf("http://%s:%d", bindHost, options.Port)
 		printClaudeCodeConfig(serverURL)
 	}
 
-	serverURL := fmt.Sprintf("http://localhost:%d", options.Port)
+	serverURL := fmt.Sprintf("http://%s:%d", bindHost, options.Port)
 	adminURL := fmt.Sprintf("%s/admin", serverURL)
 
 	log.Info().
@@ -114,7 +121,7 @@ func RunServer(options StartOptions) error {
 
 	log.Info().Str("api_key_path", filepath.Join(configDir, apiKeyFileName)).Msg("Inbound API authentication enabled")
 
-	return r.Run(fmt.Sprintf(":%d", options.Port))
+	return r.Run(bindAddr)
 }
 
 func buildRouter(port int, apiKey string, chatOptions routes.ChatCompletionOptions) *gin.Engine {

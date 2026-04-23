@@ -88,6 +88,7 @@ const { values, positionals } = parseArgs({
   options: {
     "server-port": { type: "string", default: "5002" },
     "frontend-port": { type: "string", default: "5080" },
+    host: { type: "string", default: "127.0.0.1" },
     help: { type: "boolean", short: "h" },
     verbose: { type: "boolean", short: "v" },
     rebuild: { type: "boolean", short: "r" },
@@ -98,6 +99,7 @@ const { values, positionals } = parseArgs({
 const command = positionals[0] || "help"
 const serverPort = values["server-port"]
 const frontendPort = values["frontend-port"]
+const host = values.host
 const verbose = values["verbose"]
 const rebuild = values["rebuild"]
 const follow = values["follow"]
@@ -121,6 +123,7 @@ COMMANDS:
 OPTIONS:
   --server-port <port>    Backend server port (default: 5002)
   --frontend-port <port>  Frontend dev server port (default: 5080)
+  --host <host>           Host/IP to bind and display (default: 127.0.0.1)
   --verbose, -v           Enable verbose logging
   --rebuild, -r           Stop services, rebuild both frontend and backend, then start
   --follow, -f            Follow logs in real-time (like tail -f)
@@ -132,6 +135,9 @@ EXAMPLES:
 
   # Start with custom ports
   bun run omni-dev.ts start --server-port 5000 --frontend-port 5080
+
+  # Start on a specific host/IP
+  bun run omni-dev.ts start --host 127.0.0.1
 
   # Rebuild and restart with custom ports
   bun run omni-dev.ts restart --rebuild --server-port 5000 --frontend-port 5080
@@ -149,9 +155,9 @@ EXAMPLES:
   bun run omni-dev.ts logs -f
 
 SERVICE ENDPOINTS:
-  Backend API:     http://localhost:${serverPort}
-  Frontend:        http://localhost:${frontendPort}
-  Admin UI:        http://localhost:${frontendPort}/admin/
+  Backend API:     http://${host}:${serverPort}
+  Frontend:        http://${host}:${frontendPort}
+  Admin UI:        http://${host}:${frontendPort}/admin/
 
 FEATURES:
   • 🔥 Golang backend
@@ -591,6 +597,7 @@ function createLoggedProcess(
     GO_PORT: serverPort,
     SERVER_PORT: serverPort,
     FRONTEND_PORT: frontendPort,
+    HOST: host,
   }
 
   const logFd = openSync(LOG_FILE, "a")
@@ -627,9 +634,9 @@ async function startServices() {
   }
 
   consola.info("🚀 Starting OmniLLM development environment...")
-  consola.info(`   🔥 Backend (Go): http://localhost:${serverPort}`)
-  consola.info(`   🌐 Frontend: http://localhost:${frontendPort}`)
-  consola.info(`   📱 Admin UI: http://localhost:${frontendPort}/admin/`)
+  consola.info(`   🔥 Backend (Go): http://${host}:${serverPort}`)
+  consola.info(`   🌐 Frontend: http://${host}:${frontendPort}`)
+  consola.info(`   📱 Admin UI: http://${host}:${frontendPort}/admin/`)
   if (!verbose) {
     consola.info(`   📝 Logs: ${LOG_FILE}`)
     consola.info(`   💡 Use --verbose to see real-time logs`)
@@ -683,7 +690,14 @@ async function startServices() {
   const backendProc = createLoggedProcess("go-backend", {
     color: "31",
     cmd: installPath,
-    args: ["start", "--port", serverPort, "--enable-config-edit"],
+    args: [
+      "start",
+      "--port",
+      serverPort,
+      "--host",
+      host,
+      "--enable-config-edit",
+    ],
   })
 
   // Wait a bit for backend to start
@@ -815,7 +829,7 @@ async function showStatus() {
   console.log(
     `   Port: ${serverPort} ${backendPortBusy ? "(🔒 Busy)" : "(🔓 Free)"}`,
   )
-  console.log(`   URL: http://localhost:${serverPort}`)
+  console.log(`   URL: http://${host}:${serverPort}`)
 
   // Frontend status
   const frontendRunning = pids.frontend && isProcessRunning(pids.frontend)
@@ -827,8 +841,8 @@ async function showStatus() {
   console.log(
     `   Port: ${frontendPort} ${frontendPortBusy ? "(🔒 Busy)" : "(🔓 Free)"}`,
   )
-  console.log(`   URL: http://localhost:${frontendPort}`)
-  console.log(`   Admin UI: http://localhost:${frontendPort}/admin/`)
+  console.log(`   URL: http://${host}:${frontendPort}`)
+  console.log(`   Admin UI: http://${host}:${frontendPort}/admin/`)
 
   console.log()
 

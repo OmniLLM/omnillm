@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // dev.ts — dev launcher for Go backend + frontend
-// Usage: bun run dev [--server-port 5002] [--frontend-port 5080]
+// Usage: bun run dev [--server-port 5002] [--frontend-port 5080] [--host 127.0.0.1]
 
 import consola from "consola"
 import { homedir } from "node:os"
@@ -11,23 +11,26 @@ const { values } = parseArgs({
   options: {
     "server-port": { type: "string", default: "5002" },
     "frontend-port": { type: "string", default: "5080" },
+    host: { type: "string", default: "127.0.0.1" },
   },
 })
 
 const serverPort = values["server-port"]
 const frontendPort = values["frontend-port"]
+const host = values.host
 
 const env = {
   ...process.env,
   GO_PORT: serverPort,
   SERVER_PORT: serverPort,
   FRONTEND_PORT: frontendPort,
+  HOST: host,
 }
 
 consola.info(`🚀 Starting development environment:`)
-consola.info(`   🔥 Golang backend: http://localhost:${serverPort}`)
-consola.info(`   🌐 Frontend dev server: http://localhost:${frontendPort}`)
-consola.info(`   📱 Admin UI: http://localhost:${frontendPort}/admin/`)
+consola.info(`   🔥 Golang backend: http://${host}:${serverPort}`)
+consola.info(`   🌐 Frontend dev server: http://${host}:${frontendPort}`)
+consola.info(`   📱 Admin UI: http://${host}:${frontendPort}/admin/`)
 consola.info(``)
 
 async function checkPortAvailable(port: number): Promise<boolean> {
@@ -155,6 +158,8 @@ const server = run("go-server", "31", binaryPath, [
   "start",
   "--port",
   serverPort,
+  "--host",
+  host,
   "--verbose",
   "--enable-config-edit",
 ])

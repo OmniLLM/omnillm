@@ -8,7 +8,8 @@ const serverPort = Number(
   process.env.GO_PORT ?? process.env.SERVER_PORT ?? 5002,
 )
 const frontendPort = Number(process.env.FRONTEND_PORT ?? 5080)
-const serverBase = `http://localhost:${serverPort}`
+const host = process.env.HOST ?? "127.0.0.1"
+const serverBase = `http://${host}:${serverPort}`
 
 // Only use Vite proxy in development when both frontend and backend are on localhost
 const isDev = process.env.NODE_ENV !== "production"
@@ -65,6 +66,7 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
+    host,
     port: frontendPort,
     proxy:
       useProxy ?
