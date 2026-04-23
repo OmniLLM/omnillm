@@ -326,6 +326,7 @@
         <li>Droid should be validated across chat completions, anthropic(v1/messages), and responses.</li>
         <li>Droid responses API all use the /v1 endpoint.</li>
         <li>Droid + chat completions + GitHub Models (claude-haiku-4.5, gpt-5-mini): does not complete all tasks and stops in the middle.</li>
+        <li>Droid + responses + GitHub Models (gpt-5-mini): BYOK error observed: undefined is not an object (evaluating 'E.type'); verify custom model configuration in settings if it persists.</li>
       </ul>
     </section>
   </main>
@@ -354,7 +355,7 @@
   "Droid|chat completions|Azure OpenAI|gpt-5.4": "no",
   "Droid|responses|Alibaba Qwen|qwen3.6": "yes",
   "Droid|responses|Alibaba Qwen|qwen3.6|description": "http://localhost:5000/v1",
-  "Droid|responses|GitHub Models|gpt-5-mini|description": "Plan · 0/5\n┃ ● Scan repository structure and locate key files (package.json, bunfig.toml, tsconfig.json, src/, frontend/, docs/, tests/)\n┃ ○ Read package.json, bunfig.toml, tsconfig.json, and README to determine build/test/run commands and dependencies\n┃ ○ Summarize main components (backend, frontend, CLI, tests, docs) and identify entry points\n┃ ○ Produce a high-level architecture diagram (text) and developer onboarding steps (build, dev, test)\n┃ ○ Highlight likely areas for contributors and any immediate code smells or TODOs\n\n Auto (Off) - all actions require approval",
+  "Droid|responses|GitHub Models|gpt-5-mini|description": "explain codebase\n\nRead 1 file\n ↳ ~\\repos\\omnillm\\package.json\n\nGlob 1 pattern\n ↳ src/**, docs/**, README*, *.md, package.json\n\nPlan updated\n\n●  BYOK Error: undefined is not an object (evaluating 'E.type')\n\nIf this persists, verify your custom model configuration in settings.\n\nPlan · 0/5\n┃ ● Survey repository and produce a high-level summary of the codebase (structure, key modules, entry points).\n┃ ○ Summarize the purpose and responsibilities of top-level src/ packages and important files.\n┃ ○ List build, dev, lint, and test commands and any special runtime requirements.\n┃ ○ Identify documentation files and where to find design/critical-change docs.\n┃ ○ Note any immediate issues or missing dev tools observed in the environment.",
   "Droid|responses|GitHub Models|gpt-5.4": "",
   "Droid|responses|GitHub Models|claude-haiku-4.5": "no",
   "Droid|responses|GitHub Models|gpt-5-mini": "no"
@@ -522,7 +523,7 @@
         row[2] === "GitHub Models" &&
         row[3] === "gpt-5-mini"
       ) {
-        return "Plan · 0/5\n┃ ● Scan repository structure and locate key files (package.json, bunfig.toml, tsconfig.json, src/, frontend/, docs/, tests/)\n┃ ○ Read package.json, bunfig.toml, tsconfig.json, and README to determine build/test/run commands and dependencies\n┃ ○ Summarize main components (backend, frontend, CLI, tests, docs) and identify entry points\n┃ ○ Produce a high-level architecture diagram (text) and developer onboarding steps (build, dev, test)\n┃ ○ Highlight likely areas for contributors and any immediate code smells or TODOs\n\n Auto (Off) - all actions require approval";
+        return "explain codebase\n\nRead 1 file\n ↳ ~\\repos\\omnillm\\package.json\n\nGlob 1 pattern\n ↳ src/**, docs/**, README*, *.md, package.json\n\nPlan updated\n\n●  BYOK Error: undefined is not an object (evaluating 'E.type')\n\nIf this persists, verify your custom model configuration in settings.\n\nPlan · 0/5\n┃ ● Survey repository and produce a high-level summary of the codebase (structure, key modules, entry points).\n┃ ○ Summarize the purpose and responsibilities of top-level src/ packages and important files.\n┃ ○ List build, dev, lint, and test commands and any special runtime requirements.\n┃ ○ Identify documentation files and where to find design/critical-change docs.\n┃ ○ Note any immediate issues or missing dev tools observed in the environment.";
       }
       if (
         row[0] === "Droid" &&
