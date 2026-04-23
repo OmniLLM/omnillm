@@ -301,6 +301,16 @@ function parseTOML(text: string): CodexConfig {
     }
   }
 
+  // Any known global field that is absent from the file was intentionally
+  // omitted (unchecked). Mark it disabled so the checkbox stays unchecked
+  // after a reload.
+  const disabledKeys = new Set<string>()
+  if (result.model === undefined) disabledKeys.add("model")
+  if (result.model_reasoning_effort === undefined)
+    disabledKeys.add("model_reasoning_effort")
+  if (result.profile === undefined) disabledKeys.add("profile")
+  result.__disabledKeys = disabledKeys
+
   return result
 }
 
@@ -3101,7 +3111,10 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
           }),
         )
       }
-      return serializeTOML(cleanConfig, originalContent)
+      return serializeTOML(
+        { ...cleanConfig, __disabledKeys: codexConfig.__disabledKeys },
+        originalContent,
+      )
     }
     if (activeConfig === "opencode" && opencodeConfig)
       return JSON.stringify(opencodeConfig, null, 2) + "\n"
