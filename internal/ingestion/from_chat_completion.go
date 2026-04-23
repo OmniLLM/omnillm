@@ -26,8 +26,8 @@ type ToolCall struct {
 }
 
 type FunctionCall struct {
-	Name      string `json:"name"`
-	Arguments string `json:"arguments"`
+	Name      string          `json:"name"`
+	Arguments json.RawMessage `json:"arguments"`
 }
 
 type ContentPart struct {
@@ -88,9 +88,7 @@ func ParseOpenAIChatCompletions(raw json.RawMessage) (*cif.CanonicalRequest, err
 		switch stop := req.Stop.(type) {
 		case string:
 			canonical.Stop = []string{stop}
-		case []string:
-			canonical.Stop = stop
-		case []interface{}:
+		case []any:
 			for _, s := range stop {
 				if str, ok := s.(string); ok {
 					canonical.Stop = append(canonical.Stop, str)
@@ -100,14 +98,15 @@ func ParseOpenAIChatCompletions(raw json.RawMessage) (*cif.CanonicalRequest, err
 	}
 
 	var systemParts []string
+	var toolCallNamesByID = make(map[string]string)
 	for _, msg := range req.Messages {
-		if msg.Role == "system" {
+		if msg.Role == "system" || msg.Role == "developer" {
 			if text := extractOpenAIMessageText(msg.Content); text != "" {
 				systemParts = append(systemParts, text)
 			}
 			continue
 		}
-		cifMsg, err := convertOpenAIMessage(msg)
+		cifMsg, err := convertOpenAIMessage(msg, toolCallNamesByID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert message: %w", err)
 		}
@@ -145,7 +144,7 @@ func ParseOpenAIChatCompletions(raw json.RawMessage) (*cif.CanonicalRequest, err
 	return canonical, nil
 }
 
-func convertOpenAIMessage(msg OpenAIMessage) (cif.CIFMessage, error) {
+func convertOpenAIMessage(msg OpenAIMessage, toolCallNamesByID map[string]string) (cif.CIFMessage, error) {
 	switch msg.Role {
 	case "user":
 		var contentParts []cif.CIFContentPart
@@ -186,16 +185,15 @@ func convertOpenAIMessage(msg OpenAIMessage) (cif.CIFMessage, error) {
 		}
 
 		for _, toolCall := range msg.ToolCalls {
-			var args map[string]interface{}
-			if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); err != nil {
-				args = map[string]interface{}{
-					"_unparsable_arguments": toolCall.Function.Arguments,
-				}
+			args := parseOpenAIToolArguments(toolCall.Function.Arguments)
+			toolCallID := firstNonEmpty(toolCall.ID, toolCall.CallID)
+			if toolCallID != "" {
+				toolCallNamesByID[toolCallID] = toolCall.Function.Name
 			}
 
 			contentParts = append(contentParts, cif.CIFToolCallPart{
 				Type:          "tool_call",
-				ToolCallID:    firstNonEmpty(toolCall.ID, toolCall.CallID),
+				ToolCallID:    toolCallID,
 				ToolName:      toolCall.Function.Name,
 				ToolArguments: args,
 			})
@@ -213,6 +211,7 @@ func convertOpenAIMessage(msg OpenAIMessage) (cif.CIFMessage, error) {
 				cif.CIFToolResultPart{
 					Type:       "tool_result",
 					ToolCallID: msg.ToolCallID,
+					ToolName:   toolCallNamesByID[msg.ToolCallID],
 					Content:    extractOpenAIMessageText(msg.Content),
 				},
 			},
@@ -223,6 +222,31 @@ func convertOpenAIMessage(msg OpenAIMessage) (cif.CIFMessage, error) {
 	}
 }
 
+func parseOpenAIToolArguments(raw json.RawMessage) map[string]interface{} {
+	if len(raw) == 0 {
+		return map[string]interface{}{}
+	}
+
+	var args map[string]interface{}
+	if err := json.Unmarshal(raw, &args); err == nil {
+		return args
+	}
+
+	var encoded string
+	if err := json.Unmarshal(raw, &encoded); err == nil {
+		if err := json.Unmarshal([]byte(encoded), &args); err == nil {
+			return args
+		}
+		return map[string]interface{}{
+			"_unparsable_arguments": encoded,
+		}
+	}
+
+	return map[string]interface{}{
+		"_unparsable_arguments": string(raw),
+	}
+}
+
 func convertOpenAIContentPart(partMap map[string]interface{}) (cif.CIFContentPart, error) {
 	partType, ok := partMap["type"].(string)
 	if !ok {
@@ -230,7 +254,7 @@ func convertOpenAIContentPart(partMap map[string]interface{}) (cif.CIFContentPar
 	}
 
 	switch partType {
-	case "text":
+	case "text", "input_text", "output_text":
 		if text, ok := partMap["text"].(string); ok {
 			return cif.CIFTextPart{
 				Type: "text",
@@ -239,41 +263,57 @@ func convertOpenAIContentPart(partMap map[string]interface{}) (cif.CIFContentPar
 		}
 		return nil, fmt.Errorf("text content part missing text field")
 
-	case "image_url":
-		if imageURL, ok := partMap["image_url"].(map[string]interface{}); ok {
-			if url, ok := imageURL["url"].(string); ok {
-				mediaType := "image/jpeg"
-				if strings.Contains(url, "data:image/png") {
-					mediaType = "image/png"
-				} else if strings.Contains(url, "data:image/gif") {
-					mediaType = "image/gif"
-				} else if strings.Contains(url, "data:image/webp") {
-					mediaType = "image/webp"
-				}
-
-				part := cif.CIFImagePart{
-					Type:      "image",
-					MediaType: mediaType,
-				}
-
-				if strings.HasPrefix(url, "data:") {
-					if idx := strings.Index(url, ","); idx != -1 {
-						data := url[idx+1:]
-						part.Data = &data
-					}
-				} else {
-					part.URL = &url
-				}
-
-				return part, nil
-			}
+	case "image_url", "input_image":
+		url, err := extractOpenAIImageURL(partMap)
+		if err != nil {
+			return nil, err
 		}
-		return nil, fmt.Errorf("image_url content part missing url")
+
+		part := cif.CIFImagePart{
+			Type:      "image",
+			MediaType: inferOpenAIImageMediaType(url),
+		}
+
+		if strings.HasPrefix(url, "data:") {
+			if idx := strings.Index(url, ","); idx != -1 {
+				data := url[idx+1:]
+				part.Data = &data
+			}
+		} else {
+			part.URL = &url
+		}
+
+		return part, nil
 
 	default:
 		return nil, fmt.Errorf("unknown content part type: %s", partType)
 	}
 }
+
+func extractOpenAIImageURL(partMap map[string]interface{}) (string, error) {
+	if imageURL, ok := partMap["image_url"].(map[string]interface{}); ok {
+		if url, ok := imageURL["url"].(string); ok && url != "" {
+			return url, nil
+		}
+	}
+	if imageURL, ok := partMap["image_url"].(string); ok && imageURL != "" {
+		return imageURL, nil
+	}
+	return "", fmt.Errorf("image content part missing url")
+}
+
+func inferOpenAIImageMediaType(url string) string {
+	mediaType := "image/jpeg"
+	if strings.Contains(url, "data:image/png") {
+		mediaType = "image/png"
+	} else if strings.Contains(url, "data:image/gif") {
+		mediaType = "image/gif"
+	} else if strings.Contains(url, "data:image/webp") {
+		mediaType = "image/webp"
+	}
+	return mediaType
+}
+
 
 func extractOpenAIMessageText(content interface{}) string {
 	switch value := content.(type) {
@@ -286,8 +326,16 @@ func extractOpenAIMessageText(content interface{}) string {
 			if !ok {
 				continue
 			}
-			if text, ok := partMap["text"].(string); ok {
-				parts = append(parts, text)
+			partType, _ := partMap["type"].(string)
+			switch partType {
+			case "text", "input_text", "output_text":
+				if text, ok := partMap["text"].(string); ok {
+					parts = append(parts, text)
+				}
+			default:
+				if text, ok := partMap["text"].(string); ok {
+					parts = append(parts, text)
+				}
 			}
 		}
 		return strings.Join(parts, "\n\n")

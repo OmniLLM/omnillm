@@ -267,15 +267,15 @@
         <button class="btn" id="save-html" type="button">Save HTML</button>
         <button class="btn" id="export-csv" type="button">Export CSV</button>
       </div>
-      <div class="save-status" id="save-status">Save HTML writes in-place only. Click Connect HTML File once first.</div>
+      <div class="save-status" id="save-status">Click Connect HTML File once to re-grant permission for auto-save.</div>
       <div class="stats">
         <div class="stat">
           <span class="label">Total</span>
-          <span class="value" id="stat-total">15</span>
+          <span class="value" id="stat-total">23</span>
         </div>
         <div class="stat">
           <span class="label">Passed (Yes)</span>
-          <span class="value" id="stat-yes">9</span>
+          <span class="value" id="stat-yes">13</span>
         </div>
         <div class="stat">
           <span class="label">Failed (No)</span>
@@ -296,7 +296,25 @@
             <th>Description</th>
           </tr>
         </thead>
-        <tbody id="plan-body"><tr><td>Claude Code</td><td>anthropic(v1/messages)</td><td>GitHub Models</td><td>claude-haiku-4.5</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="true">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Claude Code</td><td>anthropic(v1/messages)</td><td>Azure OpenAI</td><td>gpt-5.4</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="true">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Claude Code</td><td>anthropic(v1/messages)</td><td>Alibaba Qwen</td><td>qwen3.6</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="true">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Codex</td><td>responses</td><td>GitHub Models</td><td>gpt-5-mini</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="true">No</button></div></td><td></td></tr><tr><td>Codex</td><td>responses</td><td>Azure OpenAI</td><td>gpt-5.4</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="true">No</button></div></td><td></td></tr><tr><td>Codex</td><td>responses</td><td>Alibaba Qwen</td><td>qwen3.6</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="true">No</button></div></td><td></td></tr><tr><td>Droid</td><td>anthropic(v1/messages)</td><td>Alibaba Qwen</td><td>qwen3.6</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="true">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Droid</td><td>anthropic(v1/messages)</td><td>Azure OpenAI</td><td>gpt-5.4</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="true">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Droid</td><td>anthropic(v1/messages)</td><td>GitHub Models</td><td>claude-haiku-4.5, gpt-5-mini</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="true">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Droid</td><td>chat completions</td><td>Alibaba Qwen</td><td>qwen3.6</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="true">No</button></div></td><td></td></tr><tr><td>Droid</td><td>chat completions</td><td>Azure OpenAI</td><td>gpt-5.4</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="true">No</button></div></td><td></td></tr><tr><td>Droid</td><td>chat completions</td><td>GitHub Models</td><td>claude-haiku-4.5, gpt-5-mini</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="true">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Droid</td><td>responses</td><td>Alibaba Qwen</td><td>qwen3.6</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="true">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td>http://localhost:5000/v1</td></tr><tr><td>Droid</td><td>responses</td><td>Azure OpenAI</td><td>gpt-5.4</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="true">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td>http://localhost:5000/v1</td></tr><tr><td>Droid</td><td>responses</td><td>GitHub Models</td><td>claude-haiku-4.5, gpt-5-mini</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="true">No</button></div></td><td>http://localhost:5000/v1</td></tr></tbody>
+        <tbody id="plan-body"><tr><td>Claude Code</td><td>anthropic(v1/messages)</td><td>GitHub Models</td><td>claude-haiku-4.5</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="true">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Claude Code</td><td>anthropic(v1/messages)</td><td>GitHub Models</td><td>gpt-5.4</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Claude Code</td><td>anthropic(v1/messages)</td><td>Azure OpenAI</td><td>gpt-5.4</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="true">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Claude Code</td><td>anthropic(v1/messages)</td><td>Alibaba Qwen</td><td>qwen3.6</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="true">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Codex</td><td>responses</td><td>GitHub Models</td><td>gpt-5-mini</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="true">No</button></div></td><td></td></tr><tr><td>Codex</td><td>responses</td><td>GitHub Models</td><td>gpt-5.4</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Codex</td><td>responses</td><td>Azure OpenAI</td><td>gpt-5.4</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="true">No</button></div></td><td></td></tr><tr><td>Codex</td><td>responses</td><td>Alibaba Qwen</td><td>qwen3.6</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="true">No</button></div></td><td></td></tr><tr><td>Droid</td><td>anthropic(v1/messages)</td><td>Alibaba Qwen</td><td>qwen3.6</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="true">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Droid</td><td>anthropic(v1/messages)</td><td>Azure OpenAI</td><td>gpt-5.4</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="true">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Droid</td><td>anthropic(v1/messages)</td><td>GitHub Models</td><td>claude-haiku-4.5</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="true">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Droid</td><td>anthropic(v1/messages)</td><td>GitHub Models</td><td>gpt-5-mini</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="true">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Droid</td><td>anthropic(v1/messages)</td><td>GitHub Models</td><td>gpt-5.4</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Droid</td><td>chat completions</td><td>Alibaba Qwen</td><td>qwen3.6</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="true">No</button></div></td><td>explain codebase
+
+⛬  Let me read the key files to understand the project structure.
+
+
+
+   Read 13 files
+    13 files failed
+
+ ⠫ Streaming...  (Press ESC to stop)
+
+ Auto (Off) - all actions require approval</td></tr><tr><td>Droid</td><td>chat completions</td><td>Azure OpenAI</td><td>gpt-5.4</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="true">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Droid</td><td>chat completions</td><td>GitHub Models</td><td>claude-haiku-4.5</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="true">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Droid</td><td>chat completions</td><td>GitHub Models</td><td>gpt-5-mini</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="true">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Droid</td><td>chat completions</td><td>GitHub Models</td><td>gpt-5.4</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="true">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td></td></tr><tr><td>Droid</td><td>responses</td><td>Alibaba Qwen</td><td>qwen3.6</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="true">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td>http://localhost:5000/v1</td></tr><tr><td>Droid</td><td>responses</td><td>Azure OpenAI</td><td>gpt-5.4</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="true">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td>http://localhost:5000/v1</td></tr><tr><td>Droid</td><td>responses</td><td>GitHub Models</td><td>claude-haiku-4.5</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="true">No</button></div></td><td></td></tr><tr><td>Droid</td><td>responses</td><td>GitHub Models</td><td>gpt-5-mini</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="true">No</button></div></td><td>Plan · 0/5
+┃ ● Scan repository structure and locate key files (package.json, bunfig.toml, tsconfig.json, src/, frontend/, docs/, tests/)
+┃ ○ Read package.json, bunfig.toml, tsconfig.json, and README to determine build/test/run commands and dependencies
+┃ ○ Summarize main components (backend, frontend, CLI, tests, docs) and identify entry points
+┃ ○ Produce a high-level architecture diagram (text) and developer onboarding steps (build, dev, test)
+┃ ○ Highlight likely areas for contributors and any immediate code smells or TODOs
+
+ Auto (Off) - all actions require approval</td></tr><tr><td>Droid</td><td>responses</td><td>GitHub Models</td><td>gpt-5.4</td><td class="status-cell"><div class="toggle-group"><button type="button" class="chip" data-value="yes" aria-pressed="false">Yes</button><button type="button" class="chip" data-value="no" aria-pressed="false">No</button></div></td><td>http://localhost:5000/v1</td></tr></tbody>
       </table>
     </section>
 
@@ -315,20 +333,28 @@
   <script id="embedded-state" type="application/json">
 {
   "Claude Code|anthropic(v1/messages)|GitHub Models|claude-haiku-4.5": "yes",
+  "Claude Code|anthropic(v1/messages)|GitHub Models|gpt-5.4": "",
   "Claude Code|anthropic(v1/messages)|Azure OpenAI|gpt-5.4": "yes",
   "Claude Code|anthropic(v1/messages)|Alibaba Qwen|qwen3.6": "yes",
+  "Codex|responses|GitHub Models|gpt-5.4": "",
   "Droid|anthropic(v1/messages)|Alibaba Qwen|qwen3.6": "yes",
   "Codex|responses|Alibaba Qwen|qwen3.6": "",
-  "Droid|anthropic(v1/messages)|GitHub Models|claude-haiku-4.5, gpt-5-mini": "yes",
+  "Droid|anthropic(v1/messages)|GitHub Models|claude-haiku-4.5": "yes",
+  "Droid|anthropic(v1/messages)|GitHub Models|gpt-5-mini": "yes",
+  "Droid|anthropic(v1/messages)|GitHub Models|gpt-5.4": "",
   "Droid|anthropic(v1/messages)|Azure OpenAI|gpt-5.4": "yes",
-  "Droid|chat completions|GitHub Models|claude-haiku-4.5, gpt-5-mini": "no",
-  "Droid|chat completions|GitHub Models|claude-haiku-4.5, gpt-5-mini|description": "Plan · 2/5\n┃ ✓ Survey repository files and package.json to form a high-level summary\n┃ ✓ Summarize architecture and major components (backend, frontend, agents, droids)\n┃ ● Identify entry points, scripts, and developer workflows (build, dev, test)\n┃ ○ List notable configs, docs, and where to look for tests and examples\n┃ ○ Ask any follow-up questions needed to tailor the explanation",
+  "Droid|chat completions|GitHub Models|claude-haiku-4.5": "yes",
+  "Droid|chat completions|GitHub Models|gpt-5-mini": "yes",
+  "Droid|chat completions|GitHub Models|gpt-5.4": "",
   "Droid|chat completions|Alibaba Qwen|qwen3.6": "no",
+  "Droid|chat completions|Alibaba Qwen|qwen3.6|description": "explain codebase\n\n⛬  Let me read the key files to understand the project structure.\n\n\n\n   Read 13 files\n    13 files failed\n\n ⠫ Streaming...  (Press ESC to stop)\n\n Auto (Off) - all actions require approval",
   "Droid|chat completions|Azure OpenAI|gpt-5.4": "no",
   "Droid|responses|Alibaba Qwen|qwen3.6": "yes",
   "Droid|responses|Alibaba Qwen|qwen3.6|description": "http://localhost:5000/v1",
-  "Droid|responses|GitHub Models|claude-haiku-4.5, gpt-5-mini|description": "Plan · 0/5\n┃ ● Scan repository structure and locate key files (package.json, bunfig.toml, tsconfig.json, src/, frontend/, docs/, tests/)\n┃ ○ Read package.json, bunfig.toml, tsconfig.json, and README to determine build/test/run commands and dependencies\n┃ ○ Summarize main components (backend, frontend, CLI, tests, docs) and identify entry points\n┃ ○ Produce a high-level architecture diagram (text) and developer onboarding steps (build, dev, test)\n┃ ○ Highlight likely areas for contributors and any immediate code smells or TODOs\n\n Auto (Off) - all actions require approval",
-  "Droid|responses|GitHub Models|claude-haiku-4.5, gpt-5-mini": "no"
+  "Droid|responses|GitHub Models|gpt-5-mini|description": "Plan · 0/5\n┃ ● Scan repository structure and locate key files (package.json, bunfig.toml, tsconfig.json, src/, frontend/, docs/, tests/)\n┃ ○ Read package.json, bunfig.toml, tsconfig.json, and README to determine build/test/run commands and dependencies\n┃ ○ Summarize main components (backend, frontend, CLI, tests, docs) and identify entry points\n┃ ○ Produce a high-level architecture diagram (text) and developer onboarding steps (build, dev, test)\n┃ ○ Highlight likely areas for contributors and any immediate code smells or TODOs\n\n Auto (Off) - all actions require approval",
+  "Droid|responses|GitHub Models|gpt-5.4": "",
+  "Droid|responses|GitHub Models|claude-haiku-4.5": "no",
+  "Droid|responses|GitHub Models|gpt-5-mini": "no"
 }
 </script>
 
@@ -341,20 +367,28 @@
 
     const rows = [
       ["Claude Code", "anthropic(v1/messages)", "GitHub Models", "claude-haiku-4.5"],
+      ["Claude Code", "anthropic(v1/messages)", "GitHub Models", "gpt-5.4"],
       ["Claude Code", "anthropic(v1/messages)", "Azure OpenAI", "gpt-5.4"],
       ["Claude Code", "anthropic(v1/messages)", "Alibaba Qwen", "qwen3.6"],
       ["Codex", "responses", "GitHub Models", "gpt-5-mini"],
+      ["Codex", "responses", "GitHub Models", "gpt-5.4"],
       ["Codex", "responses", "Azure OpenAI", "gpt-5.4"],
       ["Codex", "responses", "Alibaba Qwen", "qwen3.6"],
       ["Droid", "anthropic(v1/messages)", "Alibaba Qwen", "qwen3.6"],
       ["Droid", "anthropic(v1/messages)", "Azure OpenAI", "gpt-5.4"],
-      ["Droid", "anthropic(v1/messages)", "GitHub Models", "claude-haiku-4.5, gpt-5-mini"],
+      ["Droid", "anthropic(v1/messages)", "GitHub Models", "claude-haiku-4.5"],
+      ["Droid", "anthropic(v1/messages)", "GitHub Models", "gpt-5-mini"],
+      ["Droid", "anthropic(v1/messages)", "GitHub Models", "gpt-5.4"],
       ["Droid", "chat completions", "Alibaba Qwen", "qwen3.6"],
       ["Droid", "chat completions", "Azure OpenAI", "gpt-5.4"],
-      ["Droid", "chat completions", "GitHub Models", "claude-haiku-4.5, gpt-5-mini"],
+      ["Droid", "chat completions", "GitHub Models", "claude-haiku-4.5"],
+      ["Droid", "chat completions", "GitHub Models", "gpt-5-mini"],
+      ["Droid", "chat completions", "GitHub Models", "gpt-5.4"],
       ["Droid", "responses", "Alibaba Qwen", "qwen3.6"],
       ["Droid", "responses", "Azure OpenAI", "gpt-5.4"],
-      ["Droid", "responses", "GitHub Models", "claude-haiku-4.5, gpt-5-mini"]
+      ["Droid", "responses", "GitHub Models", "claude-haiku-4.5"],
+      ["Droid", "responses", "GitHub Models", "gpt-5-mini"],
+      ["Droid", "responses", "GitHub Models", "gpt-5.4"]
     ];
 
     const body = document.getElementById("plan-body");
@@ -457,11 +491,27 @@
     function getDescription(row) {
       if (
         row[0] === "Droid" &&
+        row[1] === "chat completions" &&
+        row[2] === "Alibaba Qwen" &&
+        row[3] === "qwen3.6"
+      ) {
+        return "explain codebase\n\n⛬  Let me read the key files to understand the project structure.\n\n\n\n   Read 13 files\n    13 files failed\n\n ⠫ Streaming...  (Press ESC to stop)\n\n Auto (Off) - all actions require approval";
+      }
+      if (
+        row[0] === "Droid" &&
         row[1] === "responses" &&
         row[2] === "GitHub Models" &&
-        row[3] === "claude-haiku-4.5, gpt-5-mini"
+        row[3] === "gpt-5-mini"
       ) {
         return "Plan · 0/5\n┃ ● Scan repository structure and locate key files (package.json, bunfig.toml, tsconfig.json, src/, frontend/, docs/, tests/)\n┃ ○ Read package.json, bunfig.toml, tsconfig.json, and README to determine build/test/run commands and dependencies\n┃ ○ Summarize main components (backend, frontend, CLI, tests, docs) and identify entry points\n┃ ○ Produce a high-level architecture diagram (text) and developer onboarding steps (build, dev, test)\n┃ ○ Highlight likely areas for contributors and any immediate code smells or TODOs\n\n Auto (Off) - all actions require approval";
+      }
+      if (
+        row[0] === "Droid" &&
+        row[1] === "responses" &&
+        row[2] === "GitHub Models" &&
+        row[3] === "claude-haiku-4.5"
+      ) {
+        return "";
       }
       if (row[0] === "Droid" && row[1] === "responses") {
         return "http://localhost:5000/v1";
@@ -470,9 +520,9 @@
         row[0] === "Droid" &&
         row[1] === "chat completions" &&
         row[2] === "GitHub Models" &&
-        row[3] === "claude-haiku-4.5, gpt-5-mini"
+        row[3] === "gpt-5-mini"
       ) {
-        return "Plan · 2/5\n┃ ✓ Survey repository files and package.json to form a high-level summary\n┃ ✓ Summarize architecture and major components (backend, frontend, agents, droids)\n┃ ● Identify entry points, scripts, and developer workflows (build, dev, test)\n┃ ○ List notable configs, docs, and where to look for tests and examples\n┃ ○ Ask any follow-up questions needed to tailor the explanation";
+        return "";
       }
       return "";
     }

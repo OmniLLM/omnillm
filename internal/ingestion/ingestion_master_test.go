@@ -12,6 +12,26 @@ func mustRawM(t *testing.T, v any) json.RawMessage {
 	return b
 }
 
+func TestParseOpenAI_TreatsDeveloperMessagesAsSystemPrompt(t *testing.T) {
+	payload := map[string]interface{}{
+		"model": "gpt-4o",
+		"messages": []interface{}{
+			map[string]interface{}{"role": "developer", "content": "You are a coding assistant."},
+			map[string]interface{}{"role": "user", "content": "Hello"},
+		},
+	}
+
+	req, err := ParseOpenAIChatCompletions(mustRawM(t, payload))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if req.SystemPrompt == nil || *req.SystemPrompt != "You are a coding assistant." {
+		t.Fatalf("unexpected system prompt: %v", req.SystemPrompt)
+	}
+	if len(req.Messages) != 1 || req.Messages[0].GetRole() != "user" {
+		t.Fatalf("expected only user message to remain, got %+v", req.Messages)
+	}
+}
 func TestParseOpenAI_MergesSystemMessagesAndNormalizesToolChoice(t *testing.T) {
 	stream := true
 	payload := map[string]interface{}{
@@ -136,21 +156,28 @@ func TestParseOpenAI_PreservesMalformedToolArgumentsAndToolResults(t *testing.T)
 	}
 }
 
-func TestParseOpenAI_DataURIImageContent(t *testing.T) {
+func TestParseOpenAI_PreservesToolResultNameFromPriorAssistantToolCall(t *testing.T) {
 	payload := map[string]interface{}{
 		"model": "gpt-4o",
 		"messages": []interface{}{
 			map[string]interface{}{
-				"role": "user",
-				"content": []interface{}{
-					map[string]interface{}{"type": "text", "text": "What's in this image?"},
+				"role":    "assistant",
+				"content": "",
+				"tool_calls": []interface{}{
 					map[string]interface{}{
-						"type": "image_url",
-						"image_url": map[string]interface{}{
-							"url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ",
+						"id":   "call_read_1",
+						"type": "function",
+						"function": map[string]interface{}{
+							"name":      "Read",
+							"arguments": `{"file_path":"README.md"}`,
 						},
 					},
 				},
+			},
+			map[string]interface{}{
+				"role":         "tool",
+				"tool_call_id": "call_read_1",
+				"content":      "4 files failed",
 			},
 		},
 	}
@@ -159,17 +186,26 @@ func TestParseOpenAI_DataURIImageContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	if len(req.Messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(req.Messages))
+	}
 
-	userMsg := req.Messages[0].(cif.CIFUserMessage)
-	imagePart, ok := userMsg.Content[1].(cif.CIFImagePart)
+	toolResultMsg, ok := req.Messages[1].(cif.CIFUserMessage)
 	if !ok {
-		t.Fatalf("expected image part, got %T", userMsg.Content[1])
+		t.Fatalf("expected tool result user message, got %T", req.Messages[1])
 	}
-	if imagePart.MediaType != "image/png" {
-		t.Fatalf("expected image/png, got %q", imagePart.MediaType)
+	toolResult, ok := toolResultMsg.Content[0].(cif.CIFToolResultPart)
+	if !ok {
+		t.Fatalf("expected tool result part, got %T", toolResultMsg.Content[0])
 	}
-	if imagePart.Data == nil || *imagePart.Data != "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ" {
-		t.Fatalf("unexpected image data: %v", imagePart.Data)
+	if toolResult.ToolCallID != "call_read_1" {
+		t.Fatalf("unexpected tool call id: %q", toolResult.ToolCallID)
+	}
+	if toolResult.ToolName != "Read" {
+		t.Fatalf("expected tool name Read, got %q", toolResult.ToolName)
+	}
+	if toolResult.Content != "4 files failed" {
+		t.Fatalf("unexpected tool result content: %q", toolResult.Content)
 	}
 }
 

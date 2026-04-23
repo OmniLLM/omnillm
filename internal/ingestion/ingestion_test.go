@@ -159,6 +159,54 @@ func TestParseOpenAI_ToolCallInAssistantMessage_WithCallIDAlias(t *testing.T) {
 	}
 }
 
+func TestParseOpenAI_ToolCallInAssistantMessage_WithObjectArguments(t *testing.T) {
+	payload := map[string]interface{}{
+		"model": "gpt-4o",
+		"messages": []interface{}{
+			map[string]interface{}{
+				"role":    "assistant",
+				"content": "",
+				"tool_calls": []interface{}{
+					map[string]interface{}{
+						"id":   "call_obj",
+						"type": "function",
+						"function": map[string]interface{}{
+							"name": "Read",
+							"arguments": map[string]interface{}{
+								"file_path": "README.md",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	req, err := ParseOpenAIChatCompletions(mustRaw(t, payload))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	assistantMsg, ok := req.Messages[0].(cif.CIFAssistantMessage)
+	if !ok {
+		t.Fatalf("expected CIFAssistantMessage, got %T", req.Messages[0])
+	}
+	if len(assistantMsg.Content) != 1 {
+		t.Fatalf("expected 1 content part, got %d", len(assistantMsg.Content))
+	}
+	toolCall, ok := assistantMsg.Content[0].(cif.CIFToolCallPart)
+	if !ok {
+		t.Fatalf("expected CIFToolCallPart, got %T", assistantMsg.Content[0])
+	}
+	if toolCall.ToolName != "Read" {
+		t.Errorf("expected Read, got %q", toolCall.ToolName)
+	}
+	if toolCall.ToolCallID != "call_obj" {
+		t.Errorf("expected call_obj, got %q", toolCall.ToolCallID)
+	}
+	if got, ok := toolCall.ToolArguments["file_path"].(string); !ok || got != "README.md" {
+		t.Fatalf("expected file_path README.md, got %#v", toolCall.ToolArguments)
+	}
+}
+
 func TestParseOpenAI_Tools(t *testing.T) {
 	payload := map[string]interface{}{
 		"model": "gpt-4o",
@@ -193,7 +241,7 @@ func TestParseOpenAI_Tools(t *testing.T) {
 	}
 }
 
-func TestParseOpenAI_ImageURLContent(t *testing.T) {
+func TestParseOpenAI_InputTextContentAlias(t *testing.T) {
 	payload := map[string]interface{}{
 		"model": "gpt-4o",
 		"messages": []interface{}{
@@ -201,14 +249,8 @@ func TestParseOpenAI_ImageURLContent(t *testing.T) {
 				"role": "user",
 				"content": []interface{}{
 					map[string]interface{}{
-						"type": "text",
-						"text": "What's in this image?",
-					},
-					map[string]interface{}{
-						"type": "image_url",
-						"image_url": map[string]interface{}{
-							"url": "https://example.com/img.jpg",
-						},
+						"type": "input_text",
+						"text": "Hello from Droid",
 					},
 				},
 			},
@@ -222,19 +264,50 @@ func TestParseOpenAI_ImageURLContent(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected CIFUserMessage, got %T", req.Messages[0])
 	}
-	if len(userMsg.Content) != 2 {
-		t.Fatalf("expected 2 content parts, got %d", len(userMsg.Content))
+	if len(userMsg.Content) != 1 {
+		t.Fatalf("expected 1 content part, got %d", len(userMsg.Content))
 	}
-	_, isText := userMsg.Content[0].(cif.CIFTextPart)
-	if !isText {
-		t.Errorf("expected CIFTextPart at index 0, got %T", userMsg.Content[0])
+	textPart, ok := userMsg.Content[0].(cif.CIFTextPart)
+	if !ok {
+		t.Fatalf("expected CIFTextPart, got %T", userMsg.Content[0])
 	}
-	imgPart, isImage := userMsg.Content[1].(cif.CIFImagePart)
-	if !isImage {
-		t.Errorf("expected CIFImagePart at index 1, got %T", userMsg.Content[1])
+	if textPart.Text != "Hello from Droid" {
+		t.Fatalf("unexpected text: %q", textPart.Text)
 	}
-	if imgPart.URL == nil || *imgPart.URL != "https://example.com/img.jpg" {
-		t.Errorf("unexpected image URL: %v", imgPart.URL)
+}
+
+func TestParseOpenAI_InputImageContentAlias(t *testing.T) {
+	payload := map[string]interface{}{
+		"model": "gpt-4o",
+		"messages": []interface{}{
+			map[string]interface{}{
+				"role": "user",
+				"content": []interface{}{
+					map[string]interface{}{
+						"type":      "input_image",
+						"image_url": "https://example.com/droid.png",
+					},
+				},
+			},
+		},
+	}
+	req, err := ParseOpenAIChatCompletions(mustRaw(t, payload))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	userMsg, ok := req.Messages[0].(cif.CIFUserMessage)
+	if !ok {
+		t.Fatalf("expected CIFUserMessage, got %T", req.Messages[0])
+	}
+	if len(userMsg.Content) != 1 {
+		t.Fatalf("expected 1 content part, got %d", len(userMsg.Content))
+	}
+	imgPart, ok := userMsg.Content[0].(cif.CIFImagePart)
+	if !ok {
+		t.Fatalf("expected CIFImagePart, got %T", userMsg.Content[0])
+	}
+	if imgPart.URL == nil || *imgPart.URL != "https://example.com/droid.png" {
+		t.Fatalf("unexpected image URL: %v", imgPart.URL)
 	}
 }
 
