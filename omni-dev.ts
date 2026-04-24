@@ -22,6 +22,9 @@ const LOG_FILE = join(process.cwd(), ".omni-dev.log")
 interface ServicePids {
   backend?: number
   frontend?: number
+  host?: string
+  serverPort?: string
+  frontendPort?: string
 }
 
 type ProcessInfo = {
@@ -175,6 +178,14 @@ NOTES:
   • Frontend automatically proxies API calls to backend
   • All services stop gracefully with proper cleanup
 `)
+}
+
+function getSavedRuntimeConfig(pids: ServicePids | null) {
+  return {
+    host: pids?.host || host,
+    serverPort: pids?.serverPort || serverPort,
+    frontendPort: pids?.frontendPort || frontendPort,
+  }
 }
 
 function savePids(pids: ServicePids) {
@@ -719,6 +730,9 @@ async function startServices() {
   savePids({
     backend: backendProc.pid,
     frontend: frontendProc.pid,
+    host,
+    serverPort,
+    frontendPort,
   })
 
   if (verbose) {
@@ -808,6 +822,7 @@ async function stopServices() {
 
 async function showStatus() {
   const pids = loadPids()
+  const runtime = getSavedRuntimeConfig(pids)
 
   consola.info("📊 OmniLLM Service Status")
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -821,28 +836,34 @@ async function showStatus() {
 
   // Backend status
   const backendRunning = pids.backend && isProcessRunning(pids.backend)
-  const backendPortBusy = !(await checkPortAvailable(Number(serverPort)))
+  const backendPortBusy = !(await checkPortAvailable(
+    Number(runtime.serverPort),
+  ))
 
   console.log(`🔥 Backend (Go):`)
   console.log(`   Status: ${backendRunning ? "🟢 Running" : "🔴 Stopped"}`)
   console.log(`   PID: ${pids.backend || "N/A"}`)
   console.log(
-    `   Port: ${serverPort} ${backendPortBusy ? "(🔒 Busy)" : "(🔓 Free)"}`,
+    `   Port: ${runtime.serverPort} ${backendPortBusy ? "(🔒 Busy)" : "(🔓 Free)"}`,
   )
-  console.log(`   URL: http://${host}:${serverPort}`)
+  console.log(`   URL: http://${runtime.host}:${runtime.serverPort}`)
 
   // Frontend status
   const frontendRunning = pids.frontend && isProcessRunning(pids.frontend)
-  const frontendPortBusy = !(await checkPortAvailable(Number(frontendPort)))
+  const frontendPortBusy = !(await checkPortAvailable(
+    Number(runtime.frontendPort),
+  ))
 
   console.log(`🌐 Frontend:`)
   console.log(`   Status: ${frontendRunning ? "🟢 Running" : "🔴 Stopped"}`)
   console.log(`   PID: ${pids.frontend || "N/A"}`)
   console.log(
-    `   Port: ${frontendPort} ${frontendPortBusy ? "(🔒 Busy)" : "(🔓 Free)"}`,
+    `   Port: ${runtime.frontendPort} ${frontendPortBusy ? "(🔒 Busy)" : "(🔓 Free)"}`,
   )
-  console.log(`   URL: http://${host}:${frontendPort}`)
-  console.log(`   Admin UI: http://${host}:${frontendPort}/admin/`)
+  console.log(`   URL: http://${runtime.host}:${runtime.frontendPort}`)
+  console.log(
+    `   Admin UI: http://${runtime.host}:${runtime.frontendPort}/admin/`,
+  )
 
   console.log()
 
