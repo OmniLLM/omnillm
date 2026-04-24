@@ -29,6 +29,7 @@ import (
 	azurepkg "omnillm/internal/providers/azure"
 
 	openaicompatprovider "omnillm/internal/providers/openaicompatprovider"
+	codexpkg "omnillm/internal/providers/codex"
 
 	ghservice "omnillm/internal/services/github"
 )
@@ -892,6 +893,136 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 			},
 		})
 
+	// ── Codex ────────────────────────────────────────────────────────────────
+	case "codex":
+		cdx := codexpkg.NewCodexProvider("codex-tmp")
+
+		if req.Method == "oauth" || (req.GithubToken == "" && req.Token == "" && req.APIKey == "") {
+			deviceCode, err := cdx.InitiateDeviceCodeFlow()
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"success": false,
+					"message": fmt.Sprintf("Failed to initiate Codex OAuth: %v", err),
+				})
+				return
+			}
+
+			const pendingID = "codex-pending"
+			codexCtx, codexCancel := context.WithCancel(context.Background())
+			activeAuthFlowMu.Lock()
+			activeAuthFlow = &authFlowState{
+				ProviderID:     pendingID,
+				Status:         "awaiting_user",
+				InstructionURL: deviceCode.VerificationURI,
+				UserCode:       deviceCode.UserCode,
+				deviceCode:     deviceCode.DeviceCode,
+				cancelFn:       codexCancel,
+			}
+			activeAuthFlowMu.Unlock()
+
+			dc := deviceCode
+			go func() {
+				defer codexCancel()
+				if err := cdx.PollAndCompleteDeviceCodeFlow(dc); err != nil {
+					if codexCtx.Err() != nil {
+						return
+					}
+					activeAuthFlowMu.Lock()
+					if activeAuthFlow != nil && activeAuthFlow.ProviderID == pendingID {
+						activeAuthFlow.Status = "error"
+						activeAuthFlow.Error = err.Error()
+					}
+					activeAuthFlowMu.Unlock()
+					log.Error().Err(err).Str("type", "codex").Msg("Auth-and-create: Codex OAuth failed")
+					return
+				}
+
+				canonicalID := providerRegistry.NextInstanceID("codex")
+				cdx.SetInstanceID(canonicalID)
+
+				if err := cdx.SaveToDB(); err != nil {
+					log.Error().Err(err).Str("provider", canonicalID).Msg("Auth-and-create: failed to save Codex token")
+					activeAuthFlowMu.Lock()
+					if activeAuthFlow != nil && activeAuthFlow.ProviderID == pendingID {
+						activeAuthFlow.Status = "error"
+						activeAuthFlow.Error = "Failed to save token"
+					}
+					activeAuthFlowMu.Unlock()
+					return
+				}
+
+				if err := providerRegistry.Register(cdx, true); err != nil {
+					log.Warn().Err(err).Str("provider", canonicalID).Msg("Auth-and-create: failed to register Codex provider")
+				}
+
+				activeAuthFlowMu.Lock()
+				if activeAuthFlow != nil && activeAuthFlow.ProviderID == pendingID {
+					activeAuthFlow.ProviderID = canonicalID
+					activeAuthFlow.Status = "complete"
+				}
+				activeAuthFlowMu.Unlock()
+
+				log.Info().Str("provider", canonicalID).Msg("Auth-and-create: Codex OAuth completed")
+			}()
+
+			c.JSON(http.StatusOK, gin.H{
+				"success":          false,
+				"requiresAuth":     true,
+				"pending_id":       pendingID,
+				"user_code":        deviceCode.UserCode,
+				"verification_uri": deviceCode.VerificationURI,
+				"message":          fmt.Sprintf("Visit %s and enter code: %s", deviceCode.VerificationURI, deviceCode.UserCode),
+			})
+			return
+		}
+
+		// Direct token path.
+		token := req.Token
+		if token == "" {
+			token = req.GithubToken
+		}
+		if token == "" {
+			token = req.APIKey
+		}
+		req.GithubToken = token
+		if err := cdx.SetupAuth(&req); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": fmt.Sprintf("Codex authentication failed: %v", err),
+			})
+			return
+		}
+
+		canonicalID := providerRegistry.NextInstanceID("codex")
+		cdx.SetInstanceID(canonicalID)
+
+		if err := cdx.SaveToDB(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": fmt.Sprintf("Failed to save Codex credentials: %v", err),
+			})
+			return
+		}
+
+		if err := providerRegistry.Register(cdx, true); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": fmt.Sprintf("Failed to register Codex provider: %v", err),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"provider": gin.H{
+				"id":         cdx.GetInstanceID(),
+				"type":       cdx.GetID(),
+				"name":       cdx.GetName(),
+				"isActive":   false,
+				"authStatus": "authenticated",
+			},
+		})
+
 	// ── API-key based providers ────────────────────────────────────────────────
 	case "azure-openai", "antigravity", "google", "kimi":
 		instanceID := providerRegistry.NextInstanceID(providerType)
@@ -1217,6 +1348,80 @@ func handleProviderAuth(c *gin.Context) {
 	}
 
 	cop, isCopilot := provider.(*copilot.GitHubCopilotProvider)
+	cdxProv, isCodex := provider.(*codexpkg.CodexProvider)
+
+	// Codex: same GitHub OAuth device-code flow as Copilot.
+	if isCodex {
+		if req.Method == "oauth" || (req.GithubToken == "" && req.Token == "" && req.APIKey == "") {
+			deviceCode, err := cdxProv.InitiateDeviceCodeFlow()
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"success": false,
+					"message": fmt.Sprintf("Failed to initiate Codex OAuth: %v", err),
+				})
+				return
+			}
+
+			codexCtx, codexCancel := context.WithCancel(context.Background())
+			activeAuthFlowMu.Lock()
+			activeAuthFlow = &authFlowState{
+				ProviderID:     providerID,
+				Status:         "awaiting_user",
+				InstructionURL: deviceCode.VerificationURI,
+				UserCode:       deviceCode.UserCode,
+				deviceCode:     deviceCode.DeviceCode,
+				cancelFn:       codexCancel,
+			}
+			activeAuthFlowMu.Unlock()
+
+			dc := deviceCode
+			prov := cdxProv
+			go func() {
+				defer codexCancel()
+				if err := prov.PollAndCompleteDeviceCodeFlow(dc); err != nil {
+					if codexCtx.Err() != nil {
+						return
+					}
+					activeAuthFlowMu.Lock()
+					if activeAuthFlow != nil && activeAuthFlow.ProviderID == providerID {
+						activeAuthFlow.Status = "error"
+						activeAuthFlow.Error = err.Error()
+					}
+					activeAuthFlowMu.Unlock()
+					return
+				}
+				if err := prov.SaveToDB(); err != nil {
+					log.Error().Err(err).Str("provider", providerID).Msg("Codex: failed to save token")
+				}
+				if err := providerRegistry.Register(prov, true); err != nil {
+					log.Warn().Err(err).Str("provider", providerID).Msg("Codex: failed to update provider in registry")
+				}
+				activeAuthFlowMu.Lock()
+				if activeAuthFlow != nil && activeAuthFlow.ProviderID == providerID {
+					activeAuthFlow.Status = "complete"
+				}
+				activeAuthFlowMu.Unlock()
+			}()
+
+			c.JSON(http.StatusOK, gin.H{
+				"success":          false,
+				"requiresAuth":     true,
+				"user_code":        deviceCode.UserCode,
+				"verification_uri": deviceCode.VerificationURI,
+				"message":          fmt.Sprintf("Visit %s and enter code: %s", deviceCode.VerificationURI, deviceCode.UserCode),
+			})
+			return
+		}
+		// Direct token path for Codex.
+		token := req.Token
+		if token == "" {
+			token = req.GithubToken
+		}
+		if token == "" {
+			token = req.APIKey
+		}
+		req.GithubToken = token
+	}
 
 	// Alibaba: API-key only — OAuth is not supported.
 	if aliProv, ok := provider.(*alibabapkg.Provider); ok {

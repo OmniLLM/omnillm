@@ -7,6 +7,7 @@ export const PROVIDER_ACCENT: Record<string, string> = {
   "azure-openai": "#0078d4",
   google: "#4285f4",
   kimi: "#e040fb",
+  codex: "#6e40c9",
   "openai-compatible": "#10b981",
 }
 
@@ -73,6 +74,18 @@ export const PROVIDER_ICONS: Record<string, ReactNode> = {
       />
     </svg>
   ),
+  codex: (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+      <path
+        d="M8 6l-6 6 6 6M16 6l6 6-6 6"
+        stroke="currentColor"
+        strokeWidth="2"
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  ),
 }
 
 export const TYPE_NAMES: Record<string, string> = {
@@ -82,6 +95,7 @@ export const TYPE_NAMES: Record<string, string> = {
   "azure-openai": "Azure OpenAI",
   google: "Google Gemini",
   kimi: "Kimi (Moonshot)",
+  codex: "Codex",
 }
 
 export const PROVIDER_TYPES = [
@@ -91,5 +105,6 @@ export const PROVIDER_TYPES = [
   "azure-openai",
   "google",
   "kimi",
+  "codex",
   "openai-compatible",
 ] as const satisfies ReadonlyArray<string>

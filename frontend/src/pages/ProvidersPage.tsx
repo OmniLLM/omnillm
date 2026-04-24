@@ -490,6 +490,50 @@ function CopilotAuthForm({
   )
 }
 
+function CodexAuthForm({
+  onSubmit,
+  onCancel,
+}: {
+  onSubmit: (body: Record<string, string>) => Promise<void>
+  onCancel: () => void
+}) {
+  const [token, setToken] = useState("")
+  const submit = async () => {
+    await (token.trim() ?
+      onSubmit({ method: "token", token: token.trim() })
+    : onSubmit({ method: "oauth" }))
+  }
+  return (
+    <AuthFormWrapper title="Authenticate Codex">
+      <div
+        style={{
+          fontSize: 12,
+          color: "var(--color-text-tertiary)",
+          marginBottom: 4,
+        }}
+      >
+        Sign in via GitHub OAuth (recommended) or paste a GitHub token directly.
+      </div>
+      <FormRow label="GitHub Token (optional)">
+        <SecretInput
+          className="sys-input"
+          placeholder="ghu_… (leave blank to use OAuth)"
+          value={token}
+          onChange={setToken}
+        />
+      </FormRow>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button className="btn btn-primary btn-sm" onClick={submit}>
+          {token.trim() ? "Submit" : "Start OAuth"}
+        </button>
+        <button className="btn btn-ghost btn-sm" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </AuthFormWrapper>
+  )
+}
+
 function AntigravityAuthForm({
   onSubmit,
   onCancel,
@@ -2626,6 +2670,12 @@ function ProviderCard({
               onCancel={() => setShowAuthForm(false)}
             />
           )}
+          {provider.type === "codex" && (
+            <CodexAuthForm
+              onSubmit={handleAuthSubmit}
+              onCancel={() => setShowAuthForm(false)}
+            />
+          )}
           {provider.type === "azure-openai" && (
             <AzureOpenAIAuthForm
               onSubmit={handleAuthSubmit}
@@ -2965,6 +3015,7 @@ function AddProviderFlow({
           {selectedType === "github-copilot" && (
             <AddFlowCopilotForm {...authFormProps} />
           )}
+          {selectedType === "codex" && <AddFlowCodexForm {...authFormProps} />}
           {selectedType === "antigravity" && (
             <AddFlowAntigravityForm {...authFormProps} />
           )}
@@ -3265,6 +3316,74 @@ function AddFlowCopilotForm({
         Generate a token from GitHub Settings → Developer settings → Personal
         access tokens.
       </AddFlowHint>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          className="btn btn-outline btn-sm"
+          onClick={submitToken}
+          disabled={submitting}
+        >
+          {submitting ?
+            <>
+              <Spin size={13} /> Connecting…
+            </>
+          : "Add with Token"}
+        </button>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={onCancel}
+          disabled={submitting}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function AddFlowCodexForm({
+  onSubmit,
+  onCancel,
+  submitting,
+}: AddFlowFormProps) {
+  const [token, setToken] = useState("")
+  const submitToken = async () => {
+    if (!token.trim()) return
+    await onSubmit({ method: "token", token: token.trim() })
+  }
+  const submitOAuth = async () => {
+    await onSubmit({ method: "oauth" })
+  }
+  return (
+    <div style={addFlowPanelStyle}>
+      {/* Primary: OAuth */}
+      <button
+        className="btn btn-primary btn-sm"
+        onClick={submitOAuth}
+        disabled={submitting}
+        style={{ width: "100%" }}
+      >
+        {submitting ?
+          <>
+            <Spin size={13} /> Connecting…
+          </>
+        : "Sign in with GitHub (OAuth)"}
+      </button>
+      <AddFlowHint>
+        Recommended. Starts a GitHub device-code OAuth flow — no token needed.
+      </AddFlowHint>
+
+      <div className="divider-label">or use a token</div>
+
+      {/* Secondary: Token */}
+      <FormRow label="GitHub Token">
+        <SecretInput
+          placeholder="ghu_…"
+          value={token}
+          onChange={setToken}
+          style={addFlowTextInputStyle}
+          autoComplete="off"
+        />
+      </FormRow>
       <div style={{ display: "flex", gap: 8 }}>
         <button
           className="btn btn-outline btn-sm"
