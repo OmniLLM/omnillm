@@ -4425,7 +4425,7 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
               showActiveOnly ?
                 typeProviders.filter((p) => p.isActive)
               : typeProviders
-            if (showActiveOnly && visibleProviders.length === 0) return null
+            if (visibleProviders.length === 0) return null
             return [providerType, visibleProviders] as [string, Array<Provider>]
           })
           .filter((entry): entry is [string, Array<Provider>] => entry !== null)
