@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"omnillm/internal/cif"
 	"omnillm/internal/database"
 	"omnillm/internal/providers/shared"
@@ -82,12 +83,25 @@ type GenericAdapter struct {
 
 // ─── Constructor ──────────────────────────────────────────────────────────────
 
+// providerDisplayNames maps provider type IDs to human-friendly display names.
+var providerDisplayNames = map[string]string{
+	"azure-openai": "Azure OpenAI",
+	"antigravity":  "Antigravity",
+	"alibaba":      "Alibaba",
+	"google":       "Google",
+	"kimi":         "Kimi",
+}
+
 // NewGenericProvider creates a new GenericProvider for the given provider type.
 func NewGenericProvider(providerType, instanceID, name string) *GenericProvider {
 	baseURL := providerBaseURLs[providerType]
 	displayName := name
 	if displayName == "" {
-		displayName = instanceID
+		if friendly, ok := providerDisplayNames[providerType]; ok {
+			displayName = friendly
+		} else {
+			displayName = instanceID
+		}
 	}
 	return &GenericProvider{
 		id:         providerType,
@@ -173,6 +187,9 @@ func (p *GenericProvider) setupAzureAuth(options *types.AuthOptions) error {
 	p.token = token
 	if endpoint != "" {
 		p.baseURL = endpoint
+		if name := deriveAzureName(endpoint); name != "" {
+			p.name = name
+		}
 	}
 	if cfg != nil {
 		p.applyConfig(cfg)
@@ -323,6 +340,12 @@ func (p *GenericProvider) applyConfig(config map[string]interface{}) {
 	case "azure-openai":
 		if endpoint, ok := firstString(config, "endpoint"); ok {
 			p.baseURL = strings.TrimRight(endpoint, "/")
+			// Update display name from endpoint if still using default/instance-id name
+			if name := deriveAzureName(endpoint); name != "" {
+				if p.name == "" || p.name == p.instanceID || p.name == providerDisplayNames["azure-openai"] {
+					p.name = name
+				}
+			}
 		}
 	case "google":
 		if p.baseURL == "" {
@@ -487,7 +510,10 @@ func (a *GenericAdapter) RemapModel(model string) string {
 	if a.provider.id == "alibaba" {
 		return alibabapkg.RemapModel(model)
 	}
-	return model
+	if a.provider.id == "azure-openai" {
+		return azurepkg.RemapModel(a.provider.config, strings.TrimSpace(model))
+	}
+	return strings.TrimSpace(model)
 }
 
 func (a *GenericAdapter) Execute(ctx context.Context, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
@@ -821,6 +847,35 @@ func defaultAlibabaAPIBaseURL(plan, region string) string {
 
 func alibabaAPIKeyProviderName(config map[string]interface{}) string {
 	return alibabapkg.APIKeyProviderName(config)
+}
+
+// deriveAzureName extracts a human-friendly resource name from an Azure OpenAI endpoint URL.
+// e.g. "https://my-resource.openai.azure.com" → "my-resource"
+// Falls back to empty string if the endpoint is not a recognizable Azure URL.
+func deriveAzureName(endpoint string) string {
+	if endpoint == "" {
+		return ""
+	}
+	u, err := url.Parse(endpoint)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	host := strings.ToLower(u.Host)
+	// Standard Azure OpenAI hostname: <resource-name>.openai.azure.com
+	if strings.HasSuffix(host, ".openai.azure.com") {
+		resource := strings.TrimSuffix(host, ".openai.azure.com")
+		if resource != "" {
+			return resource
+		}
+	}
+	// Cognitive services endpoint: <resource-name>.cognitiveservices.azure.com
+	if strings.HasSuffix(host, ".cognitiveservices.azure.com") {
+		resource := strings.TrimSuffix(host, ".cognitiveservices.azure.com")
+		if resource != "" {
+			return resource
+		}
+	}
+	return ""
 }
 
 func ensureAlibabaBaseURL(raw string) string {

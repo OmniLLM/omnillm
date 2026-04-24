@@ -32,6 +32,8 @@ type AuthOptions struct {
 	Endpoint            string `json:"endpoint,omitempty"`
 	APIFormat           string `json:"apiFormat,omitempty"` // e.g. "anthropic" for Alibaba Anthropic-compatible endpoint
 	Models              string `json:"models,omitempty"`    // JSON-encoded []string, used by openai-compatible
+	Deployments         string `json:"deployments,omitempty"` // JSON-encoded []string, used by azure-openai
+	APIVersion          string `json:"apiVersion,omitempty"`  // e.g. "2024-02-01", used by azure-openai
 	AllowLocalEndpoints bool   `json:"allowLocalEndpoints,omitempty"`
 }
 
