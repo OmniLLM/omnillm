@@ -3923,6 +3923,11 @@ const PROVIDER_TYPES = [
     desc: "Kimi models via API key",
   },
   {
+    id: "codex",
+    name: "Codex",
+    desc: "OpenAI Codex models via GitHub OAuth",
+  },
+  {
     id: "openai-compatible",
     name: "OpenAI-Compatible",
     desc: "Any OpenAI-compatible endpoint (Ollama, vLLM, LM Studio, etc.)",
