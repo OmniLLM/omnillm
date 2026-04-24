@@ -17,7 +17,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-const defaultBaseURL = "https://daily-cloudcode-pa.googleapis.com"
+const defaultBaseURL = ProductionBaseURL
 
 // Shared HTTP client for Antigravity (only used for streaming).
 var antigravityStreamClient = &http.Client{
@@ -98,7 +98,9 @@ func Stream(ctx context.Context, token, baseURL, projectID string, request *cif.
 		for _, tool := range request.Tools {
 			decl := map[string]interface{}{
 				"name":       tool.Name,
-				"parameters": shared.SanitizeGeminiSchema(tool.ParametersSchema),
+			}
+			if params := shared.SanitizeGeminiSchema(tool.ParametersSchema); params != nil {
+				decl["parameters"] = params
 			}
 			if tool.Description != nil {
 				decl["description"] = *tool.Description

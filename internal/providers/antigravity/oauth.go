@@ -17,6 +17,11 @@ const (
 
 	// Scopes required to call the Antigravity (Cloud Code) API.
 	OAuthScopes = "https://www.googleapis.com/auth/cloud-platform openid email"
+
+	// Production Cloud Code endpoint (use daily sandbox only for testing).
+	ProductionBaseURL = "https://cloudcode-pa.googleapis.com"
+	// DefaultProjectID is used as a fallback when project discovery fails.
+	DefaultProjectID = "rising-fact-p41fc"
 )
 
 // OAuthTokenResponse holds the payload returned by Google's token endpoint.
@@ -113,4 +118,66 @@ func RefreshAccessToken(clientID, clientSecret, refreshToken string) (*OAuthToke
 		return nil, fmt.Errorf("antigravity: no access_token in refresh response: %s", string(body))
 	}
 	return &t, nil
+}
+
+// DiscoverProject calls the Cloud Code loadCodeAssist endpoint to find or
+// provision a project ID for the authenticated user. Falls back to
+// DefaultProjectID if the endpoint is unreachable or returns no project.
+func DiscoverProject(accessToken string) string {
+	type loadPayload struct {
+		Metadata struct {
+			IdeType    string `json:"ideType"`
+			Platform   string `json:"platform"`
+			PluginType string `json:"pluginType"`
+		} `json:"metadata"`
+	}
+	type loadResponse struct {
+		CloudaicompanionProject interface{} `json:"cloudaicompanionProject"`
+	}
+
+	reqBody, _ := json.Marshal(loadPayload{})
+	endpoints := []string{
+		"https://cloudcode-pa.googleapis.com",
+		"https://daily-cloudcode-pa.sandbox.googleapis.com",
+	}
+
+	for _, base := range endpoints {
+		req, err := http.NewRequest("POST", base+"/v1internal:loadCodeAssist", bytes.NewBuffer(reqBody))
+		if err != nil {
+			continue
+		}
+		req.Header.Set("Authorization", "Bearer "+accessToken)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("User-Agent", "google-api-nodejs-client/9.15.1")
+		req.Header.Set("X-Goog-Api-Client", "google-cloud-sdk vscode_cloudshelleditor/0.1")
+
+		resp, err := oauthHTTPClient.Do(req)
+		if err != nil {
+			continue
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			continue
+		}
+
+		var result loadResponse
+		if err := json.Unmarshal(body, &result); err != nil {
+			continue
+		}
+
+		switch v := result.CloudaicompanionProject.(type) {
+		case string:
+			if v != "" {
+				return v
+			}
+		case map[string]interface{}:
+			if id, ok := v["id"].(string); ok && id != "" {
+				return id
+			}
+		}
+	}
+
+	return DefaultProjectID
 }

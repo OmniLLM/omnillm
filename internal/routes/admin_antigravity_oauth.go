@@ -168,12 +168,17 @@ func handleAntigravityOAuthCallback(c *gin.Context) {
 		return
 	}
 
-	// Persist credentials + tokens.
+	// Discover the user's Cloud Code project ID (required for API calls).
+	projectID := antigravitypkg.DiscoverProject(tokenResp.AccessToken)
+	log.Info().Str("provider", state.ProviderID).Str("project_id", projectID).Msg("Antigravity: discovered project")
+
+	// Persist credentials + tokens + project_id.
 	tokenStore := database.NewTokenStore()
 	tokenData := map[string]interface{}{
 		"access_token":  tokenResp.AccessToken,
 		"client_id":     state.ClientID,
 		"client_secret": state.ClientSecret,
+		"project_id":    projectID,
 	}
 	if tokenResp.RefreshToken != "" {
 		tokenData["refresh_token"] = tokenResp.RefreshToken

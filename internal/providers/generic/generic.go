@@ -50,7 +50,7 @@ var providerModels = map[string][]types.Model{
 }
 
 var providerBaseURLs = map[string]string{
-	"antigravity":  "https://daily-cloudcode-pa.googleapis.com",
+	"antigravity":  antigravitypkg.ProductionBaseURL,
 	"alibaba":      "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
 	"azure-openai": "",
 	"kimi":         "https://api.moonshot.cn/v1",
