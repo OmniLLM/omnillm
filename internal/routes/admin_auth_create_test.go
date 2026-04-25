@@ -336,8 +336,9 @@ func TestHandleAuthAndCreateProviderGitHubCopilotTokenUsesCanonicalID(t *testing
 	if !payload.Success {
 		t.Fatal("expected success=true")
 	}
-	if payload.Provider.ID != "github-copilot" {
-		t.Fatalf("expected canonical instance id github-copilot, got %q", payload.Provider.ID)
+	const expectedID = "github-copilot-octocat"
+	if payload.Provider.ID != expectedID {
+		t.Fatalf("expected canonical instance id %q, got %q", expectedID, payload.Provider.ID)
 	}
 	if payload.Provider.Type != "github-copilot" {
 		t.Fatalf("expected provider type github-copilot, got %q", payload.Provider.Type)
@@ -349,7 +350,7 @@ func TestHandleAuthAndCreateProviderGitHubCopilotTokenUsesCanonicalID(t *testing
 		t.Fatalf("expected authenticated status, got %q", payload.Provider.AuthStatus)
 	}
 
-	tokenRecord, err := database.NewTokenStore().Get("github-copilot")
+	tokenRecord, err := database.NewTokenStore().Get(expectedID)
 	if err != nil {
 		t.Fatalf("failed to read saved token: %v", err)
 	}
