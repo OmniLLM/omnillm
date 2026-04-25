@@ -156,7 +156,9 @@ func (a *CopilotAdapter) convertCIFMessagesToOpenAI(messages []cif.CIFMessage, t
 					continue
 				}
 
-				contentParts = append(contentParts, a.convertCIFPartToOpenAI(part))
+				if openaiPart := a.convertCIFPartToOpenAI(part); openaiPart != nil {
+					contentParts = append(contentParts, openaiPart)
+				}
 			}
 
 			if len(contentParts) > 0 {
@@ -177,7 +179,7 @@ func (a *CopilotAdapter) convertCIFMessagesToOpenAI(messages []cif.CIFMessage, t
 				case cif.CIFTextPart:
 					textBuf.WriteString(p.Text)
 				case cif.CIFThinkingPart:
-					textBuf.WriteString(p.Thinking)
+					continue
 				case cif.CIFToolCallPart:
 					args, _ := json.Marshal(p.ToolArguments)
 					toolCall := map[string]interface{}{
@@ -214,10 +216,7 @@ func (a *CopilotAdapter) convertCIFPartToOpenAI(part cif.CIFContentPart) map[str
 			"text": p.Text,
 		}
 	case cif.CIFThinkingPart:
-		return map[string]interface{}{
-			"type": "text",
-			"text": p.Thinking,
-		}
+		return nil
 	case cif.CIFImagePart:
 		imageURL := map[string]interface{}{}
 		if p.Data != nil {
