@@ -812,8 +812,9 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 					return
 				}
 
-				// Assign a canonical instance ID using the GitHub username embedded in the provider name.
-				canonicalID := providerRegistry.NextInstanceID("github-copilot")
+				// Derive canonical ID from the provider name which now contains the username
+				// e.g., "GitHub Copilot (octocat)" → "github-copilot-octocat"
+				canonicalID := deriveGitHubCopilotID(cop.GetName())
 				cop.SetInstanceID(canonicalID)
 
 				if err := cop.SaveToDB(); err != nil {
@@ -867,7 +868,9 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 			return
 		}
 
-		canonicalID := providerRegistry.NextInstanceID("github-copilot")
+		// Derive canonical ID from the provider name which now contains the username
+		// e.g., "GitHub Copilot (octocat)" → "github-copilot-octocat"
+		canonicalID := deriveGitHubCopilotID(cop.GetName())
 		cop.SetInstanceID(canonicalID)
 
 		if err := cop.SaveToDB(); err != nil {
@@ -1080,6 +1083,43 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 			"error": fmt.Sprintf("Unknown provider type '%s'", providerType),
 		})
 	}
+}
+
+// deriveGitHubCopilotID extracts the GitHub username from the provider name
+// and generates a consistent instance ID.
+// Example: "GitHub Copilot (octocat)" → "github-copilot-octocat"
+func deriveGitHubCopilotID(name string) string {
+	// Look for pattern "GitHub Copilot (username)"
+	start := strings.Index(name, "(")
+	end := strings.Index(name, ")")
+	if start == -1 || end == -1 || end <= start+1 {
+		// Fallback if we can't extract username
+		providerRegistry := registry.GetProviderRegistry()
+		return providerRegistry.NextInstanceID("github-copilot")
+	}
+
+	username := strings.TrimSpace(name[start+1 : end])
+	if username == "" {
+		providerRegistry := registry.GetProviderRegistry()
+		return providerRegistry.NextInstanceID("github-copilot")
+	}
+
+	// Sanitize username: lowercase and replace non-alphanumeric with dashes
+	sanitized := strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			return r
+		}
+		return '-'
+	}, strings.ToLower(username))
+
+	// Remove leading/trailing dashes
+	sanitized = strings.Trim(sanitized, "-_")
+	if sanitized == "" {
+		providerRegistry := registry.GetProviderRegistry()
+		return providerRegistry.NextInstanceID("github-copilot")
+	}
+
+	return "github-copilot-" + sanitized
 }
 
 func handleDeleteProvider(c *gin.Context) {
