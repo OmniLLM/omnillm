@@ -30,10 +30,7 @@ func (a authConfig) middleware() gin.HandlerFunc {
 			token = strings.TrimSpace(c.GetHeader("x-api-key"))
 			ok = token != ""
 		}
-		if !ok {
-			token = strings.TrimSpace(c.Query("api_key"))
-			ok = token != ""
-		}
+		// Query parameter auth is intentionally not accepted to prevent credential leakage in server logs.
 		if !ok || subtle.ConstantTimeCompare([]byte(token), []byte(a.apiKey)) != 1 {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 			return
