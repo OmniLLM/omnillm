@@ -289,7 +289,7 @@ func TestCopilotAdapterExecute_ConvertsResponsesStyleHistoryToChatCompletions(t 
 		if !ok || toolMsg["role"] != "tool" {
 			t.Fatalf("expected tool message at index 2, got %#v", messages[2])
 		}
-		if toolMsg["tool_call_id"] != "call_123" || toolMsg["content"] != "README summary" {
+		if toolMsg["tool_call_id"] != "call_123" || toolMsg["content"] != "src/a.ts" {
 			t.Fatalf("unexpected tool message payload: %#v", toolMsg)
 		}
 
