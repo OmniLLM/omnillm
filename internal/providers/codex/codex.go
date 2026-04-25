@@ -120,8 +120,8 @@ func (p *CodexProvider) SetupAuth(options *types.AuthOptions) error {
 	}
 	user, err := ghservice.GetUser(p.githubToken)
 	if err == nil {
-		if login, ok := user["login"].(string); ok {
-			p.name = fmt.Sprintf("Codex (%s)", login)
+		if name := codexProviderName(user); name != "" {
+			p.name = name
 		}
 	}
 	return nil
@@ -149,9 +149,9 @@ func (p *CodexProvider) PollAndCompleteDeviceCodeFlow(dc *ghservice.DeviceCodeRe
 	p.githubToken = accessToken
 	user, err := ghservice.GetUser(accessToken)
 	if err == nil {
-		if login, ok := user["login"].(string); ok {
-			p.name = fmt.Sprintf("Codex (%s)", login)
-			log.Info().Str("login", login).Msg("Codex: authenticated via device code")
+		if name := codexProviderName(user); name != "" {
+			p.name = name
+			log.Info().Str("name", name).Msg("Codex: authenticated via device code")
 		}
 	}
 	if err := p.RefreshToken(); err != nil {
@@ -485,4 +485,28 @@ func (a *CodexAdapter) buildPayload(request *cif.CanonicalRequest, stream bool) 
 
 func (a *CodexAdapter) convertResponseToCIF(resp map[string]interface{}) *cif.CanonicalResponse {
 	return shared.OpenAIRespToCIF(resp)
+}
+
+// codexProviderName builds a human-friendly display name from a GitHub /user response.
+// Priority: "name · email" > "name · login" > "email" > "login".
+func codexProviderName(user map[string]interface{}) string {
+	login, _ := user["login"].(string)
+	email, _ := user["email"].(string)
+	if email == "" {
+		email, _ = user["notification_email"].(string)
+	}
+	realName, _ := user["name"].(string)
+
+	switch {
+	case realName != "" && email != "":
+		return fmt.Sprintf("Codex (%s · %s)", realName, email)
+	case realName != "" && login != "":
+		return fmt.Sprintf("Codex (%s · %s)", realName, login)
+	case email != "":
+		return fmt.Sprintf("Codex (%s)", email)
+	case login != "":
+		return fmt.Sprintf("Codex (%s)", login)
+	default:
+		return ""
+	}
 }

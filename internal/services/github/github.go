@@ -176,6 +176,34 @@ func GetCopilotToken(githubToken string) (*CopilotTokenResponse, error) {
 	return &result, nil
 }
 
+// CopilotProviderName returns a human-friendly display name for a GitHub Copilot
+// provider, derived from the /user API response.  Priority:
+//  1. "name (email)"  — when both real name and email are present
+//  2. "name (login)"  — when real name is present but no public email
+//  3. "email"         — when only email is present
+//  4. "login"         — fallback
+func CopilotProviderName(user map[string]interface{}) string {
+	login, _ := user["login"].(string)
+	email, _ := user["email"].(string)
+	if email == "" {
+		email, _ = user["notification_email"].(string)
+	}
+	realName, _ := user["name"].(string)
+
+	switch {
+	case realName != "" && email != "":
+		return fmt.Sprintf("GitHub Copilot (%s · %s)", realName, email)
+	case realName != "" && login != "":
+		return fmt.Sprintf("GitHub Copilot (%s · %s)", realName, login)
+	case email != "":
+		return fmt.Sprintf("GitHub Copilot (%s)", email)
+	case login != "":
+		return fmt.Sprintf("GitHub Copilot (%s)", login)
+	default:
+		return "GitHub Copilot"
+	}
+}
+
 // GetUser returns basic GitHub user info
 func GetUser(githubToken string) (map[string]interface{}, error) {
 	req, err := http.NewRequest("GET", GitHubAPIBaseURL+"/user", nil)

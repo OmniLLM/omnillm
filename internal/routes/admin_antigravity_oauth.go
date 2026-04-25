@@ -172,6 +172,10 @@ func handleAntigravityOAuthCallback(c *gin.Context) {
 	projectID := antigravitypkg.DiscoverProject(tokenResp.AccessToken)
 	log.Info().Str("provider", state.ProviderID).Str("project_id", projectID).Msg("Antigravity: discovered project")
 
+	// Fetch the authenticated user's email to use as a friendly identifier.
+	email := antigravitypkg.FetchUserEmail(tokenResp.AccessToken)
+	log.Info().Str("provider", state.ProviderID).Str("email", email).Msg("Antigravity: fetched user email")
+
 	// Persist credentials + tokens + project_id.
 	tokenStore := database.NewTokenStore()
 	tokenData := map[string]interface{}{
@@ -179,6 +183,9 @@ func handleAntigravityOAuthCallback(c *gin.Context) {
 		"client_id":     state.ClientID,
 		"client_secret": state.ClientSecret,
 		"project_id":    projectID,
+	}
+	if email != "" {
+		tokenData["email"] = email
 	}
 	if tokenResp.RefreshToken != "" {
 		tokenData["refresh_token"] = tokenResp.RefreshToken

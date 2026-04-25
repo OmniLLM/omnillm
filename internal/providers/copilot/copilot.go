@@ -153,10 +153,8 @@ func (p *GitHubCopilotProvider) SetupAuth(options *types.AuthOptions) error {
 		// Fetch user info to get the login
 		user, err := ghservice.GetUser(p.githubToken)
 		if err == nil {
-			if login, ok := user["login"].(string); ok {
-				p.name = fmt.Sprintf("GitHub Copilot (%s)", login)
-				log.Info().Str("provider", p.instanceID).Str("login", login).Msg("GitHub Copilot authenticated")
-			}
+			p.name = ghservice.CopilotProviderName(user)
+			log.Info().Str("provider", p.instanceID).Str("name", p.name).Msg("GitHub Copilot authenticated")
 		}
 
 		return nil
@@ -201,14 +199,11 @@ func (p *GitHubCopilotProvider) PollAndCompleteDeviceCodeFlow(deviceCode *ghserv
 	if err != nil {
 		log.Warn().Err(err).Msg("Failed to get user info after OAuth")
 	} else {
-		if login, ok := user["login"].(string); ok {
-			p.name = fmt.Sprintf("GitHub Copilot (%s)", login)
-
-			log.Info().
-				Str("instance_id", p.instanceID).
-				Str("login", login).
-				Msg("GitHub Copilot authenticated via device code")
-		}
+		p.name = ghservice.CopilotProviderName(user)
+		log.Info().
+			Str("instance_id", p.instanceID).
+			Str("name", p.name).
+			Msg("GitHub Copilot authenticated via device code")
 	}
 
 	// Exchange GitHub token for Copilot token

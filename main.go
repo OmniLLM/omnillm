@@ -23,6 +23,7 @@ func main() {
 	rootCmd.AddCommand(commands.CheckUsageCmd)
 	rootCmd.AddCommand(commands.DebugCmd)
 	rootCmd.AddCommand(commands.ChatCmd)
+	rootCmd.AddCommand(commands.SyncNamesCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

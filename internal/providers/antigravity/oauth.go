@@ -120,6 +120,35 @@ func RefreshAccessToken(clientID, clientSecret, refreshToken string) (*OAuthToke
 	return &t, nil
 }
 
+// FetchUserEmail calls Google's userinfo endpoint to retrieve the authenticated
+// user's email address. Returns an empty string if the call fails.
+func FetchUserEmail(accessToken string) string {
+	req, err := http.NewRequest("GET", "https://www.googleapis.com/oauth2/v3/userinfo", nil)
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+
+	resp, err := oauthHTTPClient.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+
+	var info struct {
+		Email string `json:"email"`
+	}
+	if err := json.Unmarshal(body, &info); err != nil {
+		return ""
+	}
+	return info.Email
+}
+
 // DiscoverProject calls the Cloud Code loadCodeAssist endpoint to find or
 // provision a project ID for the authenticated user. Falls back to
 // DefaultProjectID if the endpoint is unreachable or returns no project.

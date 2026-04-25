@@ -666,6 +666,18 @@ func (p *GenericProvider) LoadFromDB() error {
 			p.name = alibabapkg.APIKeyProviderName(p.config)
 			log.Info().Str("instanceID", p.instanceID).Str("newName", p.name).Msg("Updated Alibaba API key provider name")
 		}
+
+		if p.id == "antigravity" {
+			// Prefer email-based name if available; otherwise keep the existing name.
+			if record != nil {
+				var td map[string]interface{}
+				if jsonErr := json.Unmarshal([]byte(record.TokenData), &td); jsonErr == nil {
+					if email, ok := td["email"].(string); ok && email != "" {
+						p.name = "Antigravity (" + email + ")"
+					}
+				}
+			}
+		}
 	}
 
 	if p.id == "google" && p.token != "" {
