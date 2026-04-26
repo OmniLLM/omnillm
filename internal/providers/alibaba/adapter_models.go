@@ -88,12 +88,19 @@ func GetModels(instanceID, token, baseURL string, config map[string]interface{})
 	return GetModelsHardcoded(instanceID), nil
 }
 
-// GetModelsHardcoded returns the hardcoded model catalog.
+// GetModelsHardcoded returns the fallback model catalog (Qwen models only).
+// DeepSeek and other third-party models available on DashScope are only
+// surfaced when FetchModelsFromAPI succeeds, because DashScope account plans
+// vary and not every key has access to every model.
 func GetModelsHardcoded(instanceID string) *types.ModelsResponse {
-	result := make([]types.Model, len(Models))
-	for i, m := range Models {
-		result[i] = m
-		result[i].Provider = instanceID
+	var result []types.Model
+	for _, m := range Models {
+		if strings.Contains(strings.ToLower(m.ID), "deepseek") {
+			continue // only include from live API — plan access varies
+		}
+		entry := m
+		entry.Provider = instanceID
+		result = append(result, entry)
 	}
 	return &types.ModelsResponse{Data: result, Object: "list"}
 }

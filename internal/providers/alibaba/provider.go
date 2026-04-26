@@ -29,6 +29,12 @@ var Models = []types.Model{
 	{ID: "qwen3-235b-a22b-instruct", Name: "Qwen3-235B-A22B Instruct", MaxTokens: 131072, Provider: "alibaba"},
 	{ID: "qwen-plus", Name: "Qwen Plus", MaxTokens: 131072, Provider: "alibaba"},
 	{ID: "qwen-turbo", Name: "Qwen Turbo", MaxTokens: 1000000, Provider: "alibaba"},
+	// DeepSeek models available via DashScope — used as metadata enrichment when
+	// FetchModelsFromAPI returns them from the live /models endpoint.
+	{ID: "deepseek-v3", Name: "DeepSeek V3", MaxTokens: 65536, Provider: "alibaba"},
+	{ID: "deepseek-v4-flash", Name: "DeepSeek V4 Flash", MaxTokens: 65536, Provider: "alibaba"},
+	{ID: "deepseek-r1", Name: "DeepSeek R1", MaxTokens: 65536, Provider: "alibaba"},
+	{ID: "deepseek-r1-0528", Name: "DeepSeek R1 0528", MaxTokens: 65536, Provider: "alibaba"},
 }
 
 // Provider implements types.Provider for Alibaba DashScope.
@@ -326,14 +332,17 @@ func IsChatCompletionsModel(modelID string) bool {
 	return !strings.Contains(strings.ToLower(modelID), "realtime")
 }
 
-// IsReasoningModel returns true for Qwen3/QwQ models that support enable_thinking.
+// IsReasoningModel returns true for models that support extended thinking /
+// chain-of-thought via the enable_thinking parameter. This covers Qwen3 and
+// DeepSeek R1 families.
 func IsReasoningModel(modelID string) bool {
 	lower := strings.ToLower(modelID)
 	return strings.Contains(lower, "qwen3") ||
 		strings.Contains(lower, "qwq") ||
 		strings.Contains(lower, "qwen-plus") ||
 		strings.Contains(lower, "qwen3.5") ||
-		strings.Contains(lower, "qwen3.6")
+		strings.Contains(lower, "qwen3.6") ||
+		strings.Contains(lower, "deepseek-r1")
 }
 
 // ModelMetadata returns hardcoded metadata for a known model ID.

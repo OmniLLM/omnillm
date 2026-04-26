@@ -8,6 +8,7 @@ import (
 	"omnillm/internal/database"
 	"omnillm/internal/providers/types"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -191,12 +192,28 @@ func TestHeaders(t *testing.T) {
 
 func TestGetModelsHardcoded(t *testing.T) {
 	resp := GetModelsHardcoded("alibaba-1")
-	if len(resp.Data) != len(Models) {
-		t.Errorf("got %d models, want %d", len(resp.Data), len(Models))
-	}
 	for _, m := range resp.Data {
 		if m.Provider != "alibaba-1" {
 			t.Errorf("model %q has provider %q, want alibaba-1", m.ID, m.Provider)
+		}
+		if strings.Contains(strings.ToLower(m.ID), "deepseek") {
+			t.Errorf("hardcoded fallback should not include DeepSeek model %q — it must come from live API", m.ID)
+		}
+	}
+	// Sanity: all Qwen models from the Models slice must be present in the fallback
+	for _, meta := range Models {
+		if strings.Contains(strings.ToLower(meta.ID), "deepseek") {
+			continue
+		}
+		found := false
+		for _, m := range resp.Data {
+			if m.ID == meta.ID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected Qwen model %q in hardcoded fallback but it was missing", meta.ID)
 		}
 	}
 }
