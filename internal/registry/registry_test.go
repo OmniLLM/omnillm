@@ -17,6 +17,7 @@ type testProvider struct {
 func (p *testProvider) GetID() string                                { return p.id }
 func (p *testProvider) GetInstanceID() string                        { return p.instanceID }
 func (p *testProvider) GetName() string                              { return p.name }
+func (p *testProvider) SetName(name string)                          { p.name = name }
 func (p *testProvider) SetupAuth(_ *providertypes.AuthOptions) error { return nil }
 func (p *testProvider) GetToken() string                             { return "" }
 func (p *testProvider) RefreshToken() error                          { return nil }

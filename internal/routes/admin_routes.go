@@ -23,6 +23,7 @@ func SetupAdminRoutes(router *gin.RouterGroup, port int) {
 	router.POST("/providers/:id/auth/initiate-device-code", handleInitiateDeviceCode)
 	router.POST("/providers/:id/auth/complete-device-code", handleCompleteDeviceCode)
 	router.PUT("/providers/:id/config", handleUpdateProviderConfig)
+	router.PATCH("/providers/:id/name", handleRenameProvider)
 	router.POST("/providers/:id/activate", handleActivateProvider)
 	router.POST("/providers/:id/deactivate", handleDeactivateProvider)
 

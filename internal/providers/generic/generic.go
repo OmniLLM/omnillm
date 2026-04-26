@@ -48,6 +48,7 @@ func NewGenericProvider(providerType, instanceID, name string) *GenericProvider 
 func (p *GenericProvider) GetID() string         { return p.id }
 func (p *GenericProvider) GetInstanceID() string { return p.instanceID }
 func (p *GenericProvider) GetName() string       { return p.name }
+func (p *GenericProvider) SetName(name string)   { p.name = name }
 
 // SetInstanceID updates the provider's in-memory instance ID after a registry rename.
 func (p *GenericProvider) SetInstanceID(newID string) { p.instanceID = newID }

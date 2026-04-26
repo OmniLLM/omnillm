@@ -86,6 +86,7 @@ func NewCodexProvider(instanceID string) *CodexProvider {
 func (p *CodexProvider) GetID() string         { return p.id }
 func (p *CodexProvider) GetInstanceID() string { return p.instanceID }
 func (p *CodexProvider) GetName() string       { return p.name }
+func (p *CodexProvider) SetName(name string)   { p.name = name }
 func (p *CodexProvider) SetInstanceID(id string) { p.instanceID = id }
 
 // SetupAuth configures the provider.  Pass an OpenAI API key via

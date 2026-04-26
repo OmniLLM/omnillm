@@ -39,6 +39,7 @@ type ProviderInstanceRecord struct {
 	InstanceID string    `json:"instance_id"`
 	ProviderID string    `json:"provider_id"`
 	Name       string    `json:"name"`
+	Subtitle   string    `json:"subtitle"`
 	Priority   int       `json:"priority"`
 	Activated  bool      `json:"activated"`
 	CreatedAt  time.Time `json:"created_at"`

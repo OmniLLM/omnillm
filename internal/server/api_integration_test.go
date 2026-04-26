@@ -34,6 +34,7 @@ func (p *stubProvider) GetID() string { return p.id }
 func (p *stubProvider) GetInstanceID() string { return p.instanceID }
 
 func (p *stubProvider) GetName() string { return p.name }
+func (p *stubProvider) SetName(name string) { p.name = name }
 
 func (p *stubProvider) SetupAuth(_ *providertypes.AuthOptions) error { return nil }
 

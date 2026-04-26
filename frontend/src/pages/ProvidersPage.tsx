@@ -22,6 +22,7 @@ import {
   pollAntigravityOAuthStatus,
   updateProviderConfig,
   refreshProviderModels,
+  renameProvider,
   type AuthFlow,
   type Model,
   type Provider,
@@ -2510,6 +2511,7 @@ function ProviderCard({
   onDelete,
   onAuthSubmit,
   onModelsChanged,
+  onRename,
   priorityIndex,
   multiProvider,
 }: {
@@ -2521,15 +2523,71 @@ function ProviderCard({
   onDelete: (id: string) => void
   onAuthSubmit: (id: string, body: Record<string, string>) => Promise<void>
   onModelsChanged: () => void
+  onRename: (id: string, fields: { name?: string; subtitle?: string }) => void
   priorityIndex: number
   multiProvider: boolean
 }) {
   const [showAuthForm, setShowAuthForm] = useState(false)
+  const [editingName, setEditingName] = useState(false)
+  const [nameInput, setNameInput] = useState(provider.name)
+  const nameInputRef = useRef<HTMLInputElement>(null)
+  const [editingSubtitle, setEditingSubtitle] = useState(false)
+  const [subtitleInput, setSubtitleInput] = useState(provider.subtitle ?? "")
+  const subtitleInputRef = useRef<HTMLInputElement>(null)
   const accent = PROVIDER_ACCENT[provider.type] ?? "#0a84ff"
+
+  // Keep local input state in sync when the parent provider prop changes
+  // (e.g. after optimistic update or a load() round-trip)
+  useEffect(() => {
+    if (!editingName) setNameInput(provider.name)
+  }, [provider.name, editingName])
+
+  useEffect(() => {
+    if (!editingSubtitle) setSubtitleInput(provider.subtitle ?? "")
+  }, [provider.subtitle, editingSubtitle])
 
   const handleAuthSubmit = async (body: Record<string, string>) => {
     await onAuthSubmit(provider.id, body)
     setShowAuthForm(false)
+  }
+
+  const startEditName = () => {
+    setNameInput(provider.name)
+    setEditingName(true)
+    setTimeout(() => nameInputRef.current?.select(), 0)
+  }
+
+  const commitName = () => {
+    const trimmed = nameInput.trim()
+    if (trimmed && trimmed !== provider.name) {
+      onRename(provider.id, { name: trimmed })
+    }
+    setEditingName(false)
+  }
+
+  const cancelEditName = () => {
+    setEditingName(false)
+    setNameInput(provider.name)
+  }
+
+  const startEditSubtitle = () => {
+    setSubtitleInput(provider.subtitle ?? "")
+    setEditingSubtitle(true)
+    setTimeout(() => subtitleInputRef.current?.select(), 0)
+  }
+
+  const commitSubtitle = () => {
+    const trimmed = subtitleInput.trim()
+    const current = provider.subtitle ?? ""
+    if (trimmed !== current) {
+      onRename(provider.id, { subtitle: trimmed })
+    }
+    setEditingSubtitle(false)
+  }
+
+  const cancelEditSubtitle = () => {
+    setEditingSubtitle(false)
+    setSubtitleInput(provider.subtitle ?? "")
   }
 
   return (
@@ -2591,25 +2649,158 @@ function ProviderCard({
             <div>
               <div
                 style={{
-                  fontFamily: "var(--font-display)",
-                  fontWeight: 600,
-                  fontSize: 15,
-                  color: "var(--color-text)",
-                  lineHeight: 1.2,
-                  letterSpacing: "-0.01em",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
                 }}
               >
-                {provider.name}
+                {editingName ?
+                  <input
+                    ref={nameInputRef}
+                    value={nameInput}
+                    onChange={(e) => setNameInput(e.target.value)}
+                    onBlur={commitName}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        commitName()
+                      } else if (e.key === "Escape") {
+                        cancelEditName()
+                      }
+                    }}
+                    style={{
+                      fontFamily: "var(--font-display)",
+                      fontWeight: 600,
+                      fontSize: 15,
+                      color: "var(--color-text)",
+                      lineHeight: 1.2,
+                      letterSpacing: "-0.01em",
+                      background: "var(--color-bg-input, var(--color-bg))",
+                      border: "1px solid var(--color-blue)",
+                      borderRadius: 4,
+                      padding: "1px 6px",
+                      outline: "none",
+                      width: 200,
+                    }}
+                  />
+                : <span
+                    style={{
+                      fontFamily: "var(--font-display)",
+                      fontWeight: 600,
+                      fontSize: 15,
+                      color: "var(--color-text)",
+                      lineHeight: 1.2,
+                      letterSpacing: "-0.01em",
+                    }}
+                  >
+                    {provider.name}
+                  </span>
+                }
+                {!editingName && (
+                  <button
+                    title="Rename provider"
+                    onClick={startEditName}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      padding: "2px 4px",
+                      cursor: "pointer",
+                      color: "var(--color-text-tertiary)",
+                      display: "flex",
+                      alignItems: "center",
+                      borderRadius: 4,
+                      lineHeight: 1,
+                    }}
+                  >
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M11.013 2.513a1.75 1.75 0 0 1 2.475 2.474L5.81 12.664l-3.257.744.744-3.257 7.716-7.638Z" />
+                    </svg>
+                  </button>
+                )}
               </div>
               <div
                 style={{
-                  fontSize: 11,
-                  color: "var(--color-text-tertiary)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
                   marginTop: 2,
-                  fontFamily: "var(--font-mono)",
                 }}
               >
-                {provider.id}
+                {editingSubtitle ?
+                  <input
+                    ref={subtitleInputRef}
+                    value={subtitleInput}
+                    onChange={(e) => setSubtitleInput(e.target.value)}
+                    onBlur={commitSubtitle}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        commitSubtitle()
+                      } else if (e.key === "Escape") {
+                        cancelEditSubtitle()
+                      }
+                    }}
+                    placeholder={provider.id}
+                    style={{
+                      fontSize: 11,
+                      color: "var(--color-text-tertiary)",
+                      fontFamily: "var(--font-mono)",
+                      background: "var(--color-bg-input, var(--color-bg))",
+                      border: "1px solid var(--color-blue)",
+                      borderRadius: 4,
+                      padding: "1px 6px",
+                      outline: "none",
+                      width: 220,
+                    }}
+                  />
+                : <span
+                    style={{
+                      fontSize: 11,
+                      color: "var(--color-text-tertiary)",
+                      fontFamily: "var(--font-mono)",
+                    }}
+                  >
+                    {provider.subtitle || provider.id}
+                  </span>
+                }
+                {!editingSubtitle && (
+                  <button
+                    title="Edit subtitle"
+                    onClick={startEditSubtitle}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      padding: "1px 3px",
+                      cursor: "pointer",
+                      color: "var(--color-text-tertiary)",
+                      display: "flex",
+                      alignItems: "center",
+                      borderRadius: 4,
+                      lineHeight: 1,
+                      opacity: 0.6,
+                    }}
+                  >
+                    <svg
+                      width="10"
+                      height="10"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M11.013 2.513a1.75 1.75 0 0 1 2.475 2.474L5.81 12.664l-3.257.744.744-3.257 7.716-7.638Z" />
+                    </svg>
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -4344,6 +4535,41 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
     }
   }
 
+  const handleRename = async (
+    id: string,
+    fields: { name?: string; subtitle?: string },
+  ) => {
+    // Optimistic update — reflect the change in UI immediately
+    const prev = providers.find((p) => p.id === id)
+    setProviders((ps) =>
+      ps.map((p) =>
+        p.id === id ?
+          {
+            ...p,
+            ...(fields.name !== undefined ? { name: fields.name } : {}),
+            ...(fields.subtitle !== undefined ?
+              { subtitle: fields.subtitle }
+            : {}),
+          }
+        : p,
+      ),
+    )
+    try {
+      await renameProvider(id, fields)
+      // Reconcile with server — do not await; let it happen in background
+      void load()
+    } catch (e) {
+      // Roll back on error
+      if (prev) {
+        setProviders((ps) => ps.map((p) => (p.id === id ? prev : p)))
+      }
+      showToast(
+        "Rename failed: " + (e instanceof Error ? e.message : String(e)),
+        "error",
+      )
+    }
+  }
+
   const handleAuthSubmit = async (id: string, body: Record<string, string>) => {
     try {
       const result = await authProvider(id, body)
@@ -4616,6 +4842,7 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
                           onDelete={handleDelete}
                           onAuthSubmit={handleAuthSubmit}
                           onModelsChanged={load}
+                          onRename={handleRename}
                           priorityIndex={activeProviders.findIndex(
                             (x) => x.id === p.id,
                           )}

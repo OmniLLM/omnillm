@@ -60,6 +60,7 @@ func (p *Provider) GetInstanceID() string { return p.instanceID }
 
 // GetName returns the human-readable provider name.
 func (p *Provider) GetName() string         { return p.name }
+func (p *Provider) SetName(name string)     { p.name = name }
 func (p *Provider) SetInstanceID(id string) { p.instanceID = id }
 
 // SetupAuth handles API-key authentication and persists credentials.

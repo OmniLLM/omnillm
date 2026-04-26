@@ -8,6 +8,7 @@ export interface Provider {
   id: string // Instance ID (e.g., "antigravity-1", "alibaba-2")
   type: string // Provider type (e.g., "antigravity", "alibaba")
   name: string
+  subtitle?: string // Custom display subtitle (defaults to instance id display)
   isActive: boolean
   authStatus: "authenticated" | "unauthenticated"
   enabledModelCount?: number
@@ -443,6 +444,15 @@ export const updateProviderConfig = (id: string, config: Record<string, any>) =>
   apiFetch<{ success?: boolean; config?: Provider["config"] }>(
     `/api/admin/providers/${id}/config`,
     { method: "PUT", body: JSON.stringify(config) },
+  )
+
+export const renameProvider = (
+  id: string,
+  fields: { name?: string; subtitle?: string },
+) =>
+  apiFetch<{ success?: boolean; name?: string; subtitle?: string }>(
+    `/api/admin/providers/${id}/name`,
+    { method: "PATCH", body: JSON.stringify(fields) },
   )
 
 // ─── Antigravity Google OAuth ─────────────────────────────────────────────────

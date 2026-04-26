@@ -100,6 +100,7 @@ type Provider interface {
 	GetID() string         // Provider type (e.g. "antigravity")
 	GetInstanceID() string // Unique instance identifier (e.g. "antigravity-1")
 	GetName() string
+	SetName(name string)
 
 	// Authentication
 	SetupAuth(options *AuthOptions) error

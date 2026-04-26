@@ -16,9 +16,9 @@ func (pis *ProviderInstanceStore) Get(instanceID string) (*ProviderInstanceRecor
 	var activated int
 	var createdAtStr, updatedAtStr string
 	err := pis.db.db.QueryRow(`
-		SELECT instance_id, provider_id, name, priority, activated, created_at, updated_at
+		SELECT instance_id, provider_id, name, subtitle, priority, activated, created_at, updated_at
 		FROM provider_instances WHERE instance_id = ?
-	`, instanceID).Scan(&record.InstanceID, &record.ProviderID, &record.Name, &record.Priority, &activated, &createdAtStr, &updatedAtStr)
+	`, instanceID).Scan(&record.InstanceID, &record.ProviderID, &record.Name, &record.Subtitle, &record.Priority, &activated, &createdAtStr, &updatedAtStr)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -35,7 +35,7 @@ func (pis *ProviderInstanceStore) Get(instanceID string) (*ProviderInstanceRecor
 
 func (pis *ProviderInstanceStore) GetAll() ([]ProviderInstanceRecord, error) {
 	rows, err := pis.db.db.Query(`
-		SELECT instance_id, provider_id, name, priority, activated, created_at, updated_at
+		SELECT instance_id, provider_id, name, subtitle, priority, activated, created_at, updated_at
 		FROM provider_instances ORDER BY priority ASC
 	`)
 	if err != nil {
@@ -48,7 +48,7 @@ func (pis *ProviderInstanceStore) GetAll() ([]ProviderInstanceRecord, error) {
 		var record ProviderInstanceRecord
 		var activated int
 		var createdAtStr, updatedAtStr string
-		if err := rows.Scan(&record.InstanceID, &record.ProviderID, &record.Name, &record.Priority, &activated, &createdAtStr, &updatedAtStr); err != nil {
+		if err := rows.Scan(&record.InstanceID, &record.ProviderID, &record.Name, &record.Subtitle, &record.Priority, &activated, &createdAtStr, &updatedAtStr); err != nil {
 			return nil, err
 		}
 		record.Activated = activated != 0
@@ -67,15 +67,16 @@ func (pis *ProviderInstanceStore) Save(record *ProviderInstanceRecord) error {
 
 	_, err := pis.db.db.Exec(`
 		INSERT INTO provider_instances
-		(instance_id, provider_id, name, priority, activated, updated_at)
-		VALUES (?, ?, ?, ?, ?, datetime('now'))
+		(instance_id, provider_id, name, subtitle, priority, activated, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
 		ON CONFLICT(instance_id) DO UPDATE SET
 			provider_id = excluded.provider_id,
 			name = excluded.name,
+			subtitle = excluded.subtitle,
 			priority = excluded.priority,
 			activated = excluded.activated,
 			updated_at = datetime('now')
-	`, record.InstanceID, record.ProviderID, record.Name, record.Priority, activated)
+	`, record.InstanceID, record.ProviderID, record.Name, record.Subtitle, record.Priority, activated)
 	return err
 }
 

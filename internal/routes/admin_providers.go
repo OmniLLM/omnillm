@@ -48,6 +48,11 @@ func handleGetProviders(c *gin.Context) {
 			"authStatus": authStatus,
 		}
 
+		// Load subtitle from DB record (it's not stored on the in-memory provider)
+		if dbRecord, dbErr := database.NewProviderInstanceStore().Get(provider.GetInstanceID()); dbErr == nil && dbRecord != nil {
+			providerInfo["subtitle"] = dbRecord.Subtitle
+		}
+
 		if normalizedConfig := normalizeProviderConfigForFrontend(provider.GetID(), config); normalizedConfig != nil {
 			providerInfo["config"] = normalizedConfig
 		}
@@ -1097,6 +1102,58 @@ func handleUpdateProviderConfig(c *gin.Context) {
 		"message": fmt.Sprintf("Configuration updated for %s", providerID),
 		"config":  normalizeProviderConfigForFrontend(provider.GetID(), normalizedConfig),
 	})
+}
+
+func handleRenameProvider(c *gin.Context) {
+	providerID := c.Param("id")
+
+	var req struct {
+		Name     *string `json:"name"`
+		Subtitle *string `json:"subtitle"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+	if req.Name == nil && req.Subtitle == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "At least one of 'name' or 'subtitle' must be provided"})
+		return
+	}
+
+	// Persist to database
+	instanceStore := database.NewProviderInstanceStore()
+	record, err := instanceStore.Get(providerID)
+	if err != nil || record == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Provider instance not found in database"})
+		return
+	}
+
+	if req.Name != nil {
+		newName := strings.TrimSpace(*req.Name)
+		if newName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "name cannot be empty"})
+			return
+		}
+		record.Name = newName
+		// Update in-memory name on the live provider
+		providerRegistry := registry.GetProviderRegistry()
+		if provider, provErr := providerRegistry.GetProvider(providerID); provErr == nil {
+			provider.SetName(newName)
+		}
+		log.Info().Str("provider", providerID).Str("name", newName).Msg("Provider renamed")
+	}
+
+	if req.Subtitle != nil {
+		record.Subtitle = strings.TrimSpace(*req.Subtitle)
+		log.Info().Str("provider", providerID).Str("subtitle", record.Subtitle).Msg("Provider subtitle updated")
+	}
+
+	if err := instanceStore.Save(record); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to persist provider metadata"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "name": record.Name, "subtitle": record.Subtitle})
 }
 
 func handleActivateProvider(c *gin.Context) {

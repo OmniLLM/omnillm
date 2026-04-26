@@ -38,6 +38,7 @@ type mockProvider struct {
 func (p *mockProvider) GetID() string                        { return "mock" }
 func (p *mockProvider) GetInstanceID() string                { return p.instanceID }
 func (p *mockProvider) GetName() string                      { return p.name }
+func (p *mockProvider) SetName(name string)                  { p.name = name }
 func (p *mockProvider) SetupAuth(_ *types.AuthOptions) error { return nil }
 func (p *mockProvider) GetToken() string                     { return "" }
 func (p *mockProvider) RefreshToken() error                  { return nil }

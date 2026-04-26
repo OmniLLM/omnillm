@@ -86,6 +86,7 @@ func NewProvider(instanceID, name string) *Provider {
 func (p *Provider) GetID() string         { return "openai-compatible" }
 func (p *Provider) GetInstanceID() string { return p.instanceID }
 func (p *Provider) GetName() string       { return p.name }
+func (p *Provider) SetName(name string)   { p.name = name }
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 

@@ -172,6 +172,7 @@ func (db *Database) createTables() error {
 		)`,
 		// Backfill newer columns for existing databases
 		`ALTER TABLE virtual_model_upstreams ADD COLUMN provider_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE provider_instances ADD COLUMN subtitle TEXT NOT NULL DEFAULT ''`,
 	}
 
 	for _, query := range queries {
