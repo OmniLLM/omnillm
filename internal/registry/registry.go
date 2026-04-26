@@ -306,9 +306,16 @@ func (pr *ProviderRegistry) saveConfigAsync() error {
 			Activated:  isActive,
 		}
 
-		// Preserve existing priority from DB if available
+		// Preserve existing name, subtitle, and priority from DB if available
 		if existing, err := pr.instanceStore.Get(id); err == nil && existing != nil {
 			record.Priority = existing.Priority
+			// Keep the user-customized name/subtitle, falling back to the in-memory default
+			if existing.Name != "" {
+				record.Name = existing.Name
+			}
+			if existing.Subtitle != "" {
+				record.Subtitle = existing.Subtitle
+			}
 		}
 
 		if err := pr.instanceStore.Save(record); err != nil {
