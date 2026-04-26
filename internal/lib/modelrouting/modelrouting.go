@@ -156,6 +156,24 @@ func ResolveProvidersForModel(requestedModel, normalizedModel, providerID string
 		return nil, fmt.Errorf("no active providers available")
 	}
 
+	// When a specific provider is pinned (e.g. from a virtual model upstream), skip
+	// the model-list check entirely. The /models API may be unavailable or may not
+	// list the model (e.g. DeepSeek stripped from the Alibaba hardcoded fallback when
+	// /models returns 401), but the provider can still serve the model. Synthesise a
+	// passthrough entry so the request proceeds.
+	if providerID != "" && len(activeProviders) == 1 {
+		provider := activeProviders[0]
+		pinned := types.Model{
+			ID:       requestedModel,
+			Name:     requestedModel,
+			Provider: provider.GetInstanceID(),
+		}
+		return &ResolvedModelRoute{
+			SelectedModel:      &pinned,
+			CandidateProviders: []types.Provider{provider},
+		}, nil
+	}
+
 	modelsByProvider, err := GetEnabledModelsByProvider(activeProviders, cache)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get models by provider: %w", err)

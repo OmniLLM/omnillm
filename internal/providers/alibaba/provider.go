@@ -151,7 +151,7 @@ func (p *Provider) GetAdapter() types.ProviderAdapter {
 
 // LoadFromDB restores persisted credentials and config from the database.
 func (p *Provider) LoadFromDB() error {
-	token, _, _, err := LoadTokenFromDB(p.instanceID)
+	token, tokenBaseURL, _, err := LoadTokenFromDB(p.instanceID)
 	if err != nil {
 		return err
 	}
@@ -179,6 +179,14 @@ func (p *Provider) LoadFromDB() error {
 					p.token = at
 				}
 			}
+		}
+	} else {
+		// No provider_configs row — legacy provider that only has a tokens row.
+		// The token record may carry a base_url (stored by old auth flows); use
+		// it so the correct regional endpoint is preserved instead of falling
+		// back to the hardcoded global default.
+		if tokenBaseURL != "" {
+			p.baseURL = EnsureBaseURL(tokenBaseURL)
 		}
 	}
 
