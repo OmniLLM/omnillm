@@ -29,6 +29,11 @@ var Models = []types.Model{
 	{ID: "qwen3-235b-a22b-instruct", Name: "Qwen3-235B-A22B Instruct", MaxTokens: 131072, Provider: "alibaba"},
 	{ID: "qwen-plus", Name: "Qwen Plus", MaxTokens: 131072, Provider: "alibaba"},
 	{ID: "qwen-turbo", Name: "Qwen Turbo", MaxTokens: 1000000, Provider: "alibaba"},
+	// DeepSeek models available via DashScope
+	{ID: "deepseek-v3", Name: "DeepSeek V3", MaxTokens: 65536, Provider: "alibaba"},
+	{ID: "deepseek-v4-flash", Name: "DeepSeek V4 Flash", MaxTokens: 65536, Provider: "alibaba"},
+	{ID: "deepseek-r1", Name: "DeepSeek R1", MaxTokens: 65536, Provider: "alibaba"},
+	{ID: "deepseek-r1-0528", Name: "DeepSeek R1 0528", MaxTokens: 65536, Provider: "alibaba"},
 }
 
 // Provider implements types.Provider for Alibaba DashScope.
