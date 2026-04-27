@@ -75,16 +75,22 @@ func resolveRequestedModels(requestID, requestedModel string) []resolvedModelAtt
 
 	attempts := make([]resolvedModelAttempt, 0, len(ordered))
 	for _, upstream := range ordered {
+		// The stored model_id may carry a provider prefix (e.g. "alipay01/deepseek-v4-flash").
+		// Strip it here: provider_id is already explicit and authoritative, so we
+		// only forward the bare model name to the upstream.
+		_, bareUpstreamModel := modelrouting.ParseProviderPrefix(upstream.ModelID)
+
 		log.Debug().
 			Str("request_id", requestID).
 			Str("virtual_model", vm.VirtualModelID).
 			Str("upstream", upstream.ModelID).
+			Str("bare_model", bareUpstreamModel).
 			Str("provider", upstream.ProviderID).
 			Str("strategy", string(vm.LbStrategy)).
 			Msg("Virtual model routing candidate")
 		attempts = append(attempts, resolvedModelAttempt{
-			RequestedModel:  upstream.ModelID,
-			NormalizedModel: modelrouting.NormalizeModelName(upstream.ModelID),
+			RequestedModel:  bareUpstreamModel,
+			NormalizedModel: modelrouting.NormalizeModelName(bareUpstreamModel),
 			ProviderID:      upstream.ProviderID,
 		})
 	}
