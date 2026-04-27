@@ -131,7 +131,11 @@ func (h *chatCompletionHandler) handleChatCompletions(c *gin.Context) {
 			continue
 		}
 
-		if attempt.NormalizedModel != attemptRequest.Model {
+		// Only normalize the model name when the attempt is NOT pinned to a specific
+		// provider. When ProviderID is set (e.g. from a virtual-model upstream), the
+		// stored RequestedModel must be used verbatim — it may include a provider
+		// prefix or specific casing that the upstream requires (e.g. "alipay01/DeepSeek-V4-Flash").
+		if attempt.ProviderID == "" && attempt.NormalizedModel != attemptRequest.Model {
 			log.Debug().Str("request_id", requestIDStr).Str("from", attemptRequest.Model).Str("to", attempt.NormalizedModel).Msg("Normalized chat request model")
 			attemptRequest.Model = attempt.NormalizedModel
 		}
