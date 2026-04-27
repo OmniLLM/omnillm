@@ -277,6 +277,24 @@ func containsString(values []string, target string) bool {
 	return false
 }
 
+// ParseProviderPrefix splits a model string of the form "<instanceID>/<modelID>"
+// into the provider instance ID and the bare model ID.
+//
+// If the input contains no "/" the returned providerID is empty and modelID
+// equals the original input, so callers can always use modelID as the real
+// model name regardless of whether a prefix was supplied.
+//
+// Examples:
+//
+//	"copilot-jzhu-abk/gpt-4o-mini"  → ("copilot-jzhu-abk", "gpt-4o-mini")
+//	"gpt-4o-mini"                    → ("", "gpt-4o-mini")
+func ParseProviderPrefix(modelName string) (providerID, modelID string) {
+	if before, after, found := strings.Cut(modelName, "/"); found {
+		return before, after
+	}
+	return "", modelName
+}
+
 func NormalizeModelName(modelName string) string {
 	normalizedModel := strings.TrimSpace(strings.ToLower(modelName))
 

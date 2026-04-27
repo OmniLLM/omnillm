@@ -24,6 +24,23 @@ func resolveRequestedModel(requestID, requestedModel string) (string, string) {
 }
 
 func resolveRequestedModels(requestID, requestedModel string) []resolvedModelAttempt {
+	// Strip optional "<instanceID>/<modelID>" prefix before any further resolution.
+	// When a prefix is present the request is pinned to that specific provider.
+	prefixProviderID, bareModel := modelrouting.ParseProviderPrefix(requestedModel)
+	if prefixProviderID != "" {
+		log.Debug().
+			Str("request_id", requestID).
+			Str("provider_prefix", prefixProviderID).
+			Str("model", bareModel).
+			Msg("Provider prefix detected in model name")
+		normalizedModel := modelrouting.NormalizeModelName(bareModel)
+		return []resolvedModelAttempt{{
+			RequestedModel:  bareModel,
+			NormalizedModel: normalizedModel,
+			ProviderID:      prefixProviderID,
+		}}
+	}
+
 	normalizedModel := modelrouting.NormalizeModelName(requestedModel)
 
 	vmodelStore := database.NewVirtualModelStore()
