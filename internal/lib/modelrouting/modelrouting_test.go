@@ -59,6 +59,60 @@ func (p *mockProvider) CreateEmbeddings(_ map[string]interface{}) (map[string]in
 func (p *mockProvider) GetUsage() (map[string]interface{}, error) { return nil, nil }
 func (p *mockProvider) GetAdapter() types.ProviderAdapter         { return nil }
 
+// ─── ParseProviderPrefix ───
+
+func TestParseProviderPrefix_WithPrefix(t *testing.T) {
+	providerID, modelID := ParseProviderPrefix("copilot-jzhu-abk/gpt-4o-mini")
+	if providerID != "copilot-jzhu-abk" {
+		t.Errorf("expected providerID = %q, got %q", "copilot-jzhu-abk", providerID)
+	}
+	if modelID != "gpt-4o-mini" {
+		t.Errorf("expected modelID = %q, got %q", "gpt-4o-mini", modelID)
+	}
+}
+
+func TestParseProviderPrefix_WithoutPrefix(t *testing.T) {
+	providerID, modelID := ParseProviderPrefix("gpt-4o-mini")
+	if providerID != "" {
+		t.Errorf("expected empty providerID, got %q", providerID)
+	}
+	if modelID != "gpt-4o-mini" {
+		t.Errorf("expected modelID = %q, got %q", "gpt-4o-mini", modelID)
+	}
+}
+
+func TestParseProviderPrefix_MultipleSlashes(t *testing.T) {
+	// Only the first slash is treated as the separator.
+	providerID, modelID := ParseProviderPrefix("my-provider/some/nested/model")
+	if providerID != "my-provider" {
+		t.Errorf("expected providerID = %q, got %q", "my-provider", providerID)
+	}
+	if modelID != "some/nested/model" {
+		t.Errorf("expected modelID = %q, got %q", "some/nested/model", modelID)
+	}
+}
+
+func TestParseProviderPrefix_LeadingSlash(t *testing.T) {
+	// Leading slash → empty providerID, model is everything after slash.
+	providerID, modelID := ParseProviderPrefix("/gpt-4o")
+	if providerID != "" {
+		t.Errorf("expected empty providerID for leading slash, got %q", providerID)
+	}
+	if modelID != "gpt-4o" {
+		t.Errorf("expected modelID = %q, got %q", "gpt-4o", modelID)
+	}
+}
+
+func TestParseProviderPrefix_EmptyString(t *testing.T) {
+	providerID, modelID := ParseProviderPrefix("")
+	if providerID != "" {
+		t.Errorf("expected empty providerID, got %q", providerID)
+	}
+	if modelID != "" {
+		t.Errorf("expected empty modelID, got %q", modelID)
+	}
+}
+
 // ─── NormalizeModelName ───
 
 func TestNormalizeModelName_GPT4(t *testing.T) {

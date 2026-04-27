@@ -3,6 +3,7 @@ package routes
 import (
 	"net/http"
 	"omnillm/internal/database"
+	"omnillm/internal/lib/modelrouting"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -62,15 +63,46 @@ func saveUpstreams(virtualModelID string, inputs []upstreamInput) error {
 		if w < 1 {
 			w = 1
 		}
+
+		// When a provider_id is present, store the model_id with the provider
+		// prefix so the upstream record is self-describing and collisions between
+		// providers that expose the same model name are avoided.
+		// e.g.  provider_id="alibaba-2", model_id="deepseek-v4-flash"
+		//   →   stored model_id="alipay01/deepseek-v4-flash" (or instanceID/...)
+		modelID := u.ModelID
+		if u.ProviderID != "" {
+			// Use the subtitle if one is set, otherwise fall back to the instance ID.
+			prefix := providerDisplayPrefix(u.ProviderID)
+			existingPrefix, _ := modelrouting.ParseProviderPrefix(modelID)
+			if existingPrefix == "" {
+				modelID = prefix + "/" + modelID
+			}
+		}
+
 		records = append(records, database.VirtualModelUpstreamRecord{
 			VirtualModelID: virtualModelID,
 			ProviderID:     u.ProviderID,
-			ModelID:        u.ModelID,
+			ModelID:        modelID,
 			Weight:         w,
 			Priority:       u.Priority,
 		})
 	}
 	return us.SetForVModel(virtualModelID, records)
+}
+
+// providerDisplayPrefix returns the subtitle for the given instance ID if one
+// is set, otherwise the instance ID itself. This is used as the prefix stored
+// alongside the model ID in virtual-model upstream records.
+func providerDisplayPrefix(instanceID string) string {
+	instanceStore := database.NewProviderInstanceStore()
+	record, err := instanceStore.Get(instanceID)
+	if err != nil || record == nil {
+		return instanceID
+	}
+	if record.Subtitle != "" {
+		return record.Subtitle
+	}
+	return instanceID
 }
 
 // ─── handlers ─────────────────────────────────────────────────────────────────
