@@ -1,6 +1,8 @@
 package routes
 
 import (
+	"strings"
+
 	"omnillm/internal/database"
 	"omnillm/internal/lib/modelrouting"
 	"omnillm/internal/lib/vmodelrouting"
@@ -28,16 +30,21 @@ func resolveRequestedModels(requestID, requestedModel string) []resolvedModelAtt
 	// When a prefix is present the request is pinned to that specific provider.
 	prefixProviderID, bareModel := modelrouting.ParseProviderPrefix(requestedModel)
 	if prefixProviderID != "" {
+		// Resolve the prefix: first try it as a literal instance ID, then fall
+		// back to matching against provider subtitles (the user-visible short
+		// label shown in the UI, e.g. "alipay01").
+		resolvedInstanceID := resolveProviderPrefix(prefixProviderID)
 		log.Debug().
 			Str("request_id", requestID).
 			Str("provider_prefix", prefixProviderID).
+			Str("resolved_instance_id", resolvedInstanceID).
 			Str("model", bareModel).
 			Msg("Provider prefix detected in model name")
 		normalizedModel := modelrouting.NormalizeModelName(bareModel)
 		return []resolvedModelAttempt{{
 			RequestedModel:  bareModel,
 			NormalizedModel: normalizedModel,
-			ProviderID:      prefixProviderID,
+			ProviderID:      resolvedInstanceID,
 		}}
 	}
 
@@ -83,4 +90,40 @@ func resolveRequestedModels(requestID, requestedModel string) []resolvedModelAtt
 	}
 
 	return attempts
+}
+
+// resolveProviderPrefix maps a user-supplied prefix to a registry instance ID.
+//
+// The lookup order is:
+//  1. Exact match against a registered instance ID (e.g. "alibaba-2").
+//  2. Case-insensitive match against the provider's subtitle — the short label
+//     users set in the UI (e.g. "alipay01").
+//
+// If neither matches, the original prefix is returned unchanged so the caller
+// can produce a meaningful "provider not found" error downstream.
+func resolveProviderPrefix(prefix string) string {
+	instanceStore := database.NewProviderInstanceStore()
+	instances, err := instanceStore.GetAll()
+	if err != nil {
+		return prefix
+	}
+
+	lowerPrefix := strings.ToLower(prefix)
+
+	var subtitleMatch string
+	for _, inst := range instances {
+		// 1. Exact instance ID match — highest priority.
+		if inst.InstanceID == prefix {
+			return prefix
+		}
+		// 2. Case-insensitive subtitle match — collect first hit.
+		if subtitleMatch == "" && strings.ToLower(inst.Subtitle) == lowerPrefix {
+			subtitleMatch = inst.InstanceID
+		}
+	}
+
+	if subtitleMatch != "" {
+		return subtitleMatch
+	}
+	return prefix
 }
