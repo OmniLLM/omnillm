@@ -1,6 +1,8 @@
 package routes
 
 import (
+	"strings"
+
 	"omnillm/internal/cif"
 	"omnillm/internal/providers/types"
 )
@@ -15,7 +17,13 @@ func applyGitHubCopilotSingleUpstreamMode(provider types.Provider, request *cif.
 	}
 
 	trueValue := true
-	request.Extensions.ForceChatCompletions = &trueValue
+	// Copilot GPT-5 family models are Responses-only upstream. Do not force
+	// chat completions for those models, or the provider can never switch to
+	// /responses and upstream returns `unsupported_api_for_model`.
+	model := strings.ToLower(strings.TrimSpace(request.Model))
+	if !strings.HasPrefix(model, "gpt-5") {
+		request.Extensions.ForceChatCompletions = &trueValue
+	}
 	request.Extensions.DisableAuthRetry = &trueValue
 	request.Extensions.DisableStreamingFallback = &trueValue
 }
