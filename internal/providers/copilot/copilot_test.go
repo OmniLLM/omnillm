@@ -320,3 +320,175 @@ func TestCopilotAdapterExecuteStream_DisableAuthRetryMakesSingleAttempt(t *testi
 	}
 }
 
+func TestCopilotAdapterExecute_GPT5FamilyRoutesToResponsesEndpoint(t *testing.T) {
+	var capturedPath string
+	var capturedPayload map[string]interface{}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		_ = json.NewDecoder(r.Body).Decode(&capturedPayload)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"resp_gpt5","model":"gpt-5.5","status":"completed","output":[{"type":"message","id":"msg_1","role":"assistant","content":[{"type":"output_text","text":"pong"}]}],"usage":{"input_tokens":3,"output_tokens":1}}`))
+	}))
+	defer server.Close()
+
+	provider := NewGitHubCopilotProvider("github-copilot-test", "")
+	provider.baseURL = server.URL
+	provider.token = "test-token"
+	adapter := provider.GetAdapter().(*CopilotAdapter)
+
+	resp, err := adapter.Execute(context.Background(), &cif.CanonicalRequest{
+		Model: "gpt-5.5",
+		Messages: []cif.CIFMessage{
+			cif.CIFUserMessage{
+				Role: "user",
+				Content: []cif.CIFContentPart{
+					cif.CIFTextPart{Type: "text", Text: "ping"},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	if capturedPath != "/responses" {
+		t.Fatalf("expected /responses for gpt-5 family, got %q", capturedPath)
+	}
+	if model, _ := capturedPayload["model"].(string); model != "gpt-5.5" {
+		t.Fatalf("expected upstream model gpt-5.5, got %#v", capturedPayload["model"])
+	}
+	if resp == nil || resp.ID != "resp_gpt5" {
+		t.Fatalf("unexpected response: %#v", resp)
+	}
+}
+
+func TestCopilotAdapterExecute_RoutesResponsesUsingRemappedModel(t *testing.T) {
+	var capturedPath string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"resp_remap","model":"gpt-5.5","status":"completed","output":[{"type":"message","id":"msg_1","role":"assistant","content":[{"type":"output_text","text":"pong"}]}],"usage":{"input_tokens":3,"output_tokens":1}}`))
+	}))
+	defer server.Close()
+
+	provider := NewGitHubCopilotProvider("github-copilot-test", "")
+	provider.baseURL = server.URL
+	provider.token = "test-token"
+	adapter := provider.GetAdapter().(*CopilotAdapter)
+
+	resp, err := adapter.Execute(context.Background(), &cif.CanonicalRequest{
+		Model: "  gpt-5.5  ",
+		Messages: []cif.CIFMessage{
+			cif.CIFUserMessage{Role: "user", Content: []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: "ping"}}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if capturedPath != "/responses" {
+		t.Fatalf("expected /responses for remapped gpt-5.5, got %q", capturedPath)
+	}
+	if resp == nil || resp.ID != "resp_remap" {
+		t.Fatalf("unexpected response: %#v", resp)
+	}
+}
+
+func TestCopilotAdapterExecute_NonGPT5StaysOnChatCompletions(t *testing.T) {
+	var capturedPath string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":    "chatcmpl_nongpt5",
+			"model": "claude-haiku-4.5",
+			"choices": []map[string]interface{}{{
+				"index": 0,
+				"message": map[string]interface{}{
+					"role":    "assistant",
+					"content": "ok",
+				},
+				"finish_reason": "stop",
+			}},
+		})
+	}))
+	defer server.Close()
+
+	provider := NewGitHubCopilotProvider("github-copilot-test", "")
+	provider.baseURL = server.URL
+	provider.token = "test-token"
+	adapter := provider.GetAdapter().(*CopilotAdapter)
+
+	if _, err := adapter.Execute(context.Background(), &cif.CanonicalRequest{
+		Model: "claude-haiku-4.5",
+		Messages: []cif.CIFMessage{
+			cif.CIFUserMessage{
+				Role: "user",
+				Content: []cif.CIFContentPart{
+					cif.CIFTextPart{Type: "text", Text: "ping"},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	if capturedPath != "/chat/completions" {
+		t.Fatalf("expected /chat/completions for non-gpt-5 model, got %q", capturedPath)
+	}
+}
+
+func TestCopilotAdapterExecute_FallsBackToResponsesOnUnsupportedAPIError(t *testing.T) {
+	var paths []string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		switch r.URL.Path {
+		case "/chat/completions":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": `model "future-responses-only" is not accessible via the /chat/completions endpoint`,
+					"code":    "unsupported_api_for_model",
+				},
+			})
+		case "/responses":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"resp_fallback","model":"future-responses-only","status":"completed","output":[{"type":"message","id":"msg_1","role":"assistant","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":2,"output_tokens":1}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewGitHubCopilotProvider("github-copilot-test", "")
+	provider.baseURL = server.URL
+	provider.token = "test-token"
+	adapter := provider.GetAdapter().(*CopilotAdapter)
+
+	resp, err := adapter.Execute(context.Background(), &cif.CanonicalRequest{
+		// Note: model name does NOT match the gpt-5 prefix — exercises the
+		// upstream-error fallback path rather than shouldUseResponsesAPI.
+		Model: "future-responses-only",
+		Messages: []cif.CIFMessage{
+			cif.CIFUserMessage{
+				Role: "user",
+				Content: []cif.CIFContentPart{
+					cif.CIFTextPart{Type: "text", Text: "ping"},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if resp == nil || resp.ID != "resp_fallback" {
+		t.Fatalf("unexpected fallback response: %#v", resp)
+	}
+	if len(paths) != 2 || paths[0] != "/chat/completions" || paths[1] != "/responses" {
+		t.Fatalf("expected chat→responses fallback, got %v", paths)
+	}
+}
