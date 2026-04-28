@@ -75,21 +75,27 @@ func BuildResponsesPayload(model string, request *cif.CanonicalRequest, stream b
 		payload["instructions"] = *request.SystemPrompt
 	}
 
-	if request.Temperature != nil {
-		payload["temperature"] = *request.Temperature
-	} else if cfg.DefaultTemperature != nil {
-		payload["temperature"] = *cfg.DefaultTemperature
-	}
-	if request.TopP != nil {
-		payload["top_p"] = *request.TopP
-	} else if cfg.DefaultTopP != nil {
-		payload["top_p"] = *cfg.DefaultTopP
+	if !shared.IsReasoningModel(model) {
+		if request.Temperature != nil {
+			payload["temperature"] = *request.Temperature
+		} else if cfg.DefaultTemperature != nil {
+			payload["temperature"] = *cfg.DefaultTemperature
+		}
+		if request.TopP != nil {
+			payload["top_p"] = *request.TopP
+		} else if cfg.DefaultTopP != nil {
+			payload["top_p"] = *cfg.DefaultTopP
+		}
 	}
 	if request.MaxTokens != nil && *request.MaxTokens > 0 {
-		payload["max_output_tokens"] = *request.MaxTokens
+		maxOutputTokens := *request.MaxTokens
+		if maxOutputTokens < 16 {
+			maxOutputTokens = 16
+		}
+		payload["max_output_tokens"] = maxOutputTokens
 	}
 	if request.UserID != nil {
-		payload["user"] = *request.UserID
+		payload["user"] = shared.TruncateOpenAIUserID(*request.UserID)
 	}
 
 	if len(request.Tools) > 0 {
@@ -116,6 +122,11 @@ func BuildResponsesPayload(model string, request *cif.CanonicalRequest, stream b
 
 	for key, value := range cfg.Extras {
 		payload[key] = value
+	}
+
+	// Re-apply user ID truncation in case Extras overwrote it with an oversize value.
+	if userVal, ok := payload["user"].(string); ok {
+		payload["user"] = shared.TruncateOpenAIUserID(userVal)
 	}
 
 	return payload
@@ -230,7 +241,6 @@ func responsesAssistantMessageItems(message cif.CIFAssistantMessage) []map[strin
 			argsBytes, _ := json.Marshal(p.ToolArguments)
 			items = append(items, map[string]interface{}{
 				"type":      "function_call",
-				"id":        p.ToolCallID,
 				"call_id":   p.ToolCallID,
 				"name":      p.ToolName,
 				"arguments": string(argsBytes),
