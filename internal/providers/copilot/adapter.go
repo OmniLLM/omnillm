@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"omnillm/internal/cif"
 	"omnillm/internal/lib/modelrouting"
+	"omnillm/internal/providers/openaicompat"
 	"omnillm/internal/providers/types"
 
 	"github.com/rs/zerolog/log"
@@ -25,11 +28,61 @@ func (a *CopilotAdapter) GetProvider() types.Provider {
 }
 
 func (a *CopilotAdapter) Execute(ctx context.Context, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+	model := ""
+	if request != nil {
+		model = a.RemapModel(request.Model)
+	}
+	if !a.forceChatCompletions(request) && a.shouldUseResponsesAPI(model) {
+		return a.executeResponses(ctx, request)
+	}
 	return a.executeOpenAI(ctx, request)
 }
 
 func (a *CopilotAdapter) ExecuteStream(ctx context.Context, request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
+	model := ""
+	if request != nil {
+		model = a.RemapModel(request.Model)
+	}
+	if !a.forceChatCompletions(request) && a.shouldUseResponsesAPI(model) {
+		return a.executeResponsesStream(ctx, request)
+	}
 	return a.executeOpenAIStream(ctx, request)
+}
+
+// shouldUseResponsesAPI returns true for Copilot-hosted models that are only
+// reachable via /responses. The GPT-5 family is currently Responses-only on
+// Copilot; the prefix match is intentionally generic so future GPT-5.x
+// variants don't regress like gpt-5.5 did.
+func (a *CopilotAdapter) shouldUseResponsesAPI(model string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(model)), "gpt-5")
+}
+
+// forceChatCompletions honours an explicit caller override that disables the
+// Responses-API auto-routing.
+func (a *CopilotAdapter) forceChatCompletions(request *cif.CanonicalRequest) bool {
+	return request != nil &&
+		request.Extensions != nil &&
+		request.Extensions.ForceChatCompletions != nil &&
+		*request.Extensions.ForceChatCompletions
+}
+
+// isUnsupportedChatCompletionsModel detects Copilot's
+// `unsupported_api_for_model` 400 so we can fall back to /responses for
+// Responses-only models that don't match shouldUseResponsesAPI.
+func (a *CopilotAdapter) isUnsupportedChatCompletionsModel(apiErr *copilotAPIError) bool {
+	if apiErr == nil || apiErr.statusCode != http.StatusBadRequest {
+		return false
+	}
+	var payload copilotErrorEnvelope
+	if err := json.Unmarshal(apiErr.body, &payload); err == nil {
+		if payload.Error.Code == "unsupported_api_for_model" {
+			return true
+		}
+		if strings.Contains(strings.ToLower(payload.Error.Message), "/chat/completions") {
+			return true
+		}
+	}
+	return strings.Contains(strings.ToLower(string(apiErr.body)), "unsupported_api_for_model")
 }
 
 func (a *CopilotAdapter) RemapModel(canonicalModel string) string {
@@ -72,6 +125,13 @@ func (a *CopilotAdapter) executeOpenAIWithRetry(ctx context.Context, request *ci
 		apiErr := &copilotAPIError{statusCode: resp.StatusCode, body: body}
 		if allowAuthRetry && a.shouldRetryAfterAuthError(request, apiErr) && a.refreshTokenForRetry("chat.completions") {
 			return a.executeOpenAIWithRetry(ctx, request, false)
+		}
+		if !a.forceChatCompletions(request) && a.isUnsupportedChatCompletionsModel(apiErr) {
+			log.Info().
+				Str("model", request.Model).
+				Str("provider", a.provider.GetInstanceID()).
+				Msg("Copilot model requires responses API, retrying request")
+			return a.executeResponses(ctx, request)
 		}
 		return nil, apiErr
 	}
@@ -122,6 +182,13 @@ func (a *CopilotAdapter) executeOpenAIStreamWithRetry(ctx context.Context, reque
 		apiErr := &copilotAPIError{statusCode: resp.StatusCode, body: body}
 		if allowAuthRetry && a.shouldRetryAfterAuthError(request, apiErr) && a.refreshTokenForRetry("chat.completions-stream") {
 			return a.executeOpenAIStreamWithRetry(ctx, request, false)
+		}
+		if !a.forceChatCompletions(request) && a.isUnsupportedChatCompletionsModel(apiErr) {
+			log.Info().
+				Str("model", request.Model).
+				Str("provider", a.provider.GetInstanceID()).
+				Msg("Copilot model requires responses API for streaming, retrying request")
+			return a.executeResponsesStream(ctx, request)
 		}
 		return nil, apiErr
 	}
@@ -213,4 +280,70 @@ func (a *CopilotAdapter) refreshTokenForRetry(endpoint string) bool {
 		Str("endpoint", endpoint).
 		Msg("Refreshed Copilot token after upstream auth error, retrying request")
 	return true
+}
+
+// responsesURL appends the Copilot Responses-API path to the provider base URL.
+func (a *CopilotAdapter) responsesURL() string {
+	return fmt.Sprintf("%s/responses", a.provider.GetBaseURL())
+}
+
+// buildResponsesPayload constructs the Copilot Responses-API payload by
+// delegating to the shared openaicompat helper. Tool name sanitization that
+// applies to /chat/completions is intentionally skipped here — the Responses
+// path forwards canonical tool names directly. If Copilot ever enforces the
+// same name pattern on /responses, plumb the existing copilotToolNameMapper
+// through this call.
+func (a *CopilotAdapter) buildResponsesPayload(request *cif.CanonicalRequest, stream bool) map[string]interface{} {
+	return openaicompat.BuildResponsesPayload(a.RemapModel(request.Model), request, stream, openaicompat.ResponsesConfig{})
+}
+
+func (a *CopilotAdapter) executeResponses(ctx context.Context, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+	return a.executeResponsesWithRetry(ctx, request, true)
+}
+
+func (a *CopilotAdapter) executeResponsesWithRetry(ctx context.Context, request *cif.CanonicalRequest, allowAuthRetry bool) (*cif.CanonicalResponse, error) {
+	payload := a.buildResponsesPayload(request, false)
+	resp, err := openaicompat.ExecuteResponses(ctx, a.responsesURL(), a.requestHeaders(request), payload)
+	if err != nil {
+		if allowAuthRetry {
+			if apiErr := copilotAPIErrorFromOpenAICompat(err); apiErr != nil &&
+				a.shouldRetryAfterAuthError(request, apiErr) &&
+				a.refreshTokenForRetry("responses") {
+				return a.executeResponsesWithRetry(ctx, request, false)
+			}
+		}
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (a *CopilotAdapter) executeResponsesStream(ctx context.Context, request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
+	return a.executeResponsesStreamWithRetry(ctx, request, true)
+}
+
+func (a *CopilotAdapter) executeResponsesStreamWithRetry(ctx context.Context, request *cif.CanonicalRequest, allowAuthRetry bool) (<-chan cif.CIFStreamEvent, error) {
+	payload := a.buildResponsesPayload(request, true)
+	eventCh, err := openaicompat.StreamResponses(ctx, a.responsesURL(), a.requestHeaders(request), payload)
+	if err != nil {
+		if allowAuthRetry {
+			if apiErr := copilotAPIErrorFromOpenAICompat(err); apiErr != nil &&
+				a.shouldRetryAfterAuthError(request, apiErr) &&
+				a.refreshTokenForRetry("responses-stream") {
+				return a.executeResponsesStreamWithRetry(ctx, request, false)
+			}
+		}
+		return nil, err
+	}
+	return eventCh, nil
+}
+
+// copilotAPIErrorFromOpenAICompat lifts the openaicompat APIError into the
+// Copilot-local error type so existing auth-retry helpers can reason about
+// status codes without importing openaicompat in their signatures.
+func copilotAPIErrorFromOpenAICompat(err error) *copilotAPIError {
+	var compatErr *openaicompat.APIError
+	if !errors.As(err, &compatErr) || compatErr == nil {
+		return nil
+	}
+	return &copilotAPIError{statusCode: compatErr.StatusCode, body: compatErr.Body}
 }
