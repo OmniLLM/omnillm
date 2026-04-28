@@ -177,6 +177,7 @@ func (db *Database) createTables() error {
 			weight           INTEGER NOT NULL DEFAULT 1,
 			priority         INTEGER NOT NULL DEFAULT 0,
 			created_at       DATETIME NOT NULL DEFAULT (datetime('now')),
+			updated_at       DATETIME NOT NULL DEFAULT (datetime('now')),
 			FOREIGN KEY (virtual_model_id) REFERENCES virtual_models (virtual_model_id) ON DELETE CASCADE
 		)`,
 	}
@@ -193,14 +194,17 @@ func (db *Database) createTables() error {
 	// idx_provider_models_cache_cached_at is intentionally absent — TTL checks
 	// always go through the PK; there is no bulk-expiry sweep.
 	indexes := []string{
-		`CREATE INDEX IF NOT EXISTS idx_provider_instances_provider_id  ON provider_instances (provider_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_provider_instances_priority      ON provider_instances (priority)`,
-		`CREATE INDEX IF NOT EXISTS idx_provider_instances_activated     ON provider_instances (activated)`,
-		`CREATE INDEX IF NOT EXISTS idx_provider_model_states_enabled    ON provider_model_states (enabled)`,
-		`CREATE INDEX IF NOT EXISTS idx_model_configs_instance_id        ON model_configs (instance_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_model_configs_model_id           ON model_configs (model_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id         ON chat_messages (session_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_provider_instances_provider_id   ON provider_instances (provider_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_provider_instances_priority       ON provider_instances (priority)`,
+		`CREATE INDEX IF NOT EXISTS idx_provider_instances_activated      ON provider_instances (activated)`,
+		`CREATE INDEX IF NOT EXISTS idx_provider_model_states_enabled     ON provider_model_states (enabled)`,
+		`CREATE INDEX IF NOT EXISTS idx_model_configs_instance_id         ON model_configs (instance_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_model_configs_model_id            ON model_configs (model_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id          ON chat_messages (session_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_chat_sessions_updated_at          ON chat_sessions (updated_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_chat_messages_session_created_at  ON chat_messages (session_id, created_at, message_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_virtual_model_upstreams_vmodel_id ON virtual_model_upstreams (virtual_model_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_virtual_model_upstreams_ordering  ON virtual_model_upstreams (virtual_model_id, priority, id)`,
 	}
 
 	for _, q := range indexes {
@@ -229,11 +233,11 @@ var migrations = []migration{
 	// v1: add subtitle to provider_instances (backfill for pre-subtitle databases).
 	{1, []string{`ALTER TABLE provider_instances ADD COLUMN subtitle TEXT NOT NULL DEFAULT ''`}},
 	// v2: add provider_id to virtual_model_upstreams (backfill for pre-provider_id databases).
-	{2, []string{`ALTER TABLE virtual_model_upstreams ADD COLUMN provider_id TEXT NOT NULL DEFAULT ''`}},
+	{2, []string{`ALTER TABLE virtual_model_upstreams ADD COLUMN provider_id TEXT NOT NULL DEFAULT ''`} },
 	// v3: add provider_id column to tokens for existing rows that pre-date its removal
 	//     from the schema (kept for backward-compat reads; new code ignores it).
 	//     No-op on fresh databases where the column was never added.
-	{3, []string{`ALTER TABLE tokens ADD COLUMN provider_id TEXT NOT NULL DEFAULT ''`}},
+	{3, []string{`ALTER TABLE tokens ADD COLUMN provider_id TEXT NOT NULL DEFAULT ''`} },
 	// v4: add updated_at to provider_models_cache using a SQLite-safe backfill path.
 	{4, []string{
 		`ALTER TABLE provider_models_cache ADD COLUMN updated_at DATETIME`,
@@ -259,6 +263,15 @@ var migrations = []migration{
 			SELECT instance_id, token_data, created_at, updated_at FROM tokens`,
 		`DROP TABLE tokens`,
 		`ALTER TABLE tokens_v5 RENAME TO tokens`,
+	}},
+	// v6: add updated_at to virtual_model_upstreams and create indexes that match
+	// current query patterns for sessions, messages, and upstream ordering.
+	{6, []string{
+		`ALTER TABLE virtual_model_upstreams ADD COLUMN updated_at DATETIME`,
+		`UPDATE virtual_model_upstreams SET updated_at = created_at WHERE updated_at IS NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_chat_sessions_updated_at ON chat_sessions (updated_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_chat_messages_session_created_at ON chat_messages (session_id, created_at, message_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_virtual_model_upstreams_ordering ON virtual_model_upstreams (virtual_model_id, priority, id)`,
 	}},
 }
 

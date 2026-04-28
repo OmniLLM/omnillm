@@ -136,8 +136,8 @@ func (s *VirtualModelUpstreamStore) SetForVModel(virtualModelID string, upstream
 	}
 	for _, u := range upstreams {
 		if _, err := tx.Exec(`
-			INSERT INTO virtual_model_upstreams (virtual_model_id, provider_id, model_id, weight, priority)
-			VALUES (?, ?, ?, ?, ?)
+			INSERT INTO virtual_model_upstreams (virtual_model_id, provider_id, model_id, weight, priority, updated_at)
+			VALUES (?, ?, ?, ?, ?, datetime('now'))
 		`, virtualModelID, u.ProviderID, u.ModelID, u.Weight, u.Priority); err != nil {
 			return err
 		}

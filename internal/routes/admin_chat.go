@@ -29,7 +29,7 @@ func handleGetModelVersion(c *gin.Context) {
 
 	version := ""
 	if record != nil {
-		version = record.Version
+		version = fmt.Sprintf("%d", record.Version)
 	}
 	c.JSON(http.StatusOK, gin.H{"version": version})
 }

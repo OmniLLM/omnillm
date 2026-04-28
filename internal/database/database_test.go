@@ -155,6 +155,56 @@ func TestChatStoreCRUD(t *testing.T) {
 	}
 }
 
+func TestChatStoreOrdersMessagesDeterministically(t *testing.T) {
+	store := NewChatStore()
+	if err := store.CreateSession("session-order", "Title", "model-1", "openai"); err != nil {
+		t.Fatalf("create session failed: %v", err)
+	}
+	for _, msgID := range []string{"msg-b", "msg-a", "msg-c"} {
+		if err := store.AddMessage(msgID, "session-order", "user", msgID); err != nil {
+			t.Fatalf("add message %s failed: %v", msgID, err)
+		}
+	}
+	messages, err := store.GetMessages("session-order")
+	if err != nil {
+		t.Fatalf("get messages failed: %v", err)
+	}
+	if len(messages) != 3 {
+		t.Fatalf("expected three messages, got %#v", messages)
+	}
+	if messages[0].MessageID != "msg-a" || messages[1].MessageID != "msg-b" || messages[2].MessageID != "msg-c" {
+		t.Fatalf("expected deterministic message ordering, got %#v", messages)
+	}
+}
+
+func TestChatStoreOrdersSessionsDeterministically(t *testing.T) {
+	store := NewChatStore()
+	for _, sessionID := range []string{"session-b", "session-a", "session-c"} {
+		if err := store.CreateSession(sessionID, sessionID, "model-1", "openai"); err != nil {
+			t.Fatalf("create session %s failed: %v", sessionID, err)
+		}
+	}
+	if _, err := GetDatabase().db.Exec(`UPDATE chat_sessions SET updated_at = '2026-04-28 10:00:00' WHERE session_id IN ('session-a', 'session-b', 'session-c')`); err != nil {
+		t.Fatalf("normalize updated_at failed: %v", err)
+	}
+	sessions, err := store.ListSessions()
+	if err != nil {
+		t.Fatalf("list sessions failed: %v", err)
+	}
+	var filtered []string
+	for _, session := range sessions {
+		if session.SessionID == "session-a" || session.SessionID == "session-b" || session.SessionID == "session-c" {
+			filtered = append(filtered, session.SessionID)
+		}
+	}
+	if len(filtered) != 3 {
+		t.Fatalf("expected three matching sessions, got %#v", filtered)
+	}
+	if filtered[0] != "session-a" || filtered[1] != "session-b" || filtered[2] != "session-c" {
+		t.Fatalf("expected deterministic session ordering, got %#v", filtered)
+	}
+}
+
 func TestModelStateStoreCRUD(t *testing.T) {
 	instanceStore := NewProviderInstanceStore()
 	if err := instanceStore.Save(&ProviderInstanceRecord{InstanceID: "provider-ms", ProviderID: "mock", Name: "Mock"}); err != nil {
@@ -174,6 +224,24 @@ func TestModelStateStoreCRUD(t *testing.T) {
 	}
 	if err := store.Delete("provider-ms", "model-1"); err != nil {
 		t.Fatalf("delete failed: %v", err)
+	}
+}
+
+func TestModelConfigStoreVersionRoundTrip(t *testing.T) {
+	instanceStore := NewProviderInstanceStore()
+	if err := instanceStore.Save(&ProviderInstanceRecord{InstanceID: "provider-mc", ProviderID: "mock", Name: "Mock"}); err != nil {
+		t.Fatalf("save provider failed: %v", err)
+	}
+	store := NewModelConfigStore()
+	if err := store.SetVersion("provider-mc", "model-1", "7"); err != nil {
+		t.Fatalf("set version failed: %v", err)
+	}
+	got, err := store.Get("provider-mc", "model-1")
+	if err != nil || got == nil {
+		t.Fatalf("get model config failed: %#v err=%v", got, err)
+	}
+	if got.Version != 7 {
+		t.Fatalf("expected version 7, got %#v", got)
 	}
 }
 

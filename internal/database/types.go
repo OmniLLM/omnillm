@@ -71,7 +71,7 @@ type ProviderConfigRecord struct {
 type ModelConfigRecord struct {
 	InstanceID string    `json:"instance_id"`
 	ModelID    string    `json:"model_id"`
-	Version    string    `json:"version"`
+	Version    int       `json:"version"`
 	ConfigData string    `json:"config_data"` // JSON string - for model-specific configuration
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
