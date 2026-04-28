@@ -2848,6 +2848,31 @@ function ProviderCard({
           </div>
         </div>
 
+        {/* Instance info */}
+        <div
+          style={{
+            display: "flex",
+            gap: 16,
+            marginBottom: 12,
+            fontSize: 11,
+            color: "var(--color-text-tertiary)",
+            fontFamily: "var(--font-mono)",
+          }}
+        >
+          <span>
+            <span style={{ color: "var(--color-text-secondary)" }}>
+              instance:{" "}
+            </span>
+            {provider.id}
+          </span>
+          <span>
+            <span style={{ color: "var(--color-text-secondary)" }}>
+              prefix:{" "}
+            </span>
+            {provider.subtitle || provider.id}
+          </span>
+        </div>
+
         {/* Model progress */}
         {provider.authStatus === "authenticated"
           && provider.totalModelCount !== undefined
