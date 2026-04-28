@@ -2,6 +2,7 @@ package shared
 
 import (
 	"omnillm/internal/cif"
+	"strings"
 	"testing"
 )
 
@@ -112,6 +113,17 @@ func TestNormalizeOpenAICompatibleAPIFormat(t *testing.T) {
 		if got := NormalizeOpenAICompatibleAPIFormat(input); got != want {
 			t.Fatalf("NormalizeOpenAICompatibleAPIFormat(%q) = %q, want %q", input, got, want)
 		}
+	}
+}
+
+func TestTruncateOpenAIUserID_TrimAndCapLength(t *testing.T) {
+	longUserID := "  " + strings.Repeat("u", 80) + "  "
+	got := TruncateOpenAIUserID(longUserID)
+	if len(got) != 64 {
+		t.Fatalf("expected truncated length 64, got %d", len(got))
+	}
+	if got != strings.Repeat("u", 64) {
+		t.Fatalf("unexpected truncated user id: %q", got)
 	}
 }
 

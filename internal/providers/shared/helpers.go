@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+const openAIMaxUserIDLength = 64
+
 // RandomID generates a random hexadecimal ID string.
 func RandomID() string {
 	return fmt.Sprintf("%x%x", time.Now().UnixNano(), rand.Int63())
@@ -32,6 +34,16 @@ func ShortTokenSuffix(token string) string {
 		return "token"
 	}
 	return trimmed
+}
+
+// TruncateOpenAIUserID trims whitespace and enforces the OpenAI-compatible
+// user identifier length limit before forwarding requests upstream.
+func TruncateOpenAIUserID(userID string) string {
+	trimmed := strings.TrimSpace(userID)
+	if len(trimmed) <= openAIMaxUserIDLength {
+		return trimmed
+	}
+	return trimmed[:openAIMaxUserIDLength]
 }
 
 // IsReasoningModel returns true for models that do not support the temperature
