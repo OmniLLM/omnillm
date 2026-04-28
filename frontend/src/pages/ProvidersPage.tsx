@@ -32,6 +32,7 @@ import {
 import { EmptyState } from "@/components/EmptyState"
 import { Spinner } from "@/components/Spinner"
 import { createLogger } from "@/lib/logger"
+import { useConfirm } from "@/lib/useConfirm"
 import { AuthFlowBanner } from "@/pages/providers/components/AuthFlowBanner"
 import { GroupHeader } from "@/pages/providers/components/GroupHeader"
 import { PriorityModal } from "@/pages/providers/components/PriorityModal"
@@ -2527,6 +2528,7 @@ function ProviderCard({
   priorityIndex: number
   multiProvider: boolean
 }) {
+  const confirm = useConfirm()
   const [showAuthForm, setShowAuthForm] = useState(false)
   const [editingName, setEditingName] = useState(false)
   const [nameInput, setNameInput] = useState(provider.name)
@@ -2967,8 +2969,14 @@ function ProviderCard({
           <button
             className="btn btn-danger btn-sm"
             disabled={isFlowRunning}
-            onClick={() => {
-              if (confirm(`Delete "${provider.name}"?`)) onDelete(provider.id)
+            onClick={async () => {
+              const ok = await confirm({
+                title: "Delete provider",
+                message: `Are you sure you want to delete "${provider.name}"? This cannot be undone.`,
+                danger: true,
+                confirmLabel: "Delete",
+              })
+              if (ok) onDelete(provider.id)
             }}
           >
             Delete
