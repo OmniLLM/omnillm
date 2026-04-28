@@ -637,11 +637,11 @@ export function ChatPage({ showToast }: ChatPageProps) {
                 }}
               >
                 <div
+                  className="chat-bubble-shell"
                   style={{
                     display: "flex",
                     alignItems: "flex-start",
                     gap: 12,
-                    maxWidth: "75%",
                     flexDirection:
                       message.role === "user" ? "row-reverse" : "row",
                   }}
@@ -692,11 +692,11 @@ export function ChatPage({ showToast }: ChatPageProps) {
               style={{ display: "flex", justifyContent: "flex-start" }}
             >
               <div
+                className="chat-bubble-shell"
                 style={{
                   display: "flex",
                   alignItems: "flex-start",
                   gap: 12,
-                  maxWidth: "75%",
                 }}
               >
                 <MessageAvatar role="assistant" />

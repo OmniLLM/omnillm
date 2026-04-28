@@ -322,15 +322,7 @@ export function VirtualModelPage({ showToast }: Props) {
         </button>
       </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns:
-            isEditing ? "minmax(320px, 380px) minmax(0, 1fr)" : "1fr",
-          gap: 24,
-          alignItems: "start",
-        }}
-      >
+      <div className={`vm-editor-grid${isEditing ? " editing" : ""}`}>
         <section className="panel" style={{ padding: 20 }}>
           <div
             style={{

@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   SlidersHorizontal,
+  Menu,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 
@@ -17,6 +18,7 @@ import { MuiThemeWrapper } from "@/components/MuiThemeWrapper"
 import { useToast, ToastContainer } from "@/components/Toast"
 import { createLogger } from "@/lib/logger"
 import { ConfirmProvider } from "@/lib/useConfirm"
+import { useMediaQuery } from "@/lib/useMediaQuery"
 import { ChatPage } from "@/pages/ChatPage"
 import { ConfigPage } from "@/pages/ConfigPage"
 import { LoggingPage } from "@/pages/LoggingPage"
@@ -116,6 +118,23 @@ export default function AppComponent() {
   const [theme, setTheme] = useState<Theme>(loadTheme())
   const [sidebarCollapsed, setSidebarCollapsed] = useState(loadSidebarCollapsed)
   const [toggleHovered, setToggleHovered] = useState(false)
+  const isMobile = useMediaQuery("(max-width: 768px)")
+  const [mobileOpen, setMobileOpen] = useState(false)
+
+  // Auto-collapse mobile drawer on tab change
+  useEffect(() => {
+    if (isMobile) setMobileOpen(false)
+  }, [tab, isMobile])
+
+  // ESC closes mobile drawer
+  useEffect(() => {
+    if (!mobileOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMobileOpen(false)
+    }
+    document.addEventListener("keydown", onKey)
+    return () => document.removeEventListener("keydown", onKey)
+  }, [mobileOpen])
 
   useEffect(() => {
     log.info("initializing", {
@@ -171,6 +190,11 @@ export default function AppComponent() {
   const currentNavItem = NAV_ITEMS.find((n) => n.id === tab) ?? NAV_ITEMS[0]
   const Icon = currentNavItem.icon
 
+  // On mobile, the sidebar is an overlay drawer driven by `mobileOpen`.
+  // On desktop, it follows the persistent `sidebarCollapsed` preference.
+  const effectiveCollapsed = isMobile ? !mobileOpen : sidebarCollapsed
+  const sidebarOverlay = isMobile && mobileOpen
+
   return (
     <ConfirmProvider>
       <div
@@ -184,13 +208,13 @@ export default function AppComponent() {
         <aside
           className="app-sidebar"
           style={{
-            width: sidebarCollapsed ? 0 : SIDEBAR_WIDTH,
-            minWidth: sidebarCollapsed ? 0 : SIDEBAR_WIDTH,
+            width: effectiveCollapsed ? 0 : SIDEBAR_WIDTH,
+            minWidth: effectiveCollapsed ? 0 : SIDEBAR_WIDTH,
             flexShrink: 0,
             background:
-              sidebarCollapsed ? "transparent" : "var(--color-surface)",
+              effectiveCollapsed ? "transparent" : "var(--color-surface)",
             borderRight:
-              sidebarCollapsed ? "none" : "1px solid var(--color-separator)",
+              effectiveCollapsed ? "none" : "1px solid var(--color-separator)",
             display: "flex",
             flexDirection: "column",
             position: "fixed",
@@ -202,7 +226,7 @@ export default function AppComponent() {
             transition: "width 0.2s ease, min-width 0.2s ease",
           }}
         >
-          {!sidebarCollapsed && (
+          {!effectiveCollapsed && (
             <>
               <div
                 style={{
@@ -337,51 +361,68 @@ export default function AppComponent() {
           )}
         </aside>
 
-        <button
-          onClick={toggleSidebar}
-          onMouseEnter={() => setToggleHovered(true)}
-          onMouseLeave={() => setToggleHovered(false)}
-          title={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
-          aria-label={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
-          style={{
-            position: "fixed",
-            top: "50%",
-            left: sidebarCollapsed ? 0 : SIDEBAR_WIDTH - 12,
-            transform: "translateY(-50%)",
-            width: 24,
-            height: 72,
-            borderRadius: "0 8px 8px 0",
-            border: "1px solid var(--color-separator)",
-            borderLeft: "none",
-            background:
-              toggleHovered ? "var(--color-blue)" : "var(--color-surface)",
-            color: toggleHovered ? "white" : "var(--color-text-tertiary)",
-            boxShadow:
-              toggleHovered ? "0 2px 8px rgba(56,189,248,0.3)" : "none",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            transition:
-              "left 0.2s ease, background 0.15s ease, color 0.15s ease",
-            zIndex: 41,
-            padding: 0,
-          }}
-        >
-          {sidebarCollapsed ?
-            <ChevronRight size={14} strokeWidth={2.5} />
-          : <ChevronLeft size={14} strokeWidth={2.5} />}
-        </button>
+        {sidebarOverlay && (
+          <div
+            onClick={() => setMobileOpen(false)}
+            aria-hidden="true"
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(1,4,9,0.5)",
+              backdropFilter: "blur(2px)",
+              zIndex: 39,
+            }}
+          />
+        )}
+
+        {!isMobile && (
+          <button
+            onClick={toggleSidebar}
+            onMouseEnter={() => setToggleHovered(true)}
+            onMouseLeave={() => setToggleHovered(false)}
+            title={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
+            aria-label={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
+            style={{
+              position: "fixed",
+              top: "50%",
+              left: sidebarCollapsed ? 0 : SIDEBAR_WIDTH - 12,
+              transform: "translateY(-50%)",
+              width: 24,
+              height: 72,
+              borderRadius: "0 8px 8px 0",
+              border: "1px solid var(--color-separator)",
+              borderLeft: "none",
+              background:
+                toggleHovered ? "var(--color-blue)" : "var(--color-surface)",
+              color: toggleHovered ? "white" : "var(--color-text-tertiary)",
+              boxShadow:
+                toggleHovered ? "0 2px 8px rgba(56,189,248,0.3)" : "none",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transition:
+                "left 0.2s ease, background 0.15s ease, color 0.15s ease",
+              zIndex: 41,
+              padding: 0,
+            }}
+          >
+            {sidebarCollapsed ?
+              <ChevronRight size={14} strokeWidth={2.5} />
+            : <ChevronLeft size={14} strokeWidth={2.5} />}
+          </button>
+        )}
 
         <div
           className="app-main"
           style={{
             flex: 1,
-            marginLeft: sidebarCollapsed ? 0 : SIDEBAR_WIDTH,
+            marginLeft: isMobile || sidebarCollapsed ? 0 : SIDEBAR_WIDTH,
             display: "flex",
             flexDirection: "column",
             minHeight: "100vh",
             transition: "margin-left 0.2s ease",
+            minWidth: 0,
           }}
         >
           <header
@@ -402,6 +443,17 @@ export default function AppComponent() {
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {isMobile && (
+                <button
+                  onClick={() => setMobileOpen((v) => !v)}
+                  className="btn btn-icon btn-icon-ghost"
+                  aria-label={mobileOpen ? "Close menu" : "Open menu"}
+                  aria-expanded={mobileOpen}
+                  style={{ marginRight: 4 }}
+                >
+                  <Menu size={16} />
+                </button>
+              )}
               <span
                 style={{
                   fontSize: 12,
