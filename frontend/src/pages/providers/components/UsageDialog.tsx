@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-floating-promises,unicorn/consistent-function-scoping,no-nested-ternary */
-import { useState } from "react"
+import { useEffect, useId, useState } from "react"
 
 import { getProviderUsage, type Provider, type UsageData } from "@/api"
 import { Spinner } from "@/components/Spinner"
@@ -9,6 +9,16 @@ export function UsageDialog({ provider }: { provider: Provider }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
+  const titleId = useId()
+
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false)
+    }
+    document.addEventListener("keydown", onKey)
+    return () => document.removeEventListener("keydown", onKey)
+  }, [open])
 
   const load = async () => {
     setLoading(true)
@@ -45,9 +55,15 @@ export function UsageDialog({ provider }: { provider: Provider }) {
             if (e.target === e.currentTarget) setOpen(false)
           }}
         >
-          <div className="dialog-box">
+          <div
+            className="dialog-box"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+          >
             <div className="dialog-header">
               <div
+                id={titleId}
                 style={{
                   fontFamily: "var(--font-display)",
                   fontWeight: 600,

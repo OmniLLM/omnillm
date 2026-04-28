@@ -300,7 +300,12 @@ export default function AppComponent() {
                   <div
                     style={{ display: "flex", alignItems: "center", gap: 8 }}
                   >
-                    <div className="status-dot status-dot-active" />
+                    <div
+                      className="status-dot status-dot-active"
+                      role="img"
+                      aria-label="Server online"
+                    />
+                    <span className="sr-only">Server online.</span>
                     {info ?
                       <span className="version-pill">
                         v{info.version} · :{info.port}
@@ -431,8 +436,15 @@ export default function AppComponent() {
               </div>
             </div>
             {info && (
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <div className="status-dot status-dot-active" />
+              <div
+                style={{ display: "flex", alignItems: "center", gap: 6 }}
+                title="Server online"
+              >
+                <div
+                  className="status-dot status-dot-active"
+                  role="img"
+                  aria-label="Server online"
+                />
                 <span
                   style={{
                     fontSize: 11,

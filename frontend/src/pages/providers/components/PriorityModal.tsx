@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useId, useState } from "react"
 
 import type { Provider } from "@/api"
 
@@ -13,6 +13,16 @@ export function PriorityModal({
 }) {
   const [open, setOpen] = useState(false)
   const [ordered, setOrdered] = useState<Array<Provider>>([])
+  const titleId = useId()
+
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false)
+    }
+    document.addEventListener("keydown", onKey)
+    return () => document.removeEventListener("keydown", onKey)
+  }, [open])
 
   const openModal = () => {
     const snapshot = providers
@@ -56,9 +66,16 @@ export function PriorityModal({
             if (e.target === e.currentTarget) setOpen(false)
           }}
         >
-          <div className="dialog-box" style={{ maxWidth: 420 }}>
+          <div
+            className="dialog-box"
+            style={{ maxWidth: 420 }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+          >
             <div className="dialog-header">
               <div
+                id={titleId}
                 style={{
                   fontFamily: "var(--font-display)",
                   fontWeight: 600,
@@ -71,6 +88,7 @@ export function PriorityModal({
               <button
                 className="btn btn-ghost btn-sm"
                 onClick={() => setOpen(false)}
+                aria-label="Close dialog"
               >
                 ✕
               </button>
