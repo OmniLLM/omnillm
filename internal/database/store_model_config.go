@@ -1,6 +1,10 @@
 package database
 
-import "database/sql"
+import (
+	"database/sql"
+	"fmt"
+	"strconv"
+)
 
 // Model config operations
 type ModelConfigStore struct {
@@ -55,13 +59,18 @@ func (mcs *ModelConfigStore) GetAllByInstance(instanceID string) ([]ModelConfigR
 }
 
 func (mcs *ModelConfigStore) SetVersion(instanceID, modelID, version string) error {
-	_, err := mcs.db.db.Exec(`
+	versionInt, err := strconv.Atoi(version)
+	if err != nil {
+		return fmt.Errorf("invalid model version %q: %w", version, err)
+	}
+
+	_, err = mcs.db.db.Exec(`
 		INSERT INTO model_configs (instance_id, model_id, version, updated_at)
 		VALUES (?, ?, ?, datetime('now'))
 		ON CONFLICT(instance_id, model_id) DO UPDATE SET
 			version = excluded.version,
 			updated_at = datetime('now')
-	`, instanceID, modelID, version)
+	`, instanceID, modelID, versionInt)
 	return err
 }
 

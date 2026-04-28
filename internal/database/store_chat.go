@@ -37,7 +37,7 @@ func (cs *ChatStore) TouchSession(sessionID string) error {
 func (cs *ChatStore) ListSessions() ([]ChatSessionRecord, error) {
 	rows, err := cs.db.db.Query(`
 		SELECT session_id, title, model_id, api_shape, created_at, updated_at
-		FROM chat_sessions ORDER BY updated_at DESC
+		FROM chat_sessions ORDER BY updated_at DESC, session_id ASC
 	`)
 	if err != nil {
 		return nil, err
@@ -99,7 +99,7 @@ func (cs *ChatStore) AddMessage(messageID, sessionID, role, content string) erro
 func (cs *ChatStore) GetMessages(sessionID string) ([]ChatMessageRecord, error) {
 	rows, err := cs.db.db.Query(`
 		SELECT message_id, session_id, role, content, created_at
-		FROM chat_messages WHERE session_id = ? ORDER BY created_at ASC
+		FROM chat_messages WHERE session_id = ? ORDER BY created_at ASC, message_id ASC
 	`, sessionID)
 	if err != nil {
 		return nil, err
