@@ -12,8 +12,8 @@
   --color-separator-opaque: #30363d;
 
   --color-text:             #e6edf3;
-  --color-text-secondary:   #8b949e;
-  --color-text-tertiary:    #6e7681;
+  --color-text-secondary:   #9ba4ae;
+  --color-text-tertiary:    #8b94a3;
 
   --color-blue:             #58a6ff;
   --color-blue-dim:         #388bfd;
@@ -1030,6 +1030,34 @@ header :focus-visible {
   gap: 10px;
   padding: 40px 20px;
   text-align: center;
+}
+
+/* ─── Responsive grid helper ─────────────────────────────────────────────── */
+
+.responsive-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.responsive-grid-lg {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+/* ─── Visually-hidden utility (accessible labels) ───────────────────────── */
+
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
 }
 
 .empty-state-icon {
