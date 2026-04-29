@@ -47,20 +47,12 @@ func convertCanonicalToolChoiceToOpenAI(toolChoice interface{}, toolNameMapper *
 	}
 }
 
-// copilotModelUsesMaxCompletionTokens returns true for models that require
-// "max_completion_tokens" instead of the legacy "max_tokens" parameter.
-// This includes o-series reasoning models and the gpt-5 family.
 func copilotModelUsesMaxCompletionTokens(model string) bool {
 	lower := strings.ToLower(model)
-	// o-series reasoning models (o1, o1-mini, o3, o3-mini, o4-mini, …)
-	if strings.HasPrefix(lower, "o1") || strings.HasPrefix(lower, "o3") || strings.HasPrefix(lower, "o4") {
-		return true
-	}
-	// gpt-5 and later generations
-	if strings.HasPrefix(lower, "gpt-5") {
-		return true
-	}
-	return false
+	return strings.HasPrefix(lower, "o1") ||
+		strings.HasPrefix(lower, "o3") ||
+		strings.HasPrefix(lower, "o4") ||
+		shared.IsGPT5Family(model)
 }
 
 func (a *CopilotAdapter) convertCIFToOpenAI(request *cif.CanonicalRequest, toolNameMapper *copilotToolNameMapper) map[string]interface{} {

@@ -46,6 +46,11 @@ func TruncateOpenAIUserID(userID string) string {
 	return trimmed[:openAIMaxUserIDLength]
 }
 
+// IsGPT5Family reports whether model belongs to the GPT-5 family.
+func IsGPT5Family(model string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(model)), "gpt-5")
+}
+
 // IsReasoningModel returns true for models that do not support the temperature
 // or top_p sampling parameters (OpenAI o-series, gpt-5 family, and Azure
 // Responses API-only models like gpt-5.4-pro / gpt-5.1-codex-max).

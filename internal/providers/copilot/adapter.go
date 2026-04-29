@@ -13,6 +13,7 @@ import (
 	"omnillm/internal/cif"
 	"omnillm/internal/lib/modelrouting"
 	"omnillm/internal/providers/openaicompat"
+	"omnillm/internal/providers/shared"
 	"omnillm/internal/providers/types"
 
 	"github.com/rs/zerolog/log"
@@ -32,7 +33,7 @@ func (a *CopilotAdapter) Execute(ctx context.Context, request *cif.CanonicalRequ
 	if request != nil {
 		model = a.RemapModel(request.Model)
 	}
-	if !a.forceChatCompletions(request) && a.shouldUseResponsesAPI(model) {
+	if !a.forceChatCompletions(request) && shared.IsGPT5Family(model) {
 		return a.executeResponses(ctx, request)
 	}
 	return a.executeOpenAI(ctx, request)
@@ -43,22 +44,12 @@ func (a *CopilotAdapter) ExecuteStream(ctx context.Context, request *cif.Canonic
 	if request != nil {
 		model = a.RemapModel(request.Model)
 	}
-	if !a.forceChatCompletions(request) && a.shouldUseResponsesAPI(model) {
+	if !a.forceChatCompletions(request) && shared.IsGPT5Family(model) {
 		return a.executeResponsesStream(ctx, request)
 	}
 	return a.executeOpenAIStream(ctx, request)
 }
 
-// shouldUseResponsesAPI returns true for Copilot-hosted models that are only
-// reachable via /responses. The GPT-5 family is currently Responses-only on
-// Copilot; the prefix match is intentionally generic so future GPT-5.x
-// variants don't regress like gpt-5.5 did.
-func (a *CopilotAdapter) shouldUseResponsesAPI(model string) bool {
-	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(model)), "gpt-5")
-}
-
-// forceChatCompletions honours an explicit caller override that disables the
-// Responses-API auto-routing.
 func (a *CopilotAdapter) forceChatCompletions(request *cif.CanonicalRequest) bool {
 	return request != nil &&
 		request.Extensions != nil &&
@@ -67,8 +58,7 @@ func (a *CopilotAdapter) forceChatCompletions(request *cif.CanonicalRequest) boo
 }
 
 // isUnsupportedChatCompletionsModel detects Copilot's
-// `unsupported_api_for_model` 400 so we can fall back to /responses for
-// Responses-only models that don't match shouldUseResponsesAPI.
+// `unsupported_api_for_model` 400 so we can fall back to /responses.
 func (a *CopilotAdapter) isUnsupportedChatCompletionsModel(apiErr *copilotAPIError) bool {
 	if apiErr == nil || apiErr.statusCode != http.StatusBadRequest {
 		return false
@@ -282,17 +272,10 @@ func (a *CopilotAdapter) refreshTokenForRetry(endpoint string) bool {
 	return true
 }
 
-// responsesURL appends the Copilot Responses-API path to the provider base URL.
 func (a *CopilotAdapter) responsesURL() string {
 	return fmt.Sprintf("%s/responses", a.provider.GetBaseURL())
 }
 
-// buildResponsesPayload constructs the Copilot Responses-API payload by
-// delegating to the shared openaicompat helper. Tool name sanitization that
-// applies to /chat/completions is intentionally skipped here — the Responses
-// path forwards canonical tool names directly. If Copilot ever enforces the
-// same name pattern on /responses, plumb the existing copilotToolNameMapper
-// through this call.
 func (a *CopilotAdapter) buildResponsesPayload(request *cif.CanonicalRequest, stream bool) map[string]interface{} {
 	return openaicompat.BuildResponsesPayload(a.RemapModel(request.Model), request, stream, openaicompat.ResponsesConfig{})
 }
