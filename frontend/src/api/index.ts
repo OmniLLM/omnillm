@@ -505,6 +505,91 @@ export const getUsage = () => apiFetch<UsageData>("/usage")
 export const getProviderUsage = (id: string) =>
   apiFetch<UsageData>(`/api/admin/providers/${id}/usage`)
 
+// ─── Metering ─────────────────────────────────────────────────────────────────
+
+export interface MeteringRecord {
+  id: number
+  request_id: string
+  model_id: string
+  model_used: string
+  provider_id: string
+  api_shape: string
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+  latency_ms: number
+  is_stream: boolean
+  status_code: number
+  error_message: string
+  created_at: string
+}
+
+export interface MeteringStats {
+  total_requests: number
+  total_input_tokens: number
+  total_output_tokens: number
+  total_tokens: number
+  avg_latency_ms: number
+  error_count: number
+}
+
+export interface MeteringBreakdownItem {
+  model_id?: string
+  provider_id?: string
+  requests: number
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+  avg_latency_ms: number
+}
+
+export interface MeteringLogsResponse {
+  items: Array<MeteringRecord> | null
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface MeteringQuery {
+  model_id?: string
+  provider_id?: string
+  api_shape?: string
+  since?: string
+  until?: string
+  page?: number
+  page_size?: number
+}
+
+function buildQueryString(params: MeteringQuery): string {
+  const search = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === "") continue
+    search.set(key, String(value))
+  }
+  const query = search.toString()
+  return query ? `?${query}` : ""
+}
+
+export const getMeteringLogs = (params: MeteringQuery = {}) =>
+  apiFetch<MeteringLogsResponse>(
+    `/api/admin/metering/logs${buildQueryString(params)}`,
+  )
+
+export const getMeteringStats = (params: MeteringQuery = {}) =>
+  apiFetch<MeteringStats>(
+    `/api/admin/metering/stats${buildQueryString(params)}`,
+  )
+
+export const getMeteringByModel = (params: MeteringQuery = {}) =>
+  apiFetch<{ items: Array<MeteringBreakdownItem> | null }>(
+    `/api/admin/metering/by-model${buildQueryString(params)}`,
+  )
+
+export const getMeteringByProvider = (params: MeteringQuery = {}) =>
+  apiFetch<{ items: Array<MeteringBreakdownItem> | null }>(
+    `/api/admin/metering/by-provider${buildQueryString(params)}`,
+  )
+
 // ─── Log level ────────────────────────────────────────────────────────────────
 
 export const getLogLevel = async () => {

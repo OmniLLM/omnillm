@@ -129,3 +129,21 @@ type VirtualModelUpstreamRecord struct {
 	Priority       int       `json:"priority"`
 	CreatedAt      time.Time `json:"created_at"`
 }
+
+// MeteringRecord holds per-request usage data recorded after each API call.
+type MeteringRecord struct {
+	ID           int64     `json:"id"`
+	RequestID    string    `json:"request_id"`
+	ModelID      string    `json:"model_id"`      // canonical model name as requested
+	ModelUsed    string    `json:"model_used"`    // actual model reported by provider
+	ProviderID   string    `json:"provider_id"`   // provider instance_id
+	APIShape     string    `json:"api_shape"`     // "openai" | "anthropic"
+	InputTokens  int       `json:"input_tokens"`
+	OutputTokens int       `json:"output_tokens"`
+	TotalTokens  int       `json:"total_tokens"`
+	LatencyMS    int64     `json:"latency_ms"`
+	IsStream     bool      `json:"is_stream"`
+	StatusCode   int       `json:"status_code"`  // 200 on success, 4xx/5xx on error
+	ErrorMessage string    `json:"error_message"`
+	CreatedAt    time.Time `json:"created_at"`
+}

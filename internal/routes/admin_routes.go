@@ -58,6 +58,9 @@ func SetupAdminRoutes(router *gin.RouterGroup, port int) {
 	// Logs streaming
 	router.GET("/logs/stream", handleLogsStream)
 
+	// Metering / usage data
+	SetupMeteringRoutes(router)
+
 	// Config file management
 	router.GET("/config", handleGetConfigFiles)
 	router.GET("/config/:name", handleGetConfig)

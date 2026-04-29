@@ -180,6 +180,24 @@ func (db *Database) createTables() error {
 			updated_at       DATETIME NOT NULL DEFAULT (datetime('now')),
 			FOREIGN KEY (virtual_model_id) REFERENCES virtual_models (virtual_model_id) ON DELETE CASCADE
 		)`,
+
+		// Per-request metering log — one row per completed API call.
+		`CREATE TABLE IF NOT EXISTS request_logs (
+			id            INTEGER PRIMARY KEY AUTOINCREMENT,
+			request_id    TEXT    NOT NULL DEFAULT '',
+			model_id      TEXT    NOT NULL DEFAULT '',
+			model_used    TEXT    NOT NULL DEFAULT '',
+			provider_id   TEXT    NOT NULL DEFAULT '',
+			api_shape     TEXT    NOT NULL DEFAULT 'openai',
+			input_tokens  INTEGER NOT NULL DEFAULT 0,
+			output_tokens INTEGER NOT NULL DEFAULT 0,
+			total_tokens  INTEGER NOT NULL DEFAULT 0,
+			latency_ms    INTEGER NOT NULL DEFAULT 0,
+			is_stream     INTEGER NOT NULL DEFAULT 0,
+			status_code   INTEGER NOT NULL DEFAULT 200,
+			error_message TEXT    NOT NULL DEFAULT '',
+			created_at    DATETIME NOT NULL DEFAULT (datetime('now'))
+		)`,
 	}
 
 	for _, q := range tables {
@@ -205,6 +223,9 @@ func (db *Database) createTables() error {
 		`CREATE INDEX IF NOT EXISTS idx_chat_messages_session_created_at  ON chat_messages (session_id, created_at, message_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_virtual_model_upstreams_vmodel_id ON virtual_model_upstreams (virtual_model_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_virtual_model_upstreams_ordering  ON virtual_model_upstreams (virtual_model_id, priority, id)`,
+		`CREATE INDEX IF NOT EXISTS idx_request_logs_created_at           ON request_logs (created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_request_logs_model_created_at     ON request_logs (model_id, created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_request_logs_provider_created_at  ON request_logs (provider_id, created_at)`,
 	}
 
 	for _, q := range indexes {
@@ -272,6 +293,30 @@ var migrations = []migration{
 		`CREATE INDEX IF NOT EXISTS idx_chat_sessions_updated_at ON chat_sessions (updated_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_messages_session_created_at ON chat_messages (session_id, created_at, message_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_virtual_model_upstreams_ordering ON virtual_model_upstreams (virtual_model_id, priority, id)`,
+	}},
+	// v7: add request_logs table for per-request metering. The table is also
+	// created in createTables for fresh databases; this migration handles
+	// existing databases that pre-date it.
+	{7, []string{
+		`CREATE TABLE IF NOT EXISTS request_logs (
+			id            INTEGER PRIMARY KEY AUTOINCREMENT,
+			request_id    TEXT    NOT NULL DEFAULT '',
+			model_id      TEXT    NOT NULL DEFAULT '',
+			model_used    TEXT    NOT NULL DEFAULT '',
+			provider_id   TEXT    NOT NULL DEFAULT '',
+			api_shape     TEXT    NOT NULL DEFAULT 'openai',
+			input_tokens  INTEGER NOT NULL DEFAULT 0,
+			output_tokens INTEGER NOT NULL DEFAULT 0,
+			total_tokens  INTEGER NOT NULL DEFAULT 0,
+			latency_ms    INTEGER NOT NULL DEFAULT 0,
+			is_stream     INTEGER NOT NULL DEFAULT 0,
+			status_code   INTEGER NOT NULL DEFAULT 200,
+			error_message TEXT    NOT NULL DEFAULT '',
+			created_at    DATETIME NOT NULL DEFAULT (datetime('now'))
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_request_logs_created_at          ON request_logs (created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_request_logs_model_created_at    ON request_logs (model_id, created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_request_logs_provider_created_at ON request_logs (provider_id, created_at)`,
 	}},
 }
 
