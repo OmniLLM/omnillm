@@ -197,7 +197,7 @@ func handleAnthropicNonStreamingResponse(c *gin.Context, adapter types.ProviderA
 		Int("output_tokens", outputTokens).
 		Int64("latency_ms", time.Since(startTime).Milliseconds()).
 		Msg("\x1b[32m<--\x1b[0m RESPONSE")
-	recordUsage(requestID, originalModel, response.Model, providerID, "anthropic", response.Usage, time.Since(startTime).Milliseconds(), false, http.StatusOK, "")
+	recordUsage(requestID, originalModel, response.Model, providerID, normalizeMeteringClient(c.GetHeader("User-Agent")), "anthropic", response.Usage, time.Since(startTime).Milliseconds(), false, http.StatusOK, "")
 
 	c.JSON(http.StatusOK, anthropicResp)
 	return nil
@@ -287,7 +287,7 @@ func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 					Int("output_tokens", outputTokens).
 					Int64("latency_ms", time.Since(startTime).Milliseconds()).
 					Msg("\x1b[32m<--\x1b[0m RESPONSE stream")
-				recordUsage(requestID, originalModel, modelUsed, providerID, "anthropic", endEvt.Usage, time.Since(startTime).Milliseconds(), true, http.StatusOK, "")
+				recordUsage(requestID, originalModel, modelUsed, providerID, normalizeMeteringClient(c.GetHeader("User-Agent")), "anthropic", endEvt.Usage, time.Since(startTime).Milliseconds(), true, http.StatusOK, "")
 				return false
 			}
 

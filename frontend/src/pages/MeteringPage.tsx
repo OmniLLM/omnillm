@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from "react"
 import { useTranslation } from "react-i18next"
 
 import {
+  getMeteringByClient,
   getMeteringByModel,
   getMeteringByProvider,
   getMeteringLogs,
@@ -118,7 +119,7 @@ function BreakdownTable({
   title: string
   keyLabel: string
   items: Array<MeteringBreakdownItem> | null | undefined
-  valueKey: "model_id" | "provider_id"
+  valueKey: "model_id" | "provider_id" | "client"
 }) {
   const { t } = useTranslation("metering")
   const [page, setPage] = useState(1)
@@ -328,6 +329,7 @@ export function MeteringPage({
   const [logs, setLogs] = useState<MeteringLogsResponse | null>(null)
   const [byModel, setByModel] = useState<Array<MeteringBreakdownItem>>([])
   const [byProvider, setByProvider] = useState<Array<MeteringBreakdownItem>>([])
+  const [byClient, setByClient] = useState<Array<MeteringBreakdownItem>>([])
   const [modelOptions, setModelOptions] = useState<Array<string>>([])
   const [providerOptions, setProviderOptions] = useState<Array<string>>([])
 
@@ -373,6 +375,7 @@ export function MeteringPage({
       getMeteringLogs(query),
       getMeteringByModel(query),
       getMeteringByProvider(query),
+      getMeteringByClient(query),
       getMeteringModels(modelOptionsQuery),
       getMeteringProviders(providerOptionsQuery),
     ])
@@ -382,6 +385,7 @@ export function MeteringPage({
           nextLogs,
           nextByModel,
           nextByProvider,
+          nextByClient,
           nextModels,
           nextProviders,
         ]) => {
@@ -390,6 +394,7 @@ export function MeteringPage({
           setLogs({ ...nextLogs, items: nextLogs.items ?? [] })
           setByModel(nextByModel.items ?? [])
           setByProvider(nextByProvider.items ?? [])
+          setByClient(nextByClient.items ?? [])
           setModelOptions(nextModels.items ?? [])
           setProviderOptions(nextProviders.items ?? [])
         },
@@ -587,6 +592,12 @@ export function MeteringPage({
           keyLabel={t("table.provider")}
           items={byProvider}
           valueKey="provider_id"
+        />
+        <BreakdownTable
+          title={t("byClient")}
+          keyLabel={t("table.client")}
+          items={byClient}
+          valueKey="client"
         />
       </div>
 

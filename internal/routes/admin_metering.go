@@ -14,6 +14,7 @@ func SetupMeteringRoutes(router *gin.RouterGroup) {
 	router.GET("/metering/stats", handleMeteringStats)
 	router.GET("/metering/by-model", handleMeteringByModel)
 	router.GET("/metering/by-provider", handleMeteringByProvider)
+	router.GET("/metering/by-client", handleMeteringByClient)
 	router.GET("/metering/models", handleMeteringModels)
 	router.GET("/metering/providers", handleMeteringProviders)
 }
@@ -101,6 +102,20 @@ func handleMeteringByProvider(c *gin.Context) {
 
 	db := database.GetDatabase()
 	breakdown, err := db.GetMeteringByProvider(f)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"items": breakdown})
+}
+
+// GET /api/admin/metering/by-client?since=&until=
+func handleMeteringByClient(c *gin.Context) {
+	f := parseMeteringFilter(c)
+
+	db := database.GetDatabase()
+	breakdown, err := db.GetMeteringByClient(f)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

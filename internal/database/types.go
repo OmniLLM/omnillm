@@ -137,6 +137,7 @@ type MeteringRecord struct {
 	ModelID      string    `json:"model_id"`      // canonical model name as requested
 	ModelUsed    string    `json:"model_used"`    // actual model reported by provider
 	ProviderID   string    `json:"provider_id"`   // provider instance_id
+	Client       string    `json:"client"`
 	APIShape     string    `json:"api_shape"`     // "openai" | "anthropic"
 	InputTokens  int       `json:"input_tokens"`
 	OutputTokens int       `json:"output_tokens"`

@@ -513,6 +513,7 @@ export interface MeteringRecord {
   model_id: string
   model_used: string
   provider_id: string
+  client: string
   api_shape: string
   input_tokens: number
   output_tokens: number
@@ -536,6 +537,7 @@ export interface MeteringStats {
 export interface MeteringBreakdownItem {
   model_id?: string
   provider_id?: string
+  client?: string
   requests: number
   input_tokens: number
   output_tokens: number
@@ -588,6 +590,11 @@ export const getMeteringByModel = (params: MeteringQuery = {}) =>
 export const getMeteringByProvider = (params: MeteringQuery = {}) =>
   apiFetch<{ items: Array<MeteringBreakdownItem> | null }>(
     `/api/admin/metering/by-provider${buildQueryString(params)}`,
+  )
+
+export const getMeteringByClient = (params: MeteringQuery = {}) =>
+  apiFetch<{ items: Array<MeteringBreakdownItem> | null }>(
+    `/api/admin/metering/by-client${buildQueryString(params)}`,
   )
 
 export const getMeteringModels = (params: MeteringQuery = {}) =>

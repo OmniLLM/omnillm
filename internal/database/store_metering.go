@@ -10,11 +10,11 @@ import (
 func (db *Database) InsertMeteringRecord(r MeteringRecord) error {
 	_, err := db.db.Exec(
 		`INSERT INTO request_logs
-			(request_id, model_id, model_used, provider_id, api_shape,
-			 input_tokens, output_tokens, total_tokens,
-			 latency_ms, is_stream, status_code, error_message, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.RequestID, r.ModelID, r.ModelUsed, r.ProviderID, r.APIShape,
+				(request_id, model_id, model_used, provider_id, client, api_shape,
+				 input_tokens, output_tokens, total_tokens,
+				 latency_ms, is_stream, status_code, error_message, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.RequestID, r.ModelID, r.ModelUsed, r.ProviderID, r.Client, r.APIShape,
 		r.InputTokens, r.OutputTokens, r.TotalTokens,
 		r.LatencyMS, boolToInt(r.IsStream), r.StatusCode, r.ErrorMessage,
 		r.CreatedAt.UTC().Format(time.RFC3339),
@@ -43,7 +43,7 @@ func (db *Database) ListMeteringRecords(f MeteringFilter, limit, offset int) ([]
 	}
 
 	// rows
-	querySQL := `SELECT id, request_id, model_id, model_used, provider_id, api_shape,
+	querySQL := `SELECT id, request_id, model_id, model_used, provider_id, client, api_shape,
 		input_tokens, output_tokens, total_tokens, latency_ms, is_stream,
 		status_code, error_message, created_at
 		FROM request_logs` + where +
@@ -62,7 +62,7 @@ func (db *Database) ListMeteringRecords(f MeteringFilter, limit, offset int) ([]
 		var isStream int
 		var createdAt string
 		if err := rows.Scan(
-			&r.ID, &r.RequestID, &r.ModelID, &r.ModelUsed, &r.ProviderID, &r.APIShape,
+			&r.ID, &r.RequestID, &r.ModelID, &r.ModelUsed, &r.ProviderID, &r.Client, &r.APIShape,
 			&r.InputTokens, &r.OutputTokens, &r.TotalTokens, &r.LatencyMS, &isStream,
 			&r.StatusCode, &r.ErrorMessage, &createdAt,
 		); err != nil {
@@ -171,6 +171,43 @@ func (db *Database) GetMeteringByProvider(f MeteringFilter) ([]ProviderBreakdown
 	for rows.Next() {
 		var b ProviderBreakdown
 		if err := rows.Scan(&b.ProviderID, &b.Requests, &b.InputTokens, &b.OutputTokens, &b.TotalTokens, &b.AvgLatencyMS); err != nil {
+			return nil, err
+		}
+		result = append(result, b)
+	}
+	return result, rows.Err()
+}
+
+// ClientBreakdown holds per-client aggregate usage.
+type ClientBreakdown struct {
+	Client       string  `json:"client"`
+	Requests     int64   `json:"requests"`
+	InputTokens  int64   `json:"input_tokens"`
+	OutputTokens int64   `json:"output_tokens"`
+	TotalTokens  int64   `json:"total_tokens"`
+	AvgLatencyMS float64 `json:"avg_latency_ms"`
+}
+
+// GetMeteringByClient returns per-client breakdown for the given filter window.
+func (db *Database) GetMeteringByClient(f MeteringFilter) ([]ClientBreakdown, error) {
+	where, args := meteringWhere(f)
+	sql := `SELECT client,
+		COUNT(*),
+		COALESCE(SUM(input_tokens),  0),
+		COALESCE(SUM(output_tokens), 0),
+		COALESCE(SUM(total_tokens),  0),
+		COALESCE(AVG(latency_ms),    0)
+		FROM request_logs` + where +
+		` GROUP BY client ORDER BY SUM(total_tokens) DESC`
+	rows, err := db.db.Query(sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("metering by-client: %w", err)
+	}
+	defer rows.Close()
+	var result []ClientBreakdown
+	for rows.Next() {
+		var b ClientBreakdown
+		if err := rows.Scan(&b.Client, &b.Requests, &b.InputTokens, &b.OutputTokens, &b.TotalTokens, &b.AvgLatencyMS); err != nil {
 			return nil, err
 		}
 		result = append(result, b)

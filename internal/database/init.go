@@ -188,6 +188,7 @@ func (db *Database) createTables() error {
 			model_id      TEXT    NOT NULL DEFAULT '',
 			model_used    TEXT    NOT NULL DEFAULT '',
 			provider_id   TEXT    NOT NULL DEFAULT '',
+			client        TEXT    NOT NULL DEFAULT 'unknown',
 			api_shape     TEXT    NOT NULL DEFAULT 'openai',
 			input_tokens  INTEGER NOT NULL DEFAULT 0,
 			output_tokens INTEGER NOT NULL DEFAULT 0,
@@ -304,6 +305,7 @@ var migrations = []migration{
 			model_id      TEXT    NOT NULL DEFAULT '',
 			model_used    TEXT    NOT NULL DEFAULT '',
 			provider_id   TEXT    NOT NULL DEFAULT '',
+			client        TEXT    NOT NULL DEFAULT 'unknown',
 			api_shape     TEXT    NOT NULL DEFAULT 'openai',
 			input_tokens  INTEGER NOT NULL DEFAULT 0,
 			output_tokens INTEGER NOT NULL DEFAULT 0,
@@ -317,6 +319,12 @@ var migrations = []migration{
 		`CREATE INDEX IF NOT EXISTS idx_request_logs_created_at          ON request_logs (created_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_request_logs_model_created_at    ON request_logs (model_id, created_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_request_logs_provider_created_at ON request_logs (provider_id, created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_request_logs_client_created_at   ON request_logs (client, created_at)`,
+	}},
+	// v8: add client dimension to request_logs for per-client metering breakdowns.
+	{8, []string{
+		`ALTER TABLE request_logs ADD COLUMN client TEXT NOT NULL DEFAULT 'unknown'`,
+		`CREATE INDEX IF NOT EXISTS idx_request_logs_client_created_at ON request_logs (client, created_at)`,
 	}},
 }
 
