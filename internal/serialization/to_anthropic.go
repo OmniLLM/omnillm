@@ -70,6 +70,9 @@ func SerializeToAnthropicWithSuppression(response *cif.CanonicalResponse, suppre
 	}
 
 	stopReason := convertStopReasonToAnthropic(response.StopReason)
+	if !anthropicContentHasToolUse(content) && response.StopReason == cif.StopReasonToolUse {
+		stopReason = convertStopReasonToAnthropic(cif.StopReasonEndTurn)
+	}
 
 	anthropicResp := &AnthropicResponse{
 		ID:           response.ID,
@@ -347,6 +350,15 @@ func normalizeAnthropicToolUseID(id string) string {
 	default:
 		return "toolu_" + id
 	}
+}
+
+func anthropicContentHasToolUse(content []AnthropicContentBlock) bool {
+	for _, block := range content {
+		if block.Type == "tool_use" {
+			return true
+		}
+	}
+	return false
 }
 
 func FormatAnthropicSSEData(eventType string, data interface{}) (string, error) {

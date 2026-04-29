@@ -93,6 +93,9 @@ func SerializeToOpenAI(response *cif.CanonicalResponse) (*OpenAIResponse, error)
 	}
 
 	finishReason := convertStopReasonToOpenAI(response.StopReason)
+	if len(toolCalls) == 0 && response.StopReason == cif.StopReasonToolUse {
+		finishReason = convertStopReasonToOpenAI(cif.StopReasonEndTurn)
+	}
 
 	choice := OpenAIChoice{
 		Index: 0,

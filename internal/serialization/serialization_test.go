@@ -58,10 +58,14 @@ func TestSerializeToOpenAI_StopReasonMapping(t *testing.T) {
 	}
 
 	for _, c := range cases {
+		content := []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: "ok"}}
+		if c.reason == cif.StopReasonToolUse {
+			content = []cif.CIFContentPart{cif.CIFToolCallPart{Type: "tool_call", ToolCallID: "call_1", ToolName: "read", ToolArguments: map[string]interface{}{"file": "README.md"}}}
+		}
 		resp := &cif.CanonicalResponse{
 			ID:         "r1",
 			Model:      "gpt-4o",
-			Content:    []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: "ok"}},
+			Content:    content,
 			StopReason: c.reason,
 		}
 		out, err := SerializeToOpenAI(resp)
@@ -210,10 +214,14 @@ func TestSerializeToAnthropic_StopReasonMapping(t *testing.T) {
 	}
 
 	for _, c := range cases {
+		content := []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: "ok"}}
+		if c.reason == cif.StopReasonToolUse {
+			content = []cif.CIFContentPart{cif.CIFToolCallPart{Type: "tool_call", ToolCallID: "call_1", ToolName: "read", ToolArguments: map[string]interface{}{"file": "README.md"}}}
+		}
 		resp := &cif.CanonicalResponse{
 			ID:         "m1",
 			Model:      "claude",
-			Content:    []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: "ok"}},
+			Content:    content,
 			StopReason: c.reason,
 		}
 		out, err := SerializeToAnthropic(resp)
@@ -284,6 +292,50 @@ func TestSerializeToAnthropic_NormalizesCopilotToolUseID(t *testing.T) {
 	}
 	if out.Content[0].ID != "toolu_abc123" {
 		t.Fatalf("expected normalized tool use id, got %q", out.Content[0].ID)
+	}
+}
+
+func TestSerializeToAnthropic_DowngradesDanglingToolUseStopReason(t *testing.T) {
+	resp := &cif.CanonicalResponse{
+		ID:    "msg_dangling_tool_use",
+		Model: "claude-haiku-4.5",
+		Content: []cif.CIFContentPart{
+			cif.CIFTextPart{Type: "text", Text: "I'll inspect the repo first."},
+		},
+		StopReason: cif.StopReasonToolUse,
+	}
+
+	out, err := SerializeToAnthropic(resp)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out.StopReason == nil || *out.StopReason != "end_turn" {
+		t.Fatalf("expected dangling tool_use to downgrade to end_turn, got %#v", out.StopReason)
+	}
+	if len(out.Content) != 1 || out.Content[0].Type != "text" {
+		t.Fatalf("unexpected content payload: %#v", out.Content)
+	}
+}
+
+func TestSerializeToOpenAI_DowngradesDanglingToolUseFinishReason(t *testing.T) {
+	resp := &cif.CanonicalResponse{
+		ID:    "chatcmpl_dangling_tool_use",
+		Model: "claude-haiku-4.5",
+		Content: []cif.CIFContentPart{
+			cif.CIFTextPart{Type: "text", Text: "I'll inspect the repo first."},
+		},
+		StopReason: cif.StopReasonToolUse,
+	}
+
+	out, err := SerializeToOpenAI(resp)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(out.Choices) != 1 || out.Choices[0].FinishReason == nil || *out.Choices[0].FinishReason != "stop" {
+		t.Fatalf("expected dangling tool_use to downgrade to stop, got %#v", out.Choices)
+	}
+	if out.Choices[0].Message == nil || len(out.Choices[0].Message.ToolCalls) != 0 {
+		t.Fatalf("expected no tool calls in downgraded response, got %#v", out.Choices[0].Message)
 	}
 }
 
