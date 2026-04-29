@@ -59,10 +59,19 @@ func (a *CopilotAdapter) ExecuteStream(ctx context.Context, request *cif.Canonic
 }
 
 func (a *CopilotAdapter) shouldBufferAnthropicStreaming(request *cif.CanonicalRequest) bool {
-	return request != nil &&
-		request.Extensions != nil &&
-		request.Extensions.InboundAPIShape != nil &&
-		strings.EqualFold(strings.TrimSpace(*request.Extensions.InboundAPIShape), "anthropic")
+	if request == nil || request.Extensions == nil || request.Extensions.InboundAPIShape == nil {
+		return false
+	}
+
+	if !strings.EqualFold(strings.TrimSpace(*request.Extensions.InboundAPIShape), "anthropic") {
+		return false
+	}
+
+	// Copilot's Claude chat-completions stream carries valid incremental tool_calls,
+	// while the buffered non-streaming path can collapse into stop_reason=tool_use
+	// without an actual tool block. Preserve native streaming for Claude models.
+	model := a.RemapModel(request.Model)
+	return !strings.Contains(strings.ToLower(model), "claude")
 }
 
 func (a *CopilotAdapter) forceChatCompletions(request *cif.CanonicalRequest) bool {

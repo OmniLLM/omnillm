@@ -374,6 +374,67 @@ func TestCopilotAdapterExecuteStream_AnthropicRequestsBufferCompletedResponse(t 
 	}
 }
 
+func TestCopilotAdapterExecuteStream_AnthropicClaudeRequestsStayOnChatCompletionsStream(t *testing.T) {
+	var capturedPath string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		if r.URL.Path != "/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		body := "data: {\"id\":\"chatcmpl_tool_stream\",\"model\":\"claude-haiku-4.5\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"}}]}\n\n" +
+			"data: {\"id\":\"chatcmpl_tool_stream\",\"model\":\"claude-haiku-4.5\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"call_id\":\"call_weather\",\"type\":\"function\",\"function\":{\"name\":\"get_weather\",\"arguments\":\"{\\\"location\\\":\\\"Shanghai\\\"}\"}}]}}]}\n\n" +
+			"data: {\"id\":\"chatcmpl_tool_stream\",\"model\":\"claude-haiku-4.5\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n" +
+			"data: [DONE]\n\n"
+		_, _ = w.Write([]byte(body))
+	}))
+	defer server.Close()
+
+	provider := NewGitHubCopilotProvider("github-copilot-test", "")
+	provider.baseURL = server.URL
+	provider.token = "test-token"
+	adapter := provider.GetAdapter().(*CopilotAdapter)
+	inboundShape := "anthropic"
+
+	eventCh, err := adapter.ExecuteStream(context.Background(), &cif.CanonicalRequest{
+		Model: "claude-haiku-4.5",
+		Messages: []cif.CIFMessage{
+			cif.CIFUserMessage{Role: "user", Content: []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: "weather"}}},
+		},
+		Tools:  []cif.CIFTool{{Name: "get_weather"}},
+		Stream: true,
+		Extensions: &cif.Extensions{
+			InboundAPIShape: &inboundShape,
+		},
+	})
+	if err != nil {
+		t.Fatalf("ExecuteStream returned error: %v", err)
+	}
+
+	resp, err := shared.CollectStream(eventCh)
+	if err != nil {
+		t.Fatalf("CollectStream returned error: %v", err)
+	}
+	if capturedPath != "/chat/completions" {
+		t.Fatalf("expected Anthropic Claude request to stay on /chat/completions stream, got %q", capturedPath)
+	}
+	if resp.StopReason != cif.StopReasonToolUse {
+		t.Fatalf("expected tool_use stop reason, got %v", resp.StopReason)
+	}
+	if len(resp.Content) != 1 {
+		t.Fatalf("expected one content part, got %#v", resp.Content)
+	}
+	toolCall, ok := resp.Content[0].(cif.CIFToolCallPart)
+	if !ok {
+		t.Fatalf("expected tool call, got %T", resp.Content[0])
+	}
+	if toolCall.ToolCallID != "call_weather" || toolCall.ToolArguments["location"] != "Shanghai" {
+		t.Fatalf("unexpected tool call payload: %#v", toolCall)
+	}
+}
+
 func TestCopilotAdapterExecuteStream_OpenAIShapeGPT5StreamsResponses(t *testing.T) {
 	var capturedPath string
 	var capturedPayload map[string]interface{}
