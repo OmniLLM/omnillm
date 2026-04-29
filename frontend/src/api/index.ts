@@ -590,6 +590,16 @@ export const getMeteringByProvider = (params: MeteringQuery = {}) =>
     `/api/admin/metering/by-provider${buildQueryString(params)}`,
   )
 
+export const getMeteringModels = (params: MeteringQuery = {}) =>
+  apiFetch<{ items: Array<string> | null }>(
+    `/api/admin/metering/models${buildQueryString(params)}`,
+  )
+
+export const getMeteringProviders = (params: MeteringQuery = {}) =>
+  apiFetch<{ items: Array<string> | null }>(
+    `/api/admin/metering/providers${buildQueryString(params)}`,
+  )
+
 // ─── Log level ────────────────────────────────────────────────────────────────
 
 export const getLogLevel = async () => {
