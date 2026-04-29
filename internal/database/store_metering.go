@@ -223,3 +223,43 @@ func boolToInt(b bool) int {
 	}
 	return 0
 }
+
+// GetDistinctMeteringModels returns distinct model_ids from request_logs within the filter window.
+func (db *Database) GetDistinctMeteringModels(f MeteringFilter) ([]string, error) {
+	where, args := meteringWhere(f)
+	sql := `SELECT DISTINCT model_id FROM request_logs` + where + ` ORDER BY model_id`
+	rows, err := db.db.Query(sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("distinct models: %w", err)
+	}
+	defer rows.Close()
+	var result []string
+	for rows.Next() {
+		var m string
+		if err := rows.Scan(&m); err != nil {
+			return nil, err
+		}
+		result = append(result, m)
+	}
+	return result, rows.Err()
+}
+
+// GetDistinctMeteringProviders returns distinct provider_ids from request_logs within the filter window.
+func (db *Database) GetDistinctMeteringProviders(f MeteringFilter) ([]string, error) {
+	where, args := meteringWhere(f)
+	sql := `SELECT DISTINCT provider_id FROM request_logs` + where + ` ORDER BY provider_id`
+	rows, err := db.db.Query(sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("distinct providers: %w", err)
+	}
+	defer rows.Close()
+	var result []string
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return nil, err
+		}
+		result = append(result, p)
+	}
+	return result, rows.Err()
+}

@@ -14,6 +14,8 @@ func SetupMeteringRoutes(router *gin.RouterGroup) {
 	router.GET("/metering/stats", handleMeteringStats)
 	router.GET("/metering/by-model", handleMeteringByModel)
 	router.GET("/metering/by-provider", handleMeteringByProvider)
+	router.GET("/metering/models", handleMeteringModels)
+	router.GET("/metering/providers", handleMeteringProviders)
 }
 
 // parseMeteringFilter reads common query params shared by all metering endpoints.
@@ -105,4 +107,32 @@ func handleMeteringByProvider(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"items": breakdown})
+}
+
+// GET /api/admin/metering/models?since=&until=
+func handleMeteringModels(c *gin.Context) {
+	f := parseMeteringFilter(c)
+
+	db := database.GetDatabase()
+	models, err := db.GetDistinctMeteringModels(f)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"items": models})
+}
+
+// GET /api/admin/metering/providers?since=&until=
+func handleMeteringProviders(c *gin.Context) {
+	f := parseMeteringFilter(c)
+
+	db := database.GetDatabase()
+	providers, err := db.GetDistinctMeteringProviders(f)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"items": providers})
 }

@@ -4,6 +4,8 @@ import {
   getMeteringByModel,
   getMeteringByProvider,
   getMeteringLogs,
+  getMeteringModels,
+  getMeteringProviders,
   getMeteringStats,
   type MeteringBreakdownItem,
   type MeteringLogsResponse,
@@ -11,6 +13,7 @@ import {
   type MeteringRecord,
   type MeteringStats,
 } from "@/api"
+import { SearchableSelect } from "@/components/SearchableSelect"
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat().format(value)
@@ -116,7 +119,15 @@ function BreakdownTable({
   items: Array<MeteringBreakdownItem> | null | undefined
   valueKey: "model_id" | "provider_id"
 }) {
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(5)
   const safeItems = items ?? []
+  const totalPages = Math.max(1, Math.ceil(safeItems.length / pageSize))
+
+  useEffect(() => {
+    setPage(1)
+  }, [items, pageSize])
+  const pageItems = safeItems.slice((page - 1) * pageSize, page * pageSize)
 
   return (
     <Card>
@@ -127,6 +138,8 @@ function BreakdownTable({
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
+          gap: 12,
+          flexWrap: "wrap",
         }}
       >
         <div>
@@ -141,15 +154,40 @@ function BreakdownTable({
             {title}
           </h2>
         </div>
-        <span
-          style={{
-            fontSize: 11,
-            color: "var(--color-text-tertiary)",
-            fontFamily: "var(--font-mono)",
-          }}
-        >
-          {safeItems.length} rows
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <label
+            style={{
+              display: "flex",
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 12,
+              color: "var(--color-text-secondary)",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Rows per page
+            <select
+              className="sys-select"
+              style={{ fontSize: 12, padding: "2px 6px" }}
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+            >
+              <option value={5}>5</option>
+              <option value={10}>10</option>
+              <option value={15}>15</option>
+            </select>
+          </label>
+          <span
+            style={{
+              fontSize: 11,
+              color: "var(--color-text-tertiary)",
+              fontFamily: "var(--font-mono)",
+            }}
+          >
+            {safeItems.length} rows
+          </span>
+        </div>
       </div>
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -195,7 +233,7 @@ function BreakdownTable({
                 </td>
               </tr>
             )}
-            {safeItems.map((item, index) => (
+            {pageItems.map((item, index) => (
               <tr key={`${item[valueKey] ?? "unknown"}-${index}`}>
                 <td
                   style={{
@@ -217,6 +255,38 @@ function BreakdownTable({
           </tbody>
         </table>
       </div>
+      {totalPages > 1 && (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            padding: "10px 16px",
+            borderTop: "1px solid var(--color-separator)",
+          }}
+        >
+          <div style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
+            Page {page} of {totalPages}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              className="btn btn-ghost btn-sm"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              Previous
+            </button>
+            <button
+              className="btn btn-ghost btn-sm"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </Card>
   )
 }
@@ -247,12 +317,15 @@ export function MeteringPage({
   const [providerId, setProviderId] = useState("")
   const [apiShape, setAPIShape] = useState("")
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
   const [reloadKey, setReloadKey] = useState(0)
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState<MeteringStats | null>(null)
   const [logs, setLogs] = useState<MeteringLogsResponse | null>(null)
   const [byModel, setByModel] = useState<Array<MeteringBreakdownItem>>([])
   const [byProvider, setByProvider] = useState<Array<MeteringBreakdownItem>>([])
+  const [modelOptions, setModelOptions] = useState<Array<string>>([])
+  const [providerOptions, setProviderOptions] = useState<Array<string>>([])
 
   const query = useMemo<MeteringQuery>(
     () => ({
@@ -262,9 +335,29 @@ export function MeteringPage({
       provider_id: providerId || undefined,
       api_shape: apiShape || undefined,
       page,
-      page_size: 50,
+      page_size: pageSize,
     }),
-    [apiShape, modelId, page, providerId, reloadKey, since, until],
+    [apiShape, modelId, page, pageSize, providerId, reloadKey, since, until],
+  )
+
+  const modelOptionsQuery = useMemo<MeteringQuery>(
+    () => ({
+      since: since ? new Date(since).toISOString() : undefined,
+      until: until ? new Date(until).toISOString() : undefined,
+      provider_id: providerId || undefined,
+      api_shape: apiShape || undefined,
+    }),
+    [apiShape, providerId, reloadKey, since, until],
+  )
+
+  const providerOptionsQuery = useMemo<MeteringQuery>(
+    () => ({
+      since: since ? new Date(since).toISOString() : undefined,
+      until: until ? new Date(until).toISOString() : undefined,
+      model_id: modelId || undefined,
+      api_shape: apiShape || undefined,
+    }),
+    [apiShape, modelId, reloadKey, since, until],
   )
 
   useEffect(() => {
@@ -276,14 +369,27 @@ export function MeteringPage({
       getMeteringLogs(query),
       getMeteringByModel(query),
       getMeteringByProvider(query),
+      getMeteringModels(modelOptionsQuery),
+      getMeteringProviders(providerOptionsQuery),
     ])
-      .then(([nextStats, nextLogs, nextByModel, nextByProvider]) => {
-        if (cancelled) return
-        setStats(nextStats)
-        setLogs({ ...nextLogs, items: nextLogs.items ?? [] })
-        setByModel(nextByModel.items ?? [])
-        setByProvider(nextByProvider.items ?? [])
-      })
+      .then(
+        ([
+          nextStats,
+          nextLogs,
+          nextByModel,
+          nextByProvider,
+          nextModels,
+          nextProviders,
+        ]) => {
+          if (cancelled) return
+          setStats(nextStats)
+          setLogs({ ...nextLogs, items: nextLogs.items ?? [] })
+          setByModel(nextByModel.items ?? [])
+          setByProvider(nextByProvider.items ?? [])
+          setModelOptions(nextModels.items ?? [])
+          setProviderOptions(nextProviders.items ?? [])
+        },
+      )
       .catch((e: unknown) => {
         if (cancelled) return
         showToast(
@@ -299,7 +405,7 @@ export function MeteringPage({
     return () => {
       cancelled = true
     }
-  }, [query, showToast])
+  }, [modelOptionsQuery, providerOptionsQuery, query, showToast])
 
   const totalPages =
     logs ? Math.max(1, Math.ceil(logs.total / logs.page_size)) : 1
@@ -353,7 +459,7 @@ export function MeteringPage({
         </button>
       </div>
 
-      <Card style={{ padding: 18 }}>
+      <Card style={{ padding: 18, overflow: "visible" }}>
         <div
           style={{
             display: "grid",
@@ -387,26 +493,26 @@ export function MeteringPage({
           </label>
           <label style={fieldStyle}>
             <span style={labelStyle}>Model</span>
-            <input
-              className="sys-input"
+            <SearchableSelect
+              options={modelOptions}
               value={modelId}
-              onChange={(e) => {
-                setModelId(e.target.value)
+              onChange={(v) => {
+                setModelId(v)
                 setPage(1)
               }}
-              placeholder="claude-3-7-sonnet"
+              placeholder="All models"
             />
           </label>
           <label style={fieldStyle}>
             <span style={labelStyle}>Provider</span>
-            <input
-              className="sys-input"
+            <SearchableSelect
+              options={providerOptions}
               value={providerId}
-              onChange={(e) => {
-                setProviderId(e.target.value)
+              onChange={(v) => {
+                setProviderId(v)
                 setPage(1)
               }}
-              placeholder="provider instance id"
+              placeholder="All providers"
             />
           </label>
           <label style={fieldStyle}>
@@ -490,7 +596,6 @@ export function MeteringPage({
             justifyContent: "space-between",
             alignItems: "center",
             gap: 12,
-            flexWrap: "wrap",
           }}
         >
           <div>
@@ -515,14 +620,42 @@ export function MeteringPage({
               paths.
             </p>
           </div>
-          <div
-            style={{
-              fontSize: 11,
-              color: "var(--color-text-tertiary)",
-              fontFamily: "var(--font-mono)",
-            }}
-          >
-            {loading ? "Loading…" : `${logs?.total ?? 0} rows`}
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <label
+              style={{
+                display: "flex",
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 12,
+                color: "var(--color-text-secondary)",
+                whiteSpace: "nowrap",
+              }}
+            >
+              Rows per page
+              <select
+                className="sys-select"
+                style={{ fontSize: 12, padding: "2px 6px" }}
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value))
+                  setPage(1)
+                }}
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+              </select>
+            </label>
+            <div
+              style={{
+                fontSize: 11,
+                color: "var(--color-text-tertiary)",
+                fontFamily: "var(--font-mono)",
+              }}
+            >
+              {loading ? "Loading…" : `${logs?.total ?? 0} rows`}
+            </div>
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -611,12 +744,7 @@ export function MeteringPage({
             flexWrap: "wrap",
           }}
         >
-          <div
-            style={{
-              fontSize: 12,
-              color: "var(--color-text-secondary)",
-            }}
-          >
+          <div style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
             Page {logs?.page ?? page} of {totalPages}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
