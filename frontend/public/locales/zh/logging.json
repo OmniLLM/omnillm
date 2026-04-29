@@ -1,0 +1,41 @@
+{
+  "title": "日志",
+  "description": "实时代理输出。所有应用程序日志的实时流。",
+  "logLevel": "日志级别",
+  "trace": "追踪",
+  "debug": "调试",
+  "info": "信息",
+  "warn": "警告",
+  "error": "错误",
+  "fatal": "致命错误",
+  "connecting": "连接中",
+  "live": "实时",
+  "retrying": "重试中",
+  "autoScroll": {
+    "on": "自动滚动已启用 — 点击禁用",
+    "off": "自动滚动已禁用 — 点击启用",
+    "button": "⬇ 自动"
+  },
+  "manual": "手动",
+  "scrollTop": "滚动到顶部",
+  "scrollBottom": "↓ 底部",
+  "top": "↑ 顶部",
+  "bottom": "滚动到底部",
+  "clear": "清除",
+  "copy": "复制",
+  "openingStream": "打开流中…",
+  "receivingLines": "接收新日志行",
+  "waitingReconnect": "等待重新连接",
+  "connecting": "正在连接到日志流...",
+  "noLogs": "尚未收到日志行。",
+  "errors": {
+    "failedToLoad": "加载日志级别失败: {{error}}",
+    "failedToUpdate": "更新日志级别失败: {{error}}",
+    "copyFailed": "复制失败: {{error}}"
+  },
+  "toasts": {
+    "cleared": "已清除可见日志缓冲区",
+    "copied": "已复制可见日志",
+    "levelChanged": "日志级别 → {{level}}"
+  }
+}

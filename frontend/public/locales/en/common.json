@@ -1,0 +1,51 @@
+{
+  "theme": {
+    "switchToLight": "Switch to light theme",
+    "switchToDark": "Switch to dark theme"
+  },
+  "language": {
+    "english": "English",
+    "chinese": "中文",
+    "switchToEnglish": "Switch to English",
+    "switchToChinese": "Switch to Chinese"
+  },
+  "sidebar": {
+    "onlineStatus": "Server online",
+    "showSidebar": "Show sidebar",
+    "hideSidebar": "Hide sidebar",
+    "close": "Close menu",
+    "open": "Open menu",
+    "serverOnlineAriaLabel": "Server online",
+    "statusDot": "Server online"
+  },
+  "common": {
+    "loading": "Loading...",
+    "cancel": "Cancel",
+    "submit": "Submit",
+    "delete": "Delete",
+    "save": "Save",
+    "close": "Close",
+    "done": "Done",
+    "edit": "Edit",
+    "add": "Add",
+    "remove": "Remove",
+    "copy": "Copy",
+    "refresh": "Refresh",
+    "hide": "Hide",
+    "show": "Show",
+    "showSecretValue": "Show secret value",
+    "hideSecretValue": "Hide secret value",
+    "online": "Online",
+    "offline": "Offline"
+  },
+  "confirmation": {
+    "areYouSure": "Are you sure?",
+    "cannotBeUndone": "This cannot be undone.",
+    "confirmDelete": "Confirm delete"
+  },
+  "headers": {
+    "mainNavigation": "Main navigation",
+    "omnillm": "OmniLLM",
+    "intelligentLLMRouter": "Intelligent LLM Router"
+  }
+}

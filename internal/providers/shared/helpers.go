@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+const openAIMaxUserIDLength = 64
+
 // RandomID generates a random hexadecimal ID string.
 func RandomID() string {
 	return fmt.Sprintf("%x%x", time.Now().UnixNano(), rand.Int63())
@@ -32,6 +34,21 @@ func ShortTokenSuffix(token string) string {
 		return "token"
 	}
 	return trimmed
+}
+
+// TruncateOpenAIUserID trims whitespace and enforces the OpenAI-compatible
+// user identifier length limit before forwarding requests upstream.
+func TruncateOpenAIUserID(userID string) string {
+	trimmed := strings.TrimSpace(userID)
+	if len(trimmed) <= openAIMaxUserIDLength {
+		return trimmed
+	}
+	return trimmed[:openAIMaxUserIDLength]
+}
+
+// IsGPT5Family reports whether model belongs to the GPT-5 family.
+func IsGPT5Family(model string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(model)), "gpt-5")
 }
 
 // IsReasoningModel returns true for models that do not support the temperature

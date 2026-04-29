@@ -12,8 +12,8 @@
   --color-separator-opaque: #30363d;
 
   --color-text:             #e6edf3;
-  --color-text-secondary:   #8b949e;
-  --color-text-tertiary:    #6e7681;
+  --color-text-secondary:   #9ba4ae;
+  --color-text-tertiary:    #8b94a3;
 
   --color-blue:             #58a6ff;
   --color-blue-dim:         #388bfd;
@@ -1032,6 +1032,46 @@ header :focus-visible {
   text-align: center;
 }
 
+/* ─── Chat bubble width (responsive) ─────────────────────────────────────── */
+
+.chat-bubble-shell {
+  max-width: 75%;
+}
+
+@media (max-width: 640px) {
+  .chat-bubble-shell {
+    max-width: 92%;
+  }
+}
+
+/* ─── Responsive grid helper ─────────────────────────────────────────────── */
+
+.responsive-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.responsive-grid-lg {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+/* ─── Visually-hidden utility (accessible labels) ───────────────────────── */
+
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
 .empty-state-icon {
   width: 40px;
   height: 40px;
@@ -1086,22 +1126,54 @@ header :focus-visible {
 
 /* ─── Responsive ─────────────────────────────────────────────────────────── */
 
+/* Mobile drawer behavior — sidebar overlays main below 768px */
+@media (max-width: 768px) {
+  .app-main main {
+    padding: 18px 16px 32px !important;
+  }
+
+  .app-main header {
+    padding: 0 14px !important;
+  }
+}
+
+/* Two-column page splits collapse on narrow viewports */
+.split-2 {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .split-2 {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+}
+
+/* Virtual-model editor split */
+.vm-editor-grid {
+  display: grid;
+  gap: 24px;
+  align-items: start;
+}
+
+.vm-editor-grid.editing {
+  grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+}
+
+.vm-editor-grid:not(.editing) {
+  grid-template-columns: 1fr;
+}
+
+@media (max-width: 900px) {
+  .vm-editor-grid.editing {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 960px) {
-  .app-shell {
-    flex-direction: column;
-  }
-
-  .app-sidebar {
-    position: sticky !important;
-    width: 100% !important;
-    height: auto;
-    max-height: none;
-  }
-
-  .app-main {
-    margin-left: 0 !important;
-  }
-
   .chat-layout {
     height: auto;
     min-height: calc(100dvh - 52px);

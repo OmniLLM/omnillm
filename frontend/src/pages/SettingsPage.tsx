@@ -192,13 +192,7 @@ export function AboutPage({
           </p>
         </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-            gap: 12,
-          }}
-        >
+        <div className="responsive-grid">
           <div
             style={{
               ...card,
@@ -290,14 +284,7 @@ export function AboutPage({
         </div>
       </section>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1.1fr 0.9fr",
-          gap: 24,
-          alignItems: "start",
-        }}
-      >
+      <div className="split-2">
         <section style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           <div>
             <div

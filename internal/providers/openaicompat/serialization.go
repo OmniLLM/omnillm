@@ -68,7 +68,8 @@ func BuildChatRequest(model string, request *cif.CanonicalRequest, stream bool, 
 		cr.Stop = request.Stop
 	}
 	if request.UserID != nil {
-		cr.User = request.UserID
+		userID := shared.TruncateOpenAIUserID(*request.UserID)
+		cr.User = &userID
 	}
 
 	// Tools.
@@ -121,6 +122,16 @@ func Marshal(cr *ChatRequest) ([]byte, error) {
 			return nil, fmt.Errorf("openaicompat: failed to marshal extra field %q: %w", k, err)
 		}
 		m[k] = b
+	}
+	if userVal, ok := m["user"]; ok {
+		var user string
+		if err := json.Unmarshal(userVal, &user); err == nil {
+			sanitized, err := json.Marshal(shared.TruncateOpenAIUserID(user))
+			if err != nil {
+				return nil, fmt.Errorf("openaicompat: failed to marshal sanitized user field: %w", err)
+			}
+			m["user"] = sanitized
+		}
 	}
 	return json.Marshal(m)
 }

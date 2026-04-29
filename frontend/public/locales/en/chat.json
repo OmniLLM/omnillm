@@ -1,0 +1,41 @@
+{
+  "title": "Chat",
+  "description": "Chat with your AI model",
+  "newChat": "+ New Chat",
+  "apiEndpoint": "API Endpoint",
+  "model": "Model",
+  "loadingModels": "Loading models…",
+  "history": "History",
+  "deleteAllHistory": "Delete all chat history",
+  "noHistory": "No history yet",
+  "startConversation": "Start a conversation to save it here.",
+  "clearCurrent": "Clear Current",
+  "youSaid": "You said",
+  "assistantSaid": "Assistant said",
+  "thinking": "Thinking",
+  "typeMessage": "Chat with the model…",
+  "sendingMessage": "Sending message…",
+  "sendMessage": "Send message",
+  "selectModel": "Select a model and send your first message to begin chatting.",
+  "noModelAvailable": "No model available for this API shape.",
+  "deleteAllConfirm": "Delete all chat history?",
+  "deleteAllWarning": "This will permanently remove all sessions and cannot be undone.",
+  "errors": {
+    "failedToLoad": "Failed to load data: {{error}}",
+    "modelUnavailable": "Model \"{{model}}\" is unavailable; switched to {{fallback}}",
+    "failedToLoadSession": "Failed to load session: {{error}}",
+    "failedToCreate": "Failed to create chat session: {{error}}",
+    "chatError": "Chat error: {{error}}",
+    "failedToDelete": "Failed to delete chat: {{error}}",
+    "networkError": "Network error. Please check your connection and try again.",
+    "authError": "Authentication failed. Please check your API key.",
+    "rateLimited": "Rate limited. Please wait a moment and try again.",
+    "serverError": "Server error. Please try again shortly.",
+    "somethingWentWrong": "Something went wrong. Please try again.",
+    "unexpected": "An unexpected error occurred. Please try again."
+  },
+  "toasts": {
+    "deleted": "Chat deleted",
+    "allDeleted": "All chats deleted"
+  }
+}

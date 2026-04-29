@@ -15,6 +15,7 @@ import {
   type Model,
 } from "@/api"
 import { createLogger } from "@/lib/logger"
+import { useConfirm } from "@/lib/useConfirm"
 import {
   detectModelFamily,
   formatVirtualModelUpstreamSummary,
@@ -73,6 +74,7 @@ const emptyUpstreamRow = (): UpstreamRow => ({
 })
 
 export function VirtualModelPage({ showToast }: Props) {
+  const confirm = useConfirm()
   const [vmodels, setVmodels] = useState<Array<VirtualModel>>([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<VirtualModel | null>(null)
@@ -246,7 +248,13 @@ export function VirtualModelPage({ showToast }: Props) {
   }
 
   const handleDelete = async (id: string) => {
-    if (!globalThis.confirm(`Delete virtual model "${id}"?`)) return
+    const ok = await confirm({
+      title: "Delete virtual model",
+      message: `Are you sure you want to delete virtual model "${id}"? This cannot be undone.`,
+      danger: true,
+      confirmLabel: "Delete",
+    })
+    if (!ok) return
     try {
       await deleteVirtualModel(id)
       showToast("Deleted", "success")
@@ -314,15 +322,7 @@ export function VirtualModelPage({ showToast }: Props) {
         </button>
       </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns:
-            isEditing ? "minmax(320px, 380px) minmax(0, 1fr)" : "1fr",
-          gap: 24,
-          alignItems: "start",
-        }}
-      >
+      <div className={`vm-editor-grid${isEditing ? " editing" : ""}`}>
         <section className="panel" style={{ padding: 20 }}>
           <div
             style={{

@@ -15,6 +15,7 @@ import {
   type Model,
 } from "@/api"
 import { createLogger } from "@/lib/logger"
+import { useConfirm } from "@/lib/useConfirm"
 import {
   detectModelFamily,
   formatVirtualModelUpstreamSummary,
@@ -73,6 +74,7 @@ const emptyUpstreamRow = (): UpstreamRow => ({
 })
 
 export function VmodelPage({ showToast }: Props) {
+  const confirm = useConfirm()
   const [vmodels, setVmodels] = useState<Array<VirtualModel>>([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<VirtualModel | null>(null)
@@ -246,7 +248,13 @@ export function VmodelPage({ showToast }: Props) {
   }
 
   const handleDelete = async (id: string) => {
-    if (!globalThis.confirm(`Delete virtual model "${id}"?`)) return
+    const ok = await confirm({
+      title: "Delete virtual model",
+      message: `Are you sure you want to delete virtual model "${id}"? This cannot be undone.`,
+      danger: true,
+      confirmLabel: "Delete",
+    })
+    if (!ok) return
     try {
       await deleteVirtualModel(id)
       showToast("Deleted", "success")

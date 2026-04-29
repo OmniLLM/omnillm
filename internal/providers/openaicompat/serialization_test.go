@@ -2,6 +2,7 @@ package openaicompat
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ func TestBuildChatRequest_AppliesDefaultsToolsAndSystemPrompt(t *testing.T) {
 	defaultTemp := 0.3
 	defaultTopP := 0.9
 	maxTokens := 64
+	userID := "  " + strings.Repeat("u", 80) + "  "
 	request := &cif.CanonicalRequest{
 		Model:        "gpt-4o",
 		SystemPrompt: stringPtr("Be terse."),
@@ -21,6 +23,7 @@ func TestBuildChatRequest_AppliesDefaultsToolsAndSystemPrompt(t *testing.T) {
 			cif.CIFUserMessage{Role: "user", Content: []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: "Hello"}}},
 		},
 		MaxTokens: &maxTokens,
+		UserID:    &userID,
 		Tools: []cif.CIFTool{{
 			Name:             "get_weather",
 			ParametersSchema: map[string]interface{}{"type": "object"},
@@ -49,6 +52,9 @@ func TestBuildChatRequest_AppliesDefaultsToolsAndSystemPrompt(t *testing.T) {
 	if out.MaxTokens == nil || *out.MaxTokens != maxTokens {
 		t.Fatalf("unexpected max tokens: %#v", out.MaxTokens)
 	}
+	if out.User == nil || len(*out.User) != 64 {
+		t.Fatalf("unexpected user id: %#v", out.User)
+	}
 	if len(out.Messages) != 2 || out.Messages[0].Role != "system" {
 		t.Fatalf("unexpected messages: %#v", out.Messages)
 	}
@@ -75,6 +81,28 @@ func TestMarshal_MergesExtras(t *testing.T) {
 	text := string(body)
 	if !strings.Contains(text, `"enable_thinking":true`) {
 		t.Fatalf("expected extras in marshaled body: %s", text)
+	}
+}
+
+func TestMarshal_ReappliesUserTruncationAfterExtrasMerge(t *testing.T) {
+	body, err := Marshal(&ChatRequest{
+		Model:    "gpt-4o",
+		Messages: []Message{{Role: "user", Content: "Hello"}},
+		Extras: map[string]interface{}{
+			"user": "  " + strings.Repeat("x", 80) + "  ",
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("unexpected json error: %v", err)
+	}
+	user, _ := payload["user"].(string)
+	if len(user) != 64 {
+		t.Fatalf("expected truncated user length 64, got %d", len(user))
 	}
 }
 

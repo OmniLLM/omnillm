@@ -147,6 +147,15 @@ export function ChatPage({ showToast }: ChatPageProps) {
   const [sessionsLoading, setSessionsLoading] = useState(true)
   const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false)
 
+  useEffect(() => {
+    if (!showDeleteAllConfirm) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowDeleteAllConfirm(false)
+    }
+    document.addEventListener("keydown", onKey)
+    return () => document.removeEventListener("keydown", onKey)
+  }, [showDeleteAllConfirm])
+
   const unavailableModelToastRef = useRef<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -503,17 +512,6 @@ export function ChatPage({ showToast }: ChatPageProps) {
                 return (
                   <div
                     key={session.session_id}
-                    role="button"
-                    tabIndex={0}
-                    aria-label={`Open chat: ${session.title}`}
-                    aria-pressed={isActive}
-                    onClick={() => setCurrentSessionId(session.session_id)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault()
-                        setCurrentSessionId(session.session_id)
-                      }
-                    }}
                     className="list-item-interactive"
                     style={{
                       background:
@@ -524,9 +522,26 @@ export function ChatPage({ showToast }: ChatPageProps) {
                       alignItems: "center",
                       justifyContent: "space-between",
                       gap: 8,
+                      padding: 0,
                     }}
                   >
-                    <div style={{ flex: 1, overflow: "hidden" }}>
+                    <button
+                      type="button"
+                      aria-label={`Open chat: ${session.title}`}
+                      aria-pressed={isActive}
+                      onClick={() => setCurrentSessionId(session.session_id)}
+                      style={{
+                        flex: 1,
+                        overflow: "hidden",
+                        background: "transparent",
+                        border: "none",
+                        font: "inherit",
+                        color: "inherit",
+                        cursor: "pointer",
+                        textAlign: "left",
+                        padding: "8px 0 8px 12px",
+                      }}
+                    >
                       <div
                         style={{
                           fontSize: 12,
@@ -550,13 +565,14 @@ export function ChatPage({ showToast }: ChatPageProps) {
                       >
                         {new Date(session.updated_at).toLocaleDateString()}
                       </div>
-                    </div>
+                    </button>
                     <button
                       onClick={(e) =>
                         handleDeleteSession(session.session_id, e)
                       }
                       className="btn btn-icon btn-icon-ghost btn-icon-danger"
                       aria-label={`Delete chat: ${session.title}`}
+                      style={{ marginRight: 6 }}
                     >
                       <X size={16} />
                     </button>
@@ -621,11 +637,11 @@ export function ChatPage({ showToast }: ChatPageProps) {
                 }}
               >
                 <div
+                  className="chat-bubble-shell"
                   style={{
                     display: "flex",
                     alignItems: "flex-start",
                     gap: 12,
-                    maxWidth: "75%",
                     flexDirection:
                       message.role === "user" ? "row-reverse" : "row",
                   }}
@@ -676,11 +692,11 @@ export function ChatPage({ showToast }: ChatPageProps) {
               style={{ display: "flex", justifyContent: "flex-start" }}
             >
               <div
+                className="chat-bubble-shell"
                 style={{
                   display: "flex",
                   alignItems: "flex-start",
                   gap: 12,
-                  maxWidth: "75%",
                 }}
               >
                 <MessageAvatar role="assistant" />

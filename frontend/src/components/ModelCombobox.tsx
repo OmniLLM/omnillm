@@ -271,7 +271,6 @@ function ModelSearchInput({
           flex: 1,
           background: "transparent",
           border: "none",
-          outline: "none",
           color: "var(--color-text)",
           fontSize: 13,
           fontFamily: "inherit",
