@@ -3,10 +3,10 @@ import { initReactI18next } from "react-i18next"
 
 import en_about from "./locales/en/about.json"
 import en_chat from "./locales/en/chat.json"
-// Import translation files
 import en_common from "./locales/en/common.json"
 import en_config from "./locales/en/config.json"
 import en_logging from "./locales/en/logging.json"
+import en_metering from "./locales/en/metering.json"
 import en_nav from "./locales/en/nav.json"
 import en_providers from "./locales/en/providers.json"
 import en_virtualmodel from "./locales/en/virtualmodel.json"
@@ -15,6 +15,7 @@ import zh_chat from "./locales/zh/chat.json"
 import zh_common from "./locales/zh/common.json"
 import zh_config from "./locales/zh/config.json"
 import zh_logging from "./locales/zh/logging.json"
+import zh_metering from "./locales/zh/metering.json"
 import zh_nav from "./locales/zh/nav.json"
 import zh_providers from "./locales/zh/providers.json"
 import zh_virtualmodel from "./locales/zh/virtualmodel.json"
@@ -54,6 +55,7 @@ const resources = {
     virtualmodel: en_virtualmodel,
     logging: en_logging,
     about: en_about,
+    metering: en_metering,
   },
   zh: {
     common: zh_common,
@@ -64,6 +66,7 @@ const resources = {
     virtualmodel: zh_virtualmodel,
     logging: zh_logging,
     about: zh_about,
+    metering: zh_metering,
   },
 }
 
@@ -81,6 +84,7 @@ void i18n.use(initReactI18next).init({
     "virtualmodel",
     "logging",
     "about",
+    "metering",
   ],
   interpolation: {
     escapeValue: false, // React already prevents XSS

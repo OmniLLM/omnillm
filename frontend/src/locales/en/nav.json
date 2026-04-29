@@ -4,5 +4,6 @@
   "logging": "Logging",
   "virtualModels": "Virtual Models",
   "toolConfig": "Tool Config",
-  "about": "About"
+  "about": "About",
+  "metering": "Metering"
 }

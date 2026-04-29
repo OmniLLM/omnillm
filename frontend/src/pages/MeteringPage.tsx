@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react"
+import { useTranslation } from "react-i18next"
 
 import {
   getMeteringByModel,
@@ -115,10 +116,11 @@ function BreakdownTable({
   valueKey,
 }: {
   title: string
-  keyLabel: "model" | "provider"
+  keyLabel: string
   items: Array<MeteringBreakdownItem> | null | undefined
   valueKey: "model_id" | "provider_id"
 }) {
+  const { t } = useTranslation("metering")
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(5)
   const safeItems = items ?? []
@@ -166,7 +168,7 @@ function BreakdownTable({
               whiteSpace: "nowrap",
             }}
           >
-            Rows per page
+            {t("filters.rowsPerPage")}
             <select
               className="sys-select"
               style={{ fontSize: 12, padding: "2px 6px" }}
@@ -185,7 +187,7 @@ function BreakdownTable({
               fontFamily: "var(--font-mono)",
             }}
           >
-            {safeItems.length} rows
+            {t("pagination.rows", { count: safeItems.length })}
           </span>
         </div>
       </div>
@@ -195,11 +197,11 @@ function BreakdownTable({
             <tr style={{ background: "rgba(255,255,255,0.02)" }}>
               {[
                 keyLabel,
-                "requests",
-                "input",
-                "output",
-                "total",
-                "avg latency",
+                t("table.requests"),
+                t("table.input"),
+                t("table.output"),
+                t("table.total"),
+                t("table.avgLatency"),
               ].map((label) => (
                 <th
                   key={label}
@@ -229,7 +231,7 @@ function BreakdownTable({
                     textAlign: "center",
                   }}
                 >
-                  No data yet.
+                  {t("table.noData")}
                 </td>
               </tr>
             )}
@@ -267,7 +269,7 @@ function BreakdownTable({
           }}
         >
           <div style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
-            Page {page} of {totalPages}
+            {t("pagination.page", { current: page, total: totalPages })}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button
@@ -275,14 +277,14 @@ function BreakdownTable({
               disabled={page <= 1}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
             >
-              Previous
+              {t("pagination.previous")}
             </button>
             <button
               className="btn btn-ghost btn-sm"
               disabled={page >= totalPages}
               onClick={() => setPage((p) => p + 1)}
             >
-              Next
+              {t("pagination.next")}
             </button>
           </div>
         </div>
@@ -304,6 +306,7 @@ export function MeteringPage({
 }: {
   showToast: (msg: string, type?: "success" | "error") => void
 }) {
+  const { t } = useTranslation("metering")
   const now = useMemo(() => new Date(), [])
   const defaultSince = useMemo(() => {
     const value = new Date(now)
@@ -318,6 +321,7 @@ export function MeteringPage({
   const [apiShape, setAPIShape] = useState("")
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
+  const [maxRows, setMaxRows] = useState(500)
   const [reloadKey, setReloadKey] = useState(0)
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState<MeteringStats | null>(null)
@@ -409,7 +413,7 @@ export function MeteringPage({
 
   const totalPages =
     logs ? Math.max(1, Math.ceil(logs.total / logs.page_size)) : 1
-  const logItems = logs?.items ?? []
+  const logItems = (logs?.items ?? []).slice(0, maxRows || undefined)
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -433,7 +437,7 @@ export function MeteringPage({
               color: "var(--color-text)",
             }}
           >
-            Metering
+            {t("title")}
           </h1>
           <p
             style={{
@@ -443,8 +447,7 @@ export function MeteringPage({
               maxWidth: 720,
             }}
           >
-            Request-level usage data captured after CIF responses finalize, with
-            token totals, latency, provider attribution, and raw request logs.
+            {t("description")}
           </p>
         </div>
         <button
@@ -455,7 +458,7 @@ export function MeteringPage({
           }}
           disabled={loading}
         >
-          Refresh
+          {t("refresh")}
         </button>
       </div>
 
@@ -468,7 +471,7 @@ export function MeteringPage({
           }}
         >
           <label style={fieldStyle}>
-            <span style={labelStyle}>Since</span>
+            <span style={labelStyle}>{t("filters.since")}</span>
             <input
               className="sys-input"
               type="datetime-local"
@@ -480,7 +483,7 @@ export function MeteringPage({
             />
           </label>
           <label style={fieldStyle}>
-            <span style={labelStyle}>Until</span>
+            <span style={labelStyle}>{t("filters.until")}</span>
             <input
               className="sys-input"
               type="datetime-local"
@@ -492,7 +495,7 @@ export function MeteringPage({
             />
           </label>
           <label style={fieldStyle}>
-            <span style={labelStyle}>Model</span>
+            <span style={labelStyle}>{t("filters.model")}</span>
             <SearchableSelect
               options={modelOptions}
               value={modelId}
@@ -500,11 +503,11 @@ export function MeteringPage({
                 setModelId(v)
                 setPage(1)
               }}
-              placeholder="All models"
+              placeholder={t("filters.allModels")}
             />
           </label>
           <label style={fieldStyle}>
-            <span style={labelStyle}>Provider</span>
+            <span style={labelStyle}>{t("filters.provider")}</span>
             <SearchableSelect
               options={providerOptions}
               value={providerId}
@@ -512,11 +515,11 @@ export function MeteringPage({
                 setProviderId(v)
                 setPage(1)
               }}
-              placeholder="All providers"
+              placeholder={t("filters.allProviders")}
             />
           </label>
           <label style={fieldStyle}>
-            <span style={labelStyle}>API shape</span>
+            <span style={labelStyle}>{t("filters.apiShape")}</span>
             <select
               className="sys-select"
               value={apiShape}
@@ -525,7 +528,7 @@ export function MeteringPage({
                 setPage(1)
               }}
             >
-              <option value="">All</option>
+              <option value="">{t("filters.all")}</option>
               <option value="openai">openai</option>
               <option value="anthropic">anthropic</option>
             </select>
@@ -541,28 +544,28 @@ export function MeteringPage({
         }}
       >
         <StatCard
-          label="Requests"
+          label={t("stats.requests")}
           value={formatNumber(stats?.total_requests ?? 0)}
           accent="var(--color-blue)"
-          subtext="Completed requests in the selected window"
+          subtext={t("stats.requestsSubtext")}
         />
         <StatCard
-          label="Total tokens"
+          label={t("stats.totalTokens")}
           value={formatNumber(stats?.total_tokens ?? 0)}
           accent="var(--color-green)"
           subtext={`${formatNumber(stats?.total_input_tokens ?? 0)} in / ${formatNumber(stats?.total_output_tokens ?? 0)} out`}
         />
         <StatCard
-          label="Avg latency"
+          label={t("stats.avgLatency")}
           value={formatLatency(stats?.avg_latency_ms ?? 0)}
           accent="var(--color-orange)"
-          subtext="Wall-clock latency across successful and failed requests"
+          subtext={t("stats.avgLatencySubtext")}
         />
         <StatCard
-          label="Errors"
+          label={t("stats.errors")}
           value={formatNumber(stats?.error_count ?? 0)}
           accent="var(--color-red)"
-          subtext="Requests recorded with a status code ≥ 400"
+          subtext={t("stats.errorsSubtext")}
         />
       </div>
 
@@ -574,14 +577,14 @@ export function MeteringPage({
         }}
       >
         <BreakdownTable
-          title="By model"
-          keyLabel="model"
+          title={t("byModel")}
+          keyLabel={t("table.model")}
           items={byModel}
           valueKey="model_id"
         />
         <BreakdownTable
-          title="By provider"
-          keyLabel="provider"
+          title={t("byProvider")}
+          keyLabel={t("table.provider")}
           items={byProvider}
           valueKey="provider_id"
         />
@@ -607,7 +610,7 @@ export function MeteringPage({
                 color: "var(--color-text)",
               }}
             >
-              Request log
+              {t("requestLog")}
             </h2>
             <p
               style={{
@@ -616,8 +619,7 @@ export function MeteringPage({
                 color: "var(--color-text-secondary)",
               }}
             >
-              Raw metering rows captured from OpenAI and Anthropic response
-              paths.
+              {t("requestLogDescription")}
             </p>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -632,7 +634,7 @@ export function MeteringPage({
                 whiteSpace: "nowrap",
               }}
             >
-              Rows per page
+              {t("filters.rowsPerPage")}
               <select
                 className="sys-select"
                 style={{ fontSize: 12, padding: "2px 6px" }}
@@ -647,6 +649,33 @@ export function MeteringPage({
                 <option value={50}>50</option>
               </select>
             </label>
+            <label
+              style={{
+                display: "flex",
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 12,
+                color: "var(--color-text-secondary)",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {t("filters.maxRows")}
+              <select
+                className="sys-select"
+                style={{ fontSize: 12, padding: "2px 6px" }}
+                value={maxRows}
+                onChange={(e) => {
+                  setMaxRows(Number(e.target.value))
+                  setPage(1)
+                }}
+              >
+                <option value={500}>500</option>
+                <option value={1000}>1000</option>
+                <option value={2000}>2000</option>
+                <option value={0}>All</option>
+              </select>
+            </label>
             <div
               style={{
                 fontSize: 11,
@@ -654,7 +683,10 @@ export function MeteringPage({
                 fontFamily: "var(--font-mono)",
               }}
             >
-              {loading ? "Loading…" : `${logs?.total ?? 0} rows`}
+              {loading ?
+                t("pagination.loading")
+              : `${logs?.total ?? 0} ${t("pagination.rows", { count: logs?.total ?? 0 })}`
+              }
             </div>
           </div>
         </div>
@@ -663,16 +695,16 @@ export function MeteringPage({
             <thead>
               <tr style={{ background: "rgba(255,255,255,0.02)" }}>
                 {[
-                  "time",
-                  "model",
-                  "provider",
-                  "shape",
-                  "input",
-                  "output",
-                  "total",
-                  "latency",
-                  "status",
-                  "stream",
+                  t("table.time"),
+                  t("table.model"),
+                  t("table.provider"),
+                  t("table.shape"),
+                  t("table.input"),
+                  t("table.output"),
+                  t("table.total"),
+                  t("table.latency"),
+                  t("table.status"),
+                  t("table.stream"),
                 ].map((label) => (
                   <th
                     key={label}
@@ -702,7 +734,7 @@ export function MeteringPage({
                       color: "var(--color-text-secondary)",
                     }}
                   >
-                    No metering records yet.
+                    {t("table.noRecords")}
                   </td>
                 </tr>
               )}
@@ -745,7 +777,10 @@ export function MeteringPage({
           }}
         >
           <div style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
-            Page {logs?.page ?? page} of {totalPages}
+            {t("pagination.page", {
+              current: logs?.page ?? page,
+              total: totalPages,
+            })}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button
@@ -753,14 +788,14 @@ export function MeteringPage({
               disabled={page <= 1 || loading}
               onClick={() => setPage((value) => Math.max(1, value - 1))}
             >
-              Previous
+              {t("pagination.previous")}
             </button>
             <button
               className="btn btn-ghost btn-sm"
               disabled={page >= totalPages || loading}
               onClick={() => setPage((value) => value + 1)}
             >
-              Next
+              {t("pagination.next")}
             </button>
           </div>
         </div>

@@ -1,0 +1,53 @@
+{
+  "title": "计量",
+  "description": "CIF 响应完成后的请求级使用数据，包含令牌总数、延迟、提供者归属和原始请求日志。",
+  "byModel": "按模型",
+  "byProvider": "按提供者",
+  "requestLog": "请求日志",
+  "requestLogDescription": "从 OpenAI 和 Anthropic 响应路径捕获的原始计量行。",
+  "stats": {
+    "requests": "请求数",
+    "requestsSubtext": "所选时间窗口内完成的请求",
+    "totalTokens": "总令牌数",
+    "avgLatency": "平均延迟",
+    "avgLatencySubtext": "成功和失败请求的端到端延迟",
+    "errors": "错误数",
+    "errorsSubtext": "状态码 ≥ 400 的请求"
+  },
+  "filters": {
+    "since": "开始时间",
+    "until": "结束时间",
+    "model": "模型",
+    "provider": "提供者",
+    "apiShape": "API 类型",
+    "all": "全部",
+    "allModels": "全部模型",
+    "allProviders": "全部提供者",
+    "rowsPerPage": "每页行数",
+    "maxRows": "最大行数"
+  },
+  "table": {
+    "model": "模型",
+    "provider": "提供者",
+    "requests": "请求数",
+    "input": "输入",
+    "output": "输出",
+    "total": "总计",
+    "avgLatency": "平均延迟",
+    "time": "时间",
+    "shape": "类型",
+    "latency": "延迟",
+    "status": "状态",
+    "stream": "流式",
+    "noData": "暂无数据。",
+    "noRecords": "暂无计量记录。"
+  },
+  "pagination": {
+    "page": "第 {{current}} 页，共 {{total}} 页",
+    "previous": "上一页",
+    "next": "下一页",
+    "rows": "{{count}} 行",
+    "loading": "加载中…"
+  },
+  "refresh": "刷新"
+}

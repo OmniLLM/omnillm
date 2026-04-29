@@ -1,0 +1,53 @@
+{
+  "title": "Metering",
+  "description": "Request-level usage data captured after CIF responses finalize, with token totals, latency, provider attribution, and raw request logs.",
+  "byModel": "By model",
+  "byProvider": "By provider",
+  "requestLog": "Request log",
+  "requestLogDescription": "Raw metering rows captured from OpenAI and Anthropic response paths.",
+  "stats": {
+    "requests": "Requests",
+    "requestsSubtext": "Completed requests in the selected window",
+    "totalTokens": "Total tokens",
+    "avgLatency": "Avg latency",
+    "avgLatencySubtext": "Wall-clock latency across successful and failed requests",
+    "errors": "Errors",
+    "errorsSubtext": "Requests recorded with a status code ≥ 400"
+  },
+  "filters": {
+    "since": "Since",
+    "until": "Until",
+    "model": "Model",
+    "provider": "Provider",
+    "apiShape": "API shape",
+    "all": "All",
+    "allModels": "All models",
+    "allProviders": "All providers",
+    "rowsPerPage": "Rows per page",
+    "maxRows": "Max rows"
+  },
+  "table": {
+    "model": "model",
+    "provider": "provider",
+    "requests": "requests",
+    "input": "input",
+    "output": "output",
+    "total": "total",
+    "avgLatency": "avg latency",
+    "time": "time",
+    "shape": "shape",
+    "latency": "latency",
+    "status": "status",
+    "stream": "stream",
+    "noData": "No data yet.",
+    "noRecords": "No metering records yet."
+  },
+  "pagination": {
+    "page": "Page {{current}} of {{total}}",
+    "previous": "Previous",
+    "next": "Next",
+    "rows": "{{count}} rows",
+    "loading": "Loading…"
+  },
+  "refresh": "Refresh"
+}
