@@ -260,6 +260,33 @@ func TestSerializeToAnthropic_ToolUseBlock(t *testing.T) {
 	}
 }
 
+func TestSerializeToAnthropic_NormalizesCopilotToolUseID(t *testing.T) {
+	resp := &cif.CanonicalResponse{
+		ID:    "msg_tooluse",
+		Model: "claude-haiku-4.5",
+		Content: []cif.CIFContentPart{
+			cif.CIFToolCallPart{
+				Type:          "tool_call",
+				ToolCallID:    "tooluse_abc123",
+				ToolName:      "Read",
+				ToolArguments: map[string]interface{}{"file_path": "README.md"},
+			},
+		},
+		StopReason: cif.StopReasonToolUse,
+	}
+
+	out, err := SerializeToAnthropic(resp)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(out.Content) != 1 {
+		t.Fatalf("expected one content block, got %d", len(out.Content))
+	}
+	if out.Content[0].ID != "toolu_abc123" {
+		t.Fatalf("expected normalized tool use id, got %q", out.Content[0].ID)
+	}
+}
+
 func TestSerializeToAnthropic_UsageFields(t *testing.T) {
 	resp := &cif.CanonicalResponse{
 		ID:         "msg_003",

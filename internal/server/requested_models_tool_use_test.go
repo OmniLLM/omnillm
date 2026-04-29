@@ -137,7 +137,7 @@ func assertRequestedModelAnthropicToolUse(t *testing.T, serverURL, modelID strin
 	if payload.StopReason == nil || *payload.StopReason != "tool_use" {
 		t.Fatalf("anthropic messages: unexpected stop reason for %s: %#v", modelID, payload.StopReason)
 	}
-	if len(payload.Content) != 1 || payload.Content[0].Type != "tool_use" || payload.Content[0].ID != "call_weather" || payload.Content[0].Name != "get_weather" {
+	if len(payload.Content) != 1 || payload.Content[0].Type != "tool_use" || payload.Content[0].ID != "toolu_call_weather" || payload.Content[0].Name != "get_weather" {
 		t.Fatalf("anthropic messages: unexpected tool payload for %s: %#v", modelID, payload.Content)
 	}
 	if payload.Content[0].Input["location"] != "Shanghai" {

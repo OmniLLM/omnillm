@@ -803,7 +803,7 @@ func TestAlibabaQwen36PlusProviderIntegration(t *testing.T) {
 		var firstArgs strings.Builder
 		for _, evt := range firstEvents {
 			if contentBlock, ok := evt.Data["content_block"].(map[string]interface{}); ok {
-				if contentBlock["type"] == "tool_use" && contentBlock["name"] == "Read" && contentBlock["id"] == "call_qwen_read" {
+				if contentBlock["type"] == "tool_use" && contentBlock["name"] == "Read" && contentBlock["id"] == "toolu_call_qwen_read" {
 					firstToolUse = true
 				}
 				if contentBlock["type"] == "thinking" {
@@ -853,7 +853,7 @@ func TestAlibabaQwen36PlusProviderIntegration(t *testing.T) {
 		secondResp := postJSON(
 			t,
 			backend.URL+"/v1/messages",
-			`{"model":"qwen3.6-plus","stream":true,"max_tokens":512,"tools":[{"name":"Read","input_schema":{"type":"object","properties":{"file_path":{"type":"string"}},"required":["file_path"]}}],"messages":[{"role":"user","content":"Explain codebase in detail"},{"role":"assistant","content":[{"type":"tool_use","id":"call_qwen_read","name":"Read","input":{"file_path":"README.md"}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"call_qwen_read","content":"README.md says this project exposes OpenAI and Anthropic compatible endpoints over a shared CIF routing core."}]}]}`,
+			`{"model":"qwen3.6-plus","stream":true,"max_tokens":512,"tools":[{"name":"Read","input_schema":{"type":"object","properties":{"file_path":{"type":"string"}},"required":["file_path"]}}],"messages":[{"role":"user","content":"Explain codebase in detail"},{"role":"assistant","content":[{"type":"tool_use","id":"toolu_call_qwen_read","name":"Read","input":{"file_path":"README.md"}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_call_qwen_read","content":"README.md says this project exposes OpenAI and Anthropic compatible endpoints over a shared CIF routing core."}]}]}`,
 			map[string]string{"anthropic-version": "2023-06-01"},
 		)
 		secondBody := readBody(t, secondResp)
@@ -948,7 +948,7 @@ func TestAlibabaQwen36PlusProviderIntegration(t *testing.T) {
 			t.Fatalf("expected one upstream assistant tool_call, got %#v", assistantMsg)
 		}
 		assistantToolCall, _ := assistantToolCalls[0].(map[string]interface{})
-		if id, _ := assistantToolCall["id"].(string); id != "call_qwen_read" {
+		if id, _ := assistantToolCall["id"].(string); id != "toolu_call_qwen_read" {
 			t.Fatalf("unexpected upstream tool call id: %#v", assistantToolCall)
 		}
 		assistantFunction, _ := assistantToolCall["function"].(map[string]interface{})
@@ -963,7 +963,7 @@ func TestAlibabaQwen36PlusProviderIntegration(t *testing.T) {
 		if role, _ := toolMsg["role"].(string); role != "tool" {
 			t.Fatalf("expected upstream tool role message, got %#v", toolMsg)
 		}
-		if toolCallID, _ := toolMsg["tool_call_id"].(string); toolCallID != "call_qwen_read" {
+		if toolCallID, _ := toolMsg["tool_call_id"].(string); toolCallID != "toolu_call_qwen_read" {
 			t.Fatalf("unexpected upstream tool_call_id: %#v", toolMsg)
 		}
 		if content, _ := toolMsg["content"].(string); !strings.Contains(content, "shared CIF routing core") {

@@ -227,7 +227,7 @@ func TestConvertCIFEventToAnthropicSSE_ToolUseLifecycle(t *testing.T) {
 		t.Fatalf("unexpected content block start: %#v", events[1])
 	}
 	contentBlock := events[1]["content_block"].(map[string]interface{})
-	if contentBlock["type"] != "tool_use" || contentBlock["id"] != "call_123" {
+	if contentBlock["type"] != "tool_use" || contentBlock["id"] != "toolu_call_123" {
 		t.Fatalf("unexpected anthropic tool block: %#v", contentBlock)
 	}
 
@@ -247,6 +247,42 @@ func TestConvertCIFEventToAnthropicSSE_ToolUseLifecycle(t *testing.T) {
 	}
 	if events[5]["type"] != "message_stop" {
 		t.Fatalf("unexpected final event: %#v", events[5])
+	}
+}
+
+func TestConvertCIFEventToAnthropicSSE_NormalizesCopilotToolUseID(t *testing.T) {
+	state := CreateAnthropicStreamState()
+	_, err := ConvertCIFEventToAnthropicSSE(cif.CIFStreamStart{
+		Type:  "stream_start",
+		ID:    "stream_123",
+		Model: "claude-haiku-4.5",
+	}, state)
+	if err != nil {
+		t.Fatalf("unexpected start error: %v", err)
+	}
+
+	events, err := ConvertCIFEventToAnthropicSSE(cif.CIFContentDelta{
+		Type:  "content_delta",
+		Index: 0,
+		ContentBlock: cif.CIFToolCallPart{
+			Type:       "tool_call",
+			ToolCallID: "tooluse_abc123",
+			ToolName:   "Read",
+		},
+		Delta: cif.ToolArgumentsDelta{
+			Type:        "tool_arguments_delta",
+			PartialJSON: `{"file_path":"README.md"}`,
+		},
+	}, state)
+	if err != nil {
+		t.Fatalf("unexpected delta error: %v", err)
+	}
+	if len(events) < 1 {
+		t.Fatalf("expected content block start event")
+	}
+	contentBlock := events[0]["content_block"].(map[string]interface{})
+	if contentBlock["id"] != "toolu_abc123" {
+		t.Fatalf("expected normalized tool use id, got %#v", contentBlock["id"])
 	}
 }
 
@@ -318,7 +354,7 @@ func TestConvertCIFEventToAnthropicSSE_SuppressThinkingBlocks(t *testing.T) {
 	var foundToolUse bool
 	for _, evt := range allEvents {
 		if cb, ok := evt["content_block"].(map[string]interface{}); ok {
-			if cb["type"] == "tool_use" && cb["id"] == "call_agent_1" {
+			if cb["type"] == "tool_use" && cb["id"] == "toolu_call_agent_1" {
 				foundToolUse = true
 			}
 		}
