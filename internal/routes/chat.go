@@ -198,6 +198,7 @@ func handleNonStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, c
 	}
 
 	logCompletedResponse("openai", requestID, originalModel, response.Model, providerID, false, response.StopReason, response.Usage, startTime)
+	recordUsage(requestID, originalModel, response.Model, providerID, "openai", response.Usage, time.Since(startTime).Milliseconds(), false, http.StatusOK, "")
 
 	c.JSON(http.StatusOK, openaiResp)
 	return nil
@@ -260,6 +261,7 @@ func handleStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, cano
 					Int("output_tokens", outputTokens).
 					Int64("latency_ms", time.Since(startTime).Milliseconds()).
 					Msg("\x1b[32m<--\x1b[0m RESPONSE stream")
+				recordUsage(requestID, originalModel, modelUsed, providerID, "openai", endEvt.Usage, time.Since(startTime).Milliseconds(), true, http.StatusOK, "")
 				return false
 			}
 

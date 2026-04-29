@@ -24,6 +24,7 @@ import { useMediaQuery } from "@/lib/useMediaQuery"
 import { ChatPage } from "@/pages/ChatPage"
 import { ConfigPage } from "@/pages/ConfigPage"
 import { LoggingPage } from "@/pages/LoggingPage"
+import { MeteringPage } from "@/pages/MeteringPage"
 import { ProvidersPage } from "@/pages/ProvidersPage"
 import { AboutPage } from "@/pages/SettingsPage"
 import { VirtualModelPage } from "@/pages/VirtualModelPage"
@@ -34,6 +35,7 @@ type Tab =
   | "providers"
   | "chat"
   | "logging"
+  | "metering"
   | "virtualmodel"
   | "config"
   | "about"
@@ -56,6 +58,7 @@ function isTab(value: string): value is Tab {
     value === "providers"
     || value === "chat"
     || value === "logging"
+    || value === "metering"
     || value === "virtualmodel"
     || value === "config"
     || value === "about"
@@ -122,6 +125,7 @@ export default function AppComponent() {
       { id: "providers" as const, label: t("nav:providers"), icon: Database },
       { id: "chat" as const, label: t("nav:chat"), icon: MessageSquare },
       { id: "logging" as const, label: t("nav:logging"), icon: BarChart3 },
+      { id: "metering" as const, label: "Metering", icon: BarChart3 },
       {
         id: "virtualmodel" as const,
         label: t("nav:virtualModels"),
@@ -590,6 +594,7 @@ export default function AppComponent() {
                   )}
                   {tab === "chat" && <ChatPage showToast={showToast} />}
                   {tab === "logging" && <LoggingPage showToast={showToast} />}
+                  {tab === "metering" && <MeteringPage showToast={showToast} />}
                   {tab === "virtualmodel" && (
                     <VirtualModelPage showToast={showToast} />
                   )}
