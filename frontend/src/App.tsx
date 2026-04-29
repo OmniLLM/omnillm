@@ -125,7 +125,7 @@ export default function AppComponent() {
       { id: "providers" as const, label: t("nav:providers"), icon: Database },
       { id: "chat" as const, label: t("nav:chat"), icon: MessageSquare },
       { id: "logging" as const, label: t("nav:logging"), icon: BarChart3 },
-      { id: "metering" as const, label: "Metering", icon: BarChart3 },
+      { id: "metering" as const, label: t("nav:metering"), icon: BarChart3 },
       {
         id: "virtualmodel" as const,
         label: t("nav:virtualModels"),
