@@ -14,6 +14,9 @@ func TestUpstreamAPI(t *testing.T) {
 		// GitHub Copilot — always chat completions
 		{"github-copilot", "gpt-4o", providermodels.ChatCompletions},
 		{"github-copilot", "claude-3.5-sonnet", providermodels.ChatCompletions},
+		{"github-copilot", "claude-haiku-4.5", providermodels.ChatCompletions},
+		{"github-copilot", "claude-sonnet-4.6", providermodels.ChatCompletions},
+		{"github-copilot", "gpt-5-mini", providermodels.ChatCompletions},
 		{"github-copilot", "gpt-5.4", providermodels.ChatCompletions},
 		{"github-copilot", "gpt-5-codex", providermodels.ChatCompletions},
 
@@ -24,6 +27,7 @@ func TestUpstreamAPI(t *testing.T) {
 
 		// Alibaba — always chat completions
 		{"alibaba", "qwen3.6-plus", providermodels.ChatCompletions},
+		{"alibaba", "deepseek-v4-flash", providermodels.ChatCompletions},
 		{"alibaba", "qwq-32b", providermodels.ChatCompletions},
 
 		// Kimi — always chat completions
