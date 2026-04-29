@@ -42,15 +42,15 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
 
 function authHeaders(apiKey: string): Record<string, string> {
   const trimmed = apiKey.trim()
-  return trimmed === ""
-    ? {}
+  return trimmed === "" ?
+      {}
     : {
         Authorization: `Bearer ${trimmed}`,
         "x-api-key": trimmed,
       }
 }
 
-async function runCommand(command: string, args: string[]): Promise<void> {
+async function runCommand(command: string, args: Array<string>): Promise<void> {
   const proc = Bun.spawn([command, ...args], {
     stdout: "inherit",
     stderr: "inherit",
@@ -58,11 +58,16 @@ async function runCommand(command: string, args: string[]): Promise<void> {
   })
   const code = await proc.exited
   if (code !== 0) {
-    throw new Error(`${command} ${args.join(" ")} failed with exit code ${code}`)
+    throw new Error(
+      `${command} ${args.join(" ")} failed with exit code ${code}`,
+    )
   }
 }
 
-async function waitForBackendReady(baseUrl: string, timeoutMs: number): Promise<void> {
+async function waitForBackendReady(
+  baseUrl: string,
+  timeoutMs: number,
+): Promise<void> {
   const started = Date.now()
   while (Date.now() - started < timeoutMs) {
     try {
@@ -78,7 +83,11 @@ async function waitForBackendReady(baseUrl: string, timeoutMs: number): Promise<
   throw new Error(`Backend did not become ready within ${timeoutMs}ms`)
 }
 
-async function verifyModel(baseUrl: string, apiKey: string, model: string): Promise<void> {
+async function verifyModel(
+  baseUrl: string,
+  apiKey: string,
+  model: string,
+): Promise<void> {
   const response = await fetch(`${baseUrl}/v1/models`, {
     headers: authHeaders(apiKey),
   })
@@ -117,14 +126,18 @@ async function postChatCompletion(
 
   const text = await response.text()
   if (!response.ok) {
-    throw new Error(`POST /v1/chat/completions failed with ${response.status}: ${text}`)
+    throw new Error(
+      `POST /v1/chat/completions failed with ${response.status}: ${text}`,
+    )
   }
 
   try {
     return JSON.parse(text) as ChatCompletionResponse
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error)
-    throw new Error(`Invalid JSON from /v1/chat/completions: ${message}\n${text}`)
+    throw new Error(
+      `Invalid JSON from /v1/chat/completions: ${message}\n${text}`,
+    )
   }
 }
 
@@ -143,7 +156,11 @@ function maxTokensForModel(model: string): number {
   return model.startsWith("gpt-5") ? 1024 : 256
 }
 
-async function testPlainChat(baseUrl: string, apiKey: string, model: string): Promise<void> {
+async function testPlainChat(
+  baseUrl: string,
+  apiKey: string,
+  model: string,
+): Promise<void> {
   const response = await postChatCompletion(baseUrl, apiKey, {
     model,
     max_tokens: maxTokensForModel(model),
@@ -169,7 +186,11 @@ async function testPlainChat(baseUrl: string, apiKey: string, model: string): Pr
   }
 }
 
-async function testToolUse(baseUrl: string, apiKey: string, model: string): Promise<void> {
+async function testToolUse(
+  baseUrl: string,
+  apiKey: string,
+  model: string,
+): Promise<void> {
   const tools = [
     {
       type: "function",
@@ -208,16 +229,10 @@ async function testToolUse(baseUrl: string, apiKey: string, model: string): Prom
   }
 
   const firstToolCall = firstChoice.message?.tool_calls?.[0]
-  const finishReason = firstChoice.finish_reason ?? ""
-  const hasToolCall = !!firstToolCall?.id && firstToolCall.type === "function"
+  const hasToolCall =
+    Boolean(firstToolCall?.id) && firstToolCall.type === "function"
 
   if (!hasToolCall) {
-    if (finishReason === "tool_calls") {
-      console.warn(
-        `[${model}] reported tool_calls without tool_calls payload; skipping tool-loop continuation for this model.`,
-      )
-      return
-    }
     throw new Error(
       `${model} tool turn 1 missing valid tool call. Payload: ${JSON.stringify(firstPayload)}`,
     )
@@ -258,7 +273,9 @@ async function testToolUse(baseUrl: string, apiKey: string, model: string): Prom
     )
   }
   if ((secondChoice.message?.tool_calls?.length ?? 0) > 0) {
-    throw new Error(`${model} tool turn 2 unexpectedly returned another tool call`)
+    throw new Error(
+      `${model} tool turn 2 unexpectedly returned another tool call`,
+    )
   }
 
   const content = secondChoice.message?.content?.trim() ?? ""
@@ -267,17 +284,20 @@ async function testToolUse(baseUrl: string, apiKey: string, model: string): Prom
   }
 }
 
-async function main(): Promise<void> {
+async function main(): Promise<number> {
   const apiKey = process.env.OMNILLM_OPENAI_API_KEY ?? DEFAULT_API_KEY
-  const timeoutMs = parsePositiveInt(process.env.OMNILLM_OPENAI_TIMEOUT_MS, DEFAULT_TIMEOUT_MS)
+  const timeoutMs = parsePositiveInt(
+    process.env.OMNILLM_OPENAI_TIMEOUT_MS,
+    DEFAULT_TIMEOUT_MS,
+  )
   const baseUrl = `http://${HOST}:${TEST_PORT}`
 
   const binDir = join(process.cwd(), ".tmp-live-tests")
   mkdirSync(binDir, { recursive: true })
   const binaryPath =
-    process.platform === "win32"
-      ? join(binDir, "omnillm-live-test.exe")
-      : join(binDir, "omnillm-live-test")
+    process.platform === "win32" ?
+      join(binDir, "omnillm-live-test.exe")
+    : join(binDir, "omnillm-live-test")
 
   console.log(`Building backend binary: ${binaryPath}`)
   await runCommand("go", ["build", "-o", binaryPath, "main.go"])
@@ -303,6 +323,7 @@ async function main(): Promise<void> {
   )
 
   let failed = false
+  let exitCode = 0
   try {
     await waitForBackendReady(baseUrl, timeoutMs)
 
@@ -344,12 +365,12 @@ async function main(): Promise<void> {
     console.log("\n✅ All model live checks passed.")
   } catch (error: unknown) {
     failed = true
+    exitCode = 1
     if (error instanceof Error) {
       console.error(`\n❌ Live check failed: ${error.message}`)
     } else {
       console.error("\n❌ Live check failed:", error)
     }
-    process.exitCode = 1
   } finally {
     backend.kill()
     await backend.exited
@@ -357,6 +378,9 @@ async function main(): Promise<void> {
       console.log("Backend stopped.")
     }
   }
+  return exitCode
 }
 
-void main()
+void main().then((exitCode) => {
+  process.exitCode = exitCode
+})
