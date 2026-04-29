@@ -1,0 +1,41 @@
+{
+  "title": "聊天",
+  "description": "与 AI 模型聊天",
+  "newChat": "+ 新建聊天",
+  "apiEndpoint": "API 端点",
+  "model": "模型",
+  "loadingModels": "加载模型中…",
+  "history": "历史记录",
+  "deleteAllHistory": "删除所有聊天历史",
+  "noHistory": "暂无历史记录",
+  "startConversation": "开始对话以保存在此处。",
+  "clearCurrent": "清除当前",
+  "youSaid": "你说",
+  "assistantSaid": "助手说",
+  "thinking": "思考中",
+  "typeMessage": "与模型聊天…",
+  "sendingMessage": "发送消息中…",
+  "sendMessage": "发送消息",
+  "selectModel": "选择一个模型并发送第一条消息以开始聊天。",
+  "noModelAvailable": "此 API 形式没有可用的模型。",
+  "deleteAllConfirm": "删除所有聊天历史?",
+  "deleteAllWarning": "这将永久删除所有会话，无法撤销。",
+  "errors": {
+    "failedToLoad": "加载数据失败: {{error}}",
+    "modelUnavailable": "模型\"{{model}}\"不可用；已切换到 {{fallback}}",
+    "failedToLoadSession": "加载会话失败: {{error}}",
+    "failedToCreate": "创建聊天会话失败: {{error}}",
+    "chatError": "聊天错误: {{error}}",
+    "failedToDelete": "删除聊天失败: {{error}}",
+    "networkError": "网络错误。请检查您的连接并重试。",
+    "authError": "身份验证失败。请检查您的 API 密钥。",
+    "rateLimited": "速率限制。请稍候并重试。",
+    "serverError": "服务器错误。请稍后重试。",
+    "somethingWentWrong": "出现问题。请重试。",
+    "unexpected": "发生意外错误。请重试。"
+  },
+  "toasts": {
+    "deleted": "聊天已删除",
+    "allDeleted": "所有聊天已删除"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "title": "关于",
+  "description": "连接详情、运行时状态和快速集成端点。",
+  "version": "版本",
+  "activeProvider": "活跃提供者",
+  "availableModels": "可用模型",
+  "serverDetails": "服务器详情",
+  "port": "端口",
+  "baseURL": "基础 URL",
+  "apiEndpoints": "API 端点",
+  "runtimeState": "运行时状态",
+  "manualApprove": "手动批准",
+  "enabled": "已启用",
+  "disabled": "已禁用",
+  "rateLimit": "速率限制",
+  "rateLimitMode": "速率限制模式",
+  "wait": "等待",
+  "error": "错误",
+  "none": "无",
+  "quickCopy": "快速复制",
+  "openaiBaseURL": "OpenAI 基础 URL",
+  "claudeAPIBase": "Claude API 基础",
+  "loading": "加载中…",
+  "errors": {
+    "failed": "失败: {{error}}",
+    "copyFailed": "复制失败"
+  },
+  "toasts": {
+    "copied": "已复制!"
+  }
+}

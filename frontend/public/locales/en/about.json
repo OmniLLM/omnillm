@@ -1,0 +1,31 @@
+{
+  "title": "About",
+  "description": "Connection details, runtime status, and quick integration endpoints.",
+  "version": "Version",
+  "activeProvider": "Active Provider",
+  "availableModels": "Available Models",
+  "serverDetails": "Server Details",
+  "port": "Port",
+  "baseURL": "Base URL",
+  "apiEndpoints": "API Endpoints",
+  "runtimeState": "Runtime State",
+  "manualApprove": "Manual Approve",
+  "enabled": "Enabled",
+  "disabled": "Disabled",
+  "rateLimit": "Rate Limit",
+  "rateLimitMode": "Rate Limit Mode",
+  "wait": "Wait",
+  "error": "Error",
+  "none": "None",
+  "quickCopy": "Quick Copy",
+  "openaiBaseURL": "OpenAI Base URL",
+  "claudeAPIBase": "Claude API Base",
+  "loading": "Loading…",
+  "errors": {
+    "failed": "Failed: {{error}}",
+    "copyFailed": "Copy failed"
+  },
+  "toasts": {
+    "copied": "Copied!"
+  }
+}

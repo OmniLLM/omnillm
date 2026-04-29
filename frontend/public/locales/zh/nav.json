@@ -1,0 +1,8 @@
+{
+  "providers": "提供者",
+  "chat": "聊天",
+  "logging": "日志",
+  "virtualModels": "虚拟模型",
+  "toolConfig": "工具配置",
+  "about": "关于"
+}

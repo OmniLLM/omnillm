@@ -1,0 +1,8 @@
+{
+  "providers": "Providers",
+  "chat": "Chat",
+  "logging": "Logging",
+  "virtualModels": "Virtual Models",
+  "toolConfig": "Tool Config",
+  "about": "About"
+}

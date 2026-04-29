@@ -1,0 +1,41 @@
+{
+  "title": "Logging",
+  "description": "Live proxy output. Real-time streaming of all application logs.",
+  "logLevel": "Log level",
+  "trace": "Trace",
+  "debug": "Debug",
+  "info": "Info",
+  "warn": "Warn",
+  "error": "Error",
+  "fatal": "Fatal",
+  "connecting": "Connecting",
+  "live": "Live",
+  "retrying": "Retrying",
+  "autoScroll": {
+    "on": "Auto-scroll is on — click to disable",
+    "off": "Auto-scroll is off — click to enable",
+    "button": "⬇ Auto"
+  },
+  "manual": "Manual",
+  "scrollTop": "Scroll to top",
+  "scrollBottom": "↓ Bottom",
+  "top": "↑ Top",
+  "bottom": "Scroll to bottom",
+  "clear": "Clear",
+  "copy": "Copy",
+  "openingStream": "Opening stream…",
+  "receivingLines": "Receiving new log lines",
+  "waitingReconnect": "Waiting for reconnect",
+  "connecting": "Connecting to log stream...",
+  "noLogs": "No log lines received yet.",
+  "errors": {
+    "failedToLoad": "Failed to load log level: {{error}}",
+    "failedToUpdate": "Failed to update log level: {{error}}",
+    "copyFailed": "Copy failed: {{error}}"
+  },
+  "toasts": {
+    "cleared": "Cleared visible log buffer",
+    "copied": "Copied visible logs",
+    "levelChanged": "Log level → {{level}}"
+  }
+}

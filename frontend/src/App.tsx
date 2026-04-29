@@ -11,11 +11,13 @@ import {
   SlidersHorizontal,
   Menu,
 } from "lucide-react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
+import { useTranslation } from "react-i18next"
 
 import { getInfo, type ServerInfo } from "@/api"
 import { MuiThemeWrapper } from "@/components/MuiThemeWrapper"
 import { useToast, ToastContainer } from "@/components/Toast"
+import { useLanguage } from "@/hooks/useLanguage"
 import { createLogger } from "@/lib/logger"
 import { ConfirmProvider } from "@/lib/useConfirm"
 import { useMediaQuery } from "@/lib/useMediaQuery"
@@ -36,15 +38,6 @@ type Tab =
   | "config"
   | "about"
 type Theme = "dark" | "light"
-
-const NAV_ITEMS = [
-  { id: "providers" as const, label: "Providers", icon: Database },
-  { id: "chat" as const, label: "Chat", icon: MessageSquare },
-  { id: "logging" as const, label: "Logging", icon: BarChart3 },
-  { id: "virtualmodel" as const, label: "Virtual Models", icon: Layers },
-  { id: "config" as const, label: "Tool Config", icon: SlidersHorizontal },
-  { id: "about" as const, label: "About", icon: Settings },
-]
 
 const SIDEBAR_WIDTH = 260
 
@@ -112,6 +105,8 @@ function applyTheme(theme: Theme) {
 applyTheme(loadTheme())
 
 export default function AppComponent() {
+  const { t } = useTranslation(["nav", "common"])
+  const { toggleLanguage, currentLanguage } = useLanguage()
   const [tab, setTab] = useState<Tab>(loadTab())
   const { showToast } = useToast()
   const [info, setInfo] = useState<ServerInfo | null>(null)
@@ -120,6 +115,27 @@ export default function AppComponent() {
   const [toggleHovered, setToggleHovered] = useState(false)
   const isMobile = useMediaQuery("(max-width: 768px)")
   const [mobileOpen, setMobileOpen] = useState(false)
+
+  // Create NAV_ITEMS with translations
+  const NAV_ITEMS = useMemo(
+    () => [
+      { id: "providers" as const, label: t("nav:providers"), icon: Database },
+      { id: "chat" as const, label: t("nav:chat"), icon: MessageSquare },
+      { id: "logging" as const, label: t("nav:logging"), icon: BarChart3 },
+      {
+        id: "virtualmodel" as const,
+        label: t("nav:virtualModels"),
+        icon: Layers,
+      },
+      {
+        id: "config" as const,
+        label: t("nav:toolConfig"),
+        icon: SlidersHorizontal,
+      },
+      { id: "about" as const, label: t("nav:about"), icon: Settings },
+    ],
+    [t],
+  )
 
   // Auto-collapse mobile drawer on tab change
   useEffect(() => {
@@ -270,7 +286,7 @@ export default function AppComponent() {
                         lineHeight: 1,
                       }}
                     >
-                      OmniLLM
+                      {t("common:headers.omnillm")}
                     </div>
                     <div
                       style={{
@@ -281,14 +297,14 @@ export default function AppComponent() {
                         letterSpacing: "-0.01em",
                       }}
                     >
-                      Intelligent LLM Router
+                      {t("common:headers.intelligentLLMRouter")}
                     </div>
                   </div>
                 </div>
               </div>
 
               <nav
-                aria-label="Main navigation"
+                aria-label={t("common:headers.mainNavigation")}
                 style={{ flex: 1, padding: "10px 0 10px 0" }}
               >
                 {NAV_ITEMS.map((item) => {
@@ -327,9 +343,11 @@ export default function AppComponent() {
                     <div
                       className="status-dot status-dot-active"
                       role="img"
-                      aria-label="Server online"
+                      aria-label={t("common:sidebar.serverOnlineAriaLabel")}
                     />
-                    <span className="sr-only">Server online.</span>
+                    <span className="sr-only">
+                      {t("common:sidebar.statusDot")}.
+                    </span>
                     {info ?
                       <span className="version-pill">
                         v{info.version} · :{info.port}
@@ -341,20 +359,41 @@ export default function AppComponent() {
                           fontWeight: 500,
                         }}
                       >
-                        Online
+                        {t("common:common.online")}
                       </span>
                     }
                   </div>
-                  <button
-                    onClick={toggleTheme}
-                    title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
-                    aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
-                    className="btn btn-icon btn-icon-ghost"
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 4 }}
                   >
-                    {theme === "dark" ?
-                      <Sun size={14} />
-                    : <Moon size={14} />}
-                  </button>
+                    <button
+                      onClick={toggleLanguage}
+                      title={
+                        currentLanguage() === "en" ?
+                          t("common:language.switchToChinese")
+                        : t("common:language.switchToEnglish")
+                      }
+                      aria-label={
+                        currentLanguage() === "en" ?
+                          t("common:language.switchToChinese")
+                        : t("common:language.switchToEnglish")
+                      }
+                      className="btn btn-icon btn-icon-ghost"
+                      style={{ fontSize: 11, fontWeight: 600 }}
+                    >
+                      {currentLanguage() === "en" ? "中文" : "EN"}
+                    </button>
+                    <button
+                      onClick={toggleTheme}
+                      title={`${t("common:theme.switchTo")}${theme === "dark" ? t("common:theme.switchToLight") : t("common:theme.switchToDark")}`}
+                      aria-label={`${t("common:theme.switchTo")}${theme === "dark" ? t("common:theme.switchToLight") : t("common:theme.switchToDark")}`}
+                      className="btn btn-icon btn-icon-ghost"
+                    >
+                      {theme === "dark" ?
+                        <Sun size={14} />
+                      : <Moon size={14} />}
+                    </button>
+                  </div>
                 </div>
               </div>
             </>
@@ -380,8 +419,16 @@ export default function AppComponent() {
             onClick={toggleSidebar}
             onMouseEnter={() => setToggleHovered(true)}
             onMouseLeave={() => setToggleHovered(false)}
-            title={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
-            aria-label={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
+            title={
+              sidebarCollapsed ?
+                t("common:sidebar.showSidebar")
+              : t("common:sidebar.hideSidebar")
+            }
+            aria-label={
+              sidebarCollapsed ?
+                t("common:sidebar.showSidebar")
+              : t("common:sidebar.hideSidebar")
+            }
             style={{
               position: "fixed",
               top: "50%",
@@ -447,7 +494,11 @@ export default function AppComponent() {
                 <button
                   onClick={() => setMobileOpen((v) => !v)}
                   className="btn btn-icon btn-icon-ghost"
-                  aria-label={mobileOpen ? "Close menu" : "Open menu"}
+                  aria-label={
+                    mobileOpen ?
+                      t("common:sidebar.close")
+                    : t("common:sidebar.open")
+                  }
                   aria-expanded={mobileOpen}
                   style={{ marginRight: 4 }}
                 >
@@ -461,7 +512,7 @@ export default function AppComponent() {
                   fontFamily: "var(--font-text)",
                 }}
               >
-                OmniLLM
+                {t("common:headers.omnillm")}
               </span>
               <span
                 style={{ fontSize: 12, color: "var(--color-separator-opaque)" }}
@@ -490,12 +541,12 @@ export default function AppComponent() {
             {info && (
               <div
                 style={{ display: "flex", alignItems: "center", gap: 6 }}
-                title="Server online"
+                title={t("common:sidebar.serverOnlineAriaLabel")}
               >
                 <div
                   className="status-dot status-dot-active"
                   role="img"
-                  aria-label="Server online"
+                  aria-label={t("common:sidebar.serverOnlineAriaLabel")}
                 />
                 <span
                   style={{
