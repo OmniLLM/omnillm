@@ -555,6 +555,7 @@ export interface MeteringLogsResponse {
 export interface MeteringQuery {
   model_id?: string
   provider_id?: string
+  client?: string
   api_shape?: string
   since?: string
   until?: string
@@ -605,6 +606,11 @@ export const getMeteringModels = (params: MeteringQuery = {}) =>
 export const getMeteringProviders = (params: MeteringQuery = {}) =>
   apiFetch<{ items: Array<string> | null }>(
     `/api/admin/metering/providers${buildQueryString(params)}`,
+  )
+
+export const getMeteringClients = (params: MeteringQuery = {}) =>
+  apiFetch<{ items: Array<string> | null }>(
+    `/api/admin/metering/clients${buildQueryString(params)}`,
   )
 
 // ─── Log level ────────────────────────────────────────────────────────────────

@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState, type CSSProperties } from "react"
 import { useTranslation } from "react-i18next"
 
 import {
-  getMeteringByClient,
   getMeteringByModel,
   getMeteringByProvider,
+  getMeteringClients,
   getMeteringLogs,
   getMeteringModels,
   getMeteringProviders,
@@ -16,6 +16,39 @@ import {
   type MeteringStats,
 } from "@/api"
 import { SearchableSelect } from "@/components/SearchableSelect"
+
+function sortItems<T>(
+  items: Array<T>,
+  sortKey: keyof T | null,
+  sortDirection: "asc" | "desc",
+) {
+  if (!sortKey) return [...items]
+
+  return [...items].sort((left, right) => {
+    const leftValue = left[sortKey]
+    const rightValue = right[sortKey]
+
+    if (typeof leftValue === "number" && typeof rightValue === "number") {
+      return sortDirection === "asc" ?
+          leftValue - rightValue
+        : rightValue - leftValue
+    }
+
+    if (typeof leftValue === "boolean" && typeof rightValue === "boolean") {
+      const leftNumber = Number(leftValue)
+      const rightNumber = Number(rightValue)
+      return sortDirection === "asc" ?
+          leftNumber - rightNumber
+        : rightNumber - leftNumber
+    }
+
+    const leftText = String(leftValue ?? "")
+    const rightText = String(rightValue ?? "")
+    return sortDirection === "asc" ?
+        leftText.localeCompare(rightText)
+      : rightText.localeCompare(leftText)
+  })
+}
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat().format(value)
@@ -51,6 +84,7 @@ function Card({
         border: "1px solid var(--color-separator)",
         boxShadow: "var(--shadow-card)",
         overflow: "hidden",
+        minWidth: 0,
         ...style,
       }}
     >
@@ -124,13 +158,84 @@ function BreakdownTable({
   const { t } = useTranslation("metering")
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(5)
+  const [sortKey, setSortKey] = useState<
+    | "requests"
+    | "input_tokens"
+    | "output_tokens"
+    | "total_tokens"
+    | "avg_latency_ms"
+    | "model_id"
+    | "provider_id"
+    | "client"
+  >("total_tokens")
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
   const safeItems = items ?? []
-  const totalPages = Math.max(1, Math.ceil(safeItems.length / pageSize))
+
+  const sortedItems = useMemo(
+    () => sortItems(safeItems, sortKey, sortDirection),
+    [safeItems, sortDirection, sortKey],
+  )
+  const totalPages = Math.max(1, Math.ceil(sortedItems.length / pageSize))
 
   useEffect(() => {
     setPage(1)
-  }, [items, pageSize])
-  const pageItems = safeItems.slice((page - 1) * pageSize, page * pageSize)
+  }, [items, pageSize, sortDirection, sortKey])
+
+  const pageItems = sortedItems.slice((page - 1) * pageSize, page * pageSize)
+
+  const handleSort = (
+    nextKey:
+      | "requests"
+      | "input_tokens"
+      | "output_tokens"
+      | "total_tokens"
+      | "avg_latency_ms"
+      | "model_id"
+      | "provider_id"
+      | "client",
+  ) => {
+    if (sortKey === nextKey) {
+      setSortDirection((current) => (current === "asc" ? "desc" : "asc"))
+      return
+    }
+    setSortKey(nextKey)
+    let direction: "asc" | "desc" = "asc"
+    if (nextKey !== valueKey) {
+      direction = nextKey === "total_tokens" ? "desc" : "asc"
+    }
+    setSortDirection(direction)
+  }
+
+  const renderSortIndicator = (
+    key:
+      | "requests"
+      | "input_tokens"
+      | "output_tokens"
+      | "total_tokens"
+      | "avg_latency_ms"
+      | "model_id"
+      | "provider_id"
+      | "client",
+  ) => {
+    if (sortKey !== key) return null
+    return sortDirection === "asc" ? " ▲" : " ▼"
+  }
+
+  const groupedHeaders: Array<{
+    key:
+      | "requests"
+      | "input_tokens"
+      | "output_tokens"
+      | "total_tokens"
+      | "avg_latency_ms"
+    label: string
+  }> = [
+    { key: "requests", label: t("table.requests") },
+    { key: "input_tokens", label: t("table.input") },
+    { key: "output_tokens", label: t("table.output") },
+    { key: "total_tokens", label: t("table.total") },
+    { key: "avg_latency_ms", label: t("table.avgLatency") },
+  ]
 
   return (
     <Card>
@@ -145,7 +250,15 @@ function BreakdownTable({
           flexWrap: "wrap",
         }}
       >
-        <div>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+            minWidth: 220,
+            flex: "1 1 260px",
+          }}
+        >
           <h2
             style={{
               margin: 0,
@@ -157,7 +270,15 @@ function BreakdownTable({
             {title}
           </h2>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+            justifyContent: "flex-end",
+          }}
+        >
           <label
             style={{
               display: "flex",
@@ -188,41 +309,45 @@ function BreakdownTable({
               fontFamily: "var(--font-mono)",
             }}
           >
-            {t("pagination.rows", { count: safeItems.length })}
+            {t("pagination.rows", { count: sortedItems.length })}
           </span>
         </div>
       </div>
       <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <table
+          style={{ width: "100%", minWidth: 720, borderCollapse: "collapse" }}
+        >
           <thead>
             <tr style={{ background: "rgba(255,255,255,0.02)" }}>
-              {[
-                keyLabel,
-                t("table.requests"),
-                t("table.input"),
-                t("table.output"),
-                t("table.total"),
-                t("table.avgLatency"),
-              ].map((label) => (
+              <th
+                onClick={() => handleSort(valueKey)}
+                style={{
+                  ...groupedHeaderCellStyle,
+                  minWidth: 180,
+                  cursor: "pointer",
+                }}
+              >
+                {keyLabel}
+                {renderSortIndicator(valueKey)}
+              </th>
+              {groupedHeaders.map((header) => (
                 <th
-                  key={label}
+                  key={header.key}
+                  onClick={() => handleSort(header.key)}
                   style={{
-                    textAlign: "left",
-                    padding: "10px 14px",
-                    fontSize: 11,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
-                    color: "var(--color-text-tertiary)",
-                    borderBottom: "1px solid var(--color-separator)",
+                    ...groupedHeaderCellStyle,
+                    minWidth: 100,
+                    cursor: "pointer",
                   }}
                 >
-                  {label}
+                  {header.label}
+                  {renderSortIndicator(header.key)}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {safeItems.length === 0 && (
+            {sortedItems.length === 0 && (
               <tr>
                 <td
                   colSpan={6}
@@ -238,16 +363,7 @@ function BreakdownTable({
             )}
             {pageItems.map((item, index) => (
               <tr key={`${item[valueKey] ?? "unknown"}-${index}`}>
-                <td
-                  style={{
-                    padding: "12px 14px",
-                    borderBottom: "1px solid var(--color-separator)",
-                    color: "var(--color-text)",
-                    fontWeight: 600,
-                  }}
-                >
-                  {item[valueKey] ?? "—"}
-                </td>
+                <td style={groupedKeyCellStyle}>{item[valueKey] ?? "—"}</td>
                 <td style={cellStyle}>{formatNumber(item.requests)}</td>
                 <td style={cellStyle}>{formatNumber(item.input_tokens)}</td>
                 <td style={cellStyle}>{formatNumber(item.output_tokens)}</td>
@@ -294,6 +410,25 @@ function BreakdownTable({
   )
 }
 
+const groupedHeaderCellStyle: CSSProperties = {
+  textAlign: "left",
+  padding: "10px 14px",
+  fontSize: 11,
+  textTransform: "uppercase",
+  letterSpacing: "0.06em",
+  color: "var(--color-text-tertiary)",
+  borderBottom: "1px solid var(--color-separator)",
+  whiteSpace: "nowrap",
+}
+
+const groupedKeyCellStyle: CSSProperties = {
+  padding: "12px 14px",
+  borderBottom: "1px solid var(--color-separator)",
+  color: "var(--color-text)",
+  fontWeight: 600,
+  minWidth: 180,
+}
+
 const cellStyle: CSSProperties = {
   padding: "12px 14px",
   borderBottom: "1px solid var(--color-separator)",
@@ -319,6 +454,7 @@ export function MeteringPage({
   const [until, setUntil] = useState("")
   const [modelId, setModelId] = useState("")
   const [providerId, setProviderId] = useState("")
+  const [client, setClient] = useState("")
   const [apiShape, setAPIShape] = useState("")
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
@@ -329,9 +465,14 @@ export function MeteringPage({
   const [logs, setLogs] = useState<MeteringLogsResponse | null>(null)
   const [byModel, setByModel] = useState<Array<MeteringBreakdownItem>>([])
   const [byProvider, setByProvider] = useState<Array<MeteringBreakdownItem>>([])
-  const [byClient, setByClient] = useState<Array<MeteringBreakdownItem>>([])
+  const [logSortKey, setLogSortKey] =
+    useState<keyof MeteringRecord>("created_at")
+  const [logSortDirection, setLogSortDirection] = useState<"asc" | "desc">(
+    "desc",
+  )
   const [modelOptions, setModelOptions] = useState<Array<string>>([])
   const [providerOptions, setProviderOptions] = useState<Array<string>>([])
+  const [clientOptions, setClientOptions] = useState<Array<string>>([])
 
   const query = useMemo<MeteringQuery>(
     () => ({
@@ -339,11 +480,22 @@ export function MeteringPage({
       until: until ? new Date(until).toISOString() : undefined,
       model_id: modelId || undefined,
       provider_id: providerId || undefined,
+      client: client || undefined,
       api_shape: apiShape || undefined,
       page,
       page_size: pageSize,
     }),
-    [apiShape, modelId, page, pageSize, providerId, reloadKey, since, until],
+    [
+      apiShape,
+      client,
+      modelId,
+      page,
+      pageSize,
+      providerId,
+      reloadKey,
+      since,
+      until,
+    ],
   )
 
   const modelOptionsQuery = useMemo<MeteringQuery>(
@@ -351,9 +503,10 @@ export function MeteringPage({
       since: since ? new Date(since).toISOString() : undefined,
       until: until ? new Date(until).toISOString() : undefined,
       provider_id: providerId || undefined,
+      client: client || undefined,
       api_shape: apiShape || undefined,
     }),
-    [apiShape, providerId, reloadKey, since, until],
+    [apiShape, client, providerId, reloadKey, since, until],
   )
 
   const providerOptionsQuery = useMemo<MeteringQuery>(
@@ -361,9 +514,21 @@ export function MeteringPage({
       since: since ? new Date(since).toISOString() : undefined,
       until: until ? new Date(until).toISOString() : undefined,
       model_id: modelId || undefined,
+      client: client || undefined,
       api_shape: apiShape || undefined,
     }),
-    [apiShape, modelId, reloadKey, since, until],
+    [apiShape, client, modelId, reloadKey, since, until],
+  )
+
+  const clientOptionsQuery = useMemo<MeteringQuery>(
+    () => ({
+      since: since ? new Date(since).toISOString() : undefined,
+      until: until ? new Date(until).toISOString() : undefined,
+      model_id: modelId || undefined,
+      provider_id: providerId || undefined,
+      api_shape: apiShape || undefined,
+    }),
+    [apiShape, modelId, providerId, reloadKey, since, until],
   )
 
   useEffect(() => {
@@ -375,9 +540,9 @@ export function MeteringPage({
       getMeteringLogs(query),
       getMeteringByModel(query),
       getMeteringByProvider(query),
-      getMeteringByClient(query),
       getMeteringModels(modelOptionsQuery),
       getMeteringProviders(providerOptionsQuery),
+      getMeteringClients(clientOptionsQuery),
     ])
       .then(
         ([
@@ -385,18 +550,18 @@ export function MeteringPage({
           nextLogs,
           nextByModel,
           nextByProvider,
-          nextByClient,
           nextModels,
           nextProviders,
+          nextClients,
         ]) => {
           if (cancelled) return
           setStats(nextStats)
           setLogs({ ...nextLogs, items: nextLogs.items ?? [] })
           setByModel(nextByModel.items ?? [])
           setByProvider(nextByProvider.items ?? [])
-          setByClient(nextByClient.items ?? [])
           setModelOptions(nextModels.items ?? [])
           setProviderOptions(nextProviders.items ?? [])
+          setClientOptions(nextClients.items ?? [])
         },
       )
       .catch((e: unknown) => {
@@ -414,11 +579,49 @@ export function MeteringPage({
     return () => {
       cancelled = true
     }
-  }, [modelOptionsQuery, providerOptionsQuery, query, showToast])
+  }, [
+    clientOptionsQuery,
+    modelOptionsQuery,
+    providerOptionsQuery,
+    query,
+    showToast,
+  ])
 
   const totalPages =
     logs ? Math.max(1, Math.ceil(logs.total / logs.page_size)) : 1
-  const logItems = (logs?.items ?? []).slice(0, maxRows || undefined)
+  const logSortOptions: Array<{ key: keyof MeteringRecord; label: string }> = [
+    { key: "created_at", label: t("table.time") },
+    { key: "model_id", label: t("table.model") },
+    { key: "provider_id", label: t("table.provider") },
+    { key: "client", label: t("table.client") },
+    { key: "api_shape", label: t("table.shape") },
+    { key: "input_tokens", label: t("table.input") },
+    { key: "output_tokens", label: t("table.output") },
+    { key: "total_tokens", label: t("table.total") },
+    { key: "latency_ms", label: t("table.latency") },
+    { key: "status_code", label: t("table.status") },
+    { key: "is_stream", label: t("table.stream") },
+  ]
+
+  const handleLogSort = (nextKey: keyof MeteringRecord) => {
+    if (logSortKey === nextKey) {
+      setLogSortDirection((current) => (current === "asc" ? "desc" : "asc"))
+      return
+    }
+    setLogSortKey(nextKey)
+    setLogSortDirection(nextKey === "created_at" ? "desc" : "asc")
+  }
+
+  const renderLogSortIndicator = (key: keyof MeteringRecord) => {
+    if (logSortKey !== key) return null
+    return logSortDirection === "asc" ? " ▲" : " ▼"
+  }
+
+  const sortedLogs = useMemo(
+    () => sortItems(logs?.items ?? [], logSortKey, logSortDirection),
+    [logSortDirection, logSortKey, logs?.items],
+  )
+  const logItems = sortedLogs.slice(0, maxRows || undefined)
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -524,6 +727,18 @@ export function MeteringPage({
             />
           </label>
           <label style={fieldStyle}>
+            <span style={labelStyle}>{t("table.client")}</span>
+            <SearchableSelect
+              options={clientOptions}
+              value={client}
+              onChange={(v) => {
+                setClient(v)
+                setPage(1)
+              }}
+              placeholder={t("filters.allClients")}
+            />
+          </label>
+          <label style={fieldStyle}>
             <span style={labelStyle}>{t("filters.apiShape")}</span>
             <select
               className="sys-select"
@@ -593,12 +808,6 @@ export function MeteringPage({
           items={byProvider}
           valueKey="provider_id"
         />
-        <BreakdownTable
-          title={t("byClient")}
-          keyLabel={t("table.client")}
-          items={byClient}
-          valueKey="client"
-        />
       </div>
 
       <Card>
@@ -633,7 +842,14 @@ export function MeteringPage({
               {t("requestLogDescription")}
             </p>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
             <label
               style={{
                 display: "flex",
@@ -702,34 +918,45 @@ export function MeteringPage({
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <table
+            style={{
+              width: "100%",
+              minWidth: 1280,
+              borderCollapse: "collapse",
+            }}
+          >
             <thead>
               <tr style={{ background: "rgba(255,255,255,0.02)" }}>
-                {[
-                  t("table.time"),
-                  t("table.model"),
-                  t("table.provider"),
-                  t("table.shape"),
-                  t("table.input"),
-                  t("table.output"),
-                  t("table.total"),
-                  t("table.latency"),
-                  t("table.status"),
-                  t("table.stream"),
-                ].map((label) => (
+                {logSortOptions.map((option) => (
                   <th
-                    key={label}
+                    key={option.key}
+                    onClick={() => handleLogSort(option.key)}
                     style={{
-                      textAlign: "left",
-                      padding: "10px 14px",
-                      fontSize: 11,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.06em",
-                      color: "var(--color-text-tertiary)",
-                      borderBottom: "1px solid var(--color-separator)",
+                      ...groupedHeaderCellStyle,
+                      minWidth: (() => {
+                        switch (option.key) {
+                          case "created_at": {
+                            return 170
+                          }
+                          case "model_id": {
+                            return 170
+                          }
+                          case "provider_id": {
+                            return 210
+                          }
+                          case "client": {
+                            return 160
+                          }
+                          default: {
+                            return 100
+                          }
+                        }
+                      })(),
+                      cursor: "pointer",
                     }}
                   >
-                    {label}
+                    {option.label}
+                    {renderLogSortIndicator(option.key)}
                   </th>
                 ))}
               </tr>
@@ -738,7 +965,7 @@ export function MeteringPage({
               {!loading && logItems.length === 0 && (
                 <tr>
                   <td
-                    colSpan={10}
+                    colSpan={11}
                     style={{
                       padding: "28px 16px",
                       textAlign: "center",
@@ -751,9 +978,18 @@ export function MeteringPage({
               )}
               {logItems.map((row: MeteringRecord) => (
                 <tr key={row.id}>
-                  <td style={cellStyle}>{formatDateTime(row.created_at)}</td>
-                  <td style={cellStyle}>{row.model_id}</td>
-                  <td style={cellStyle}>{row.provider_id}</td>
+                  <td style={{ ...cellStyle, minWidth: 170 }}>
+                    {formatDateTime(row.created_at)}
+                  </td>
+                  <td style={{ ...cellStyle, minWidth: 170 }}>
+                    {row.model_id}
+                  </td>
+                  <td style={{ ...cellStyle, minWidth: 210 }}>
+                    {row.provider_id}
+                  </td>
+                  <td style={{ ...cellStyle, minWidth: 160 }}>
+                    {row.client || "—"}
+                  </td>
                   <td style={cellStyle}>{row.api_shape}</td>
                   <td style={cellStyle}>{formatNumber(row.input_tokens)}</td>
                   <td style={cellStyle}>{formatNumber(row.output_tokens)}</td>

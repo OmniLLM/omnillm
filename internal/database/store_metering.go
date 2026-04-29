@@ -26,6 +26,7 @@ func (db *Database) InsertMeteringRecord(r MeteringRecord) error {
 type MeteringFilter struct {
 	ModelID    string
 	ProviderID string
+	Client     string
 	APIShape   string
 	Since      time.Time
 	Until      time.Time
@@ -228,6 +229,10 @@ func meteringWhere(f MeteringFilter) (string, []any) {
 		clauses = append(clauses, "provider_id = ?")
 		args = append(args, f.ProviderID)
 	}
+	if f.Client != "" {
+		clauses = append(clauses, "client = ?")
+		args = append(args, f.Client)
+	}
 	if f.APIShape != "" {
 		clauses = append(clauses, "api_shape = ?")
 		args = append(args, f.APIShape)
@@ -297,6 +302,26 @@ func (db *Database) GetDistinctMeteringProviders(f MeteringFilter) ([]string, er
 			return nil, err
 		}
 		result = append(result, p)
+	}
+	return result, rows.Err()
+}
+
+// GetDistinctMeteringClients returns distinct clients from request_logs within the filter window.
+func (db *Database) GetDistinctMeteringClients(f MeteringFilter) ([]string, error) {
+	where, args := meteringWhere(f)
+	sql := `SELECT DISTINCT client FROM request_logs` + where + ` ORDER BY client`
+	rows, err := db.db.Query(sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("distinct clients: %w", err)
+	}
+	defer rows.Close()
+	var result []string
+	for rows.Next() {
+		var client string
+		if err := rows.Scan(&client); err != nil {
+			return nil, err
+		}
+		result = append(result, client)
 	}
 	return result, rows.Err()
 }

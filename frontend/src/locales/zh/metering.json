@@ -24,6 +24,7 @@
     "all": "全部",
     "allModels": "全部模型",
     "allProviders": "全部提供者",
+    "allClients": "全部客户端",
     "rowsPerPage": "每页行数",
     "maxRows": "最大行数"
   },
