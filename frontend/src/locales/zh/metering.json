@@ -5,7 +5,7 @@
   "byProvider": "按提供者",
   "byClient": "按客户端",
   "requestLog": "请求日志",
-  "requestLogDescription": "从 OpenAI 和 Anthropic 响应路径捕获的原始计量行。",
+  "requestLogDescription": "从 OpenAI、Responses API 和 Anthropic 响应路径捕获的原始计量行。",
   "stats": {
     "requests": "请求数",
     "requestsSubtext": "所选时间窗口内完成的请求",
