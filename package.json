@@ -31,6 +31,7 @@
     "test:frontend:integration": "bun test tests/frontend/integration/",
     "test:frontend:pages": "bun test tests/frontend/pages/",
     "test:frontend:watch": "bun test --watch tests/frontend/",
+    "test:model-matrix:5100": "bun run scripts/test-live-model-matrix-5100.ts",
     "test:qwen36:agent-sdk": "bun run scripts/test-qwen36-claude-agent-sdk.ts",
     "test:qwen36:chat-live": "bun run scripts/test-qwen36-chat-completions-live.ts",
     "typecheck": "tsc -p frontend/tsconfig.json"
