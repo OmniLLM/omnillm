@@ -152,6 +152,7 @@ func handleResponsesNonStreamingResponse(c *gin.Context, adapter types.ProviderA
 	}
 
 	logCompletedResponse("responses", requestID, originalModel, response.Model, providerID, false, response.StopReason, response.Usage, startTime)
+	recordUsage(requestID, originalModel, response.Model, providerID, normalizeMeteringClient(c.GetHeader("User-Agent")), "responses", response.Usage, time.Since(startTime).Milliseconds(), false, http.StatusOK, "")
 
 	c.JSON(http.StatusOK, responsesResp)
 	return nil
@@ -229,6 +230,7 @@ func handleResponsesStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 					Int("output_tokens", outputTokens).
 					Int64("latency_ms", time.Since(startTime).Milliseconds()).
 					Msg("\x1b[32m<--\x1b[0m RESPONSE stream")
+				recordUsage(requestID, originalModel, modelUsed, providerID, normalizeMeteringClient(c.GetHeader("User-Agent")), "responses", endEvt.Usage, time.Since(startTime).Milliseconds(), true, http.StatusOK, "")
 				return false
 			}
 
