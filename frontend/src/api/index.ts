@@ -544,7 +544,7 @@ export interface MeteringBreakdownItem {
 }
 
 export interface MeteringLogsResponse {
-  items: Array<MeteringRecord>
+  items: Array<MeteringRecord> | null
   total: number
   page: number
   page_size: number
@@ -581,12 +581,12 @@ export const getMeteringStats = (params: MeteringQuery = {}) =>
   )
 
 export const getMeteringByModel = (params: MeteringQuery = {}) =>
-  apiFetch<{ items: Array<MeteringBreakdownItem> }>(
+  apiFetch<{ items: Array<MeteringBreakdownItem> | null }>(
     `/api/admin/metering/by-model${buildQueryString(params)}`,
   )
 
 export const getMeteringByProvider = (params: MeteringQuery = {}) =>
-  apiFetch<{ items: Array<MeteringBreakdownItem> }>(
+  apiFetch<{ items: Array<MeteringBreakdownItem> | null }>(
     `/api/admin/metering/by-provider${buildQueryString(params)}`,
   )
 

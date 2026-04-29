@@ -113,9 +113,11 @@ function BreakdownTable({
 }: {
   title: string
   keyLabel: "model" | "provider"
-  items: Array<MeteringBreakdownItem>
+  items: Array<MeteringBreakdownItem> | null | undefined
   valueKey: "model_id" | "provider_id"
 }) {
+  const safeItems = items ?? []
+
   return (
     <Card>
       <div
@@ -146,7 +148,7 @@ function BreakdownTable({
             fontFamily: "var(--font-mono)",
           }}
         >
-          {items.length} rows
+          {safeItems.length} rows
         </span>
       </div>
       <div style={{ overflowX: "auto" }}>
@@ -179,7 +181,7 @@ function BreakdownTable({
             </tr>
           </thead>
           <tbody>
-            {items.length === 0 && (
+            {safeItems.length === 0 && (
               <tr>
                 <td
                   colSpan={6}
@@ -193,7 +195,7 @@ function BreakdownTable({
                 </td>
               </tr>
             )}
-            {items.map((item, index) => (
+            {safeItems.map((item, index) => (
               <tr key={`${item[valueKey] ?? "unknown"}-${index}`}>
                 <td
                   style={{
@@ -278,9 +280,9 @@ export function MeteringPage({
       .then(([nextStats, nextLogs, nextByModel, nextByProvider]) => {
         if (cancelled) return
         setStats(nextStats)
-        setLogs(nextLogs)
-        setByModel(nextByModel.items)
-        setByProvider(nextByProvider.items)
+        setLogs({ ...nextLogs, items: nextLogs.items ?? [] })
+        setByModel(nextByModel.items ?? [])
+        setByProvider(nextByProvider.items ?? [])
       })
       .catch((e: unknown) => {
         if (cancelled) return
@@ -301,6 +303,7 @@ export function MeteringPage({
 
   const totalPages =
     logs ? Math.max(1, Math.ceil(logs.total / logs.page_size)) : 1
+  const logItems = logs?.items ?? []
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -553,7 +556,7 @@ export function MeteringPage({
               </tr>
             </thead>
             <tbody>
-              {!loading && (logs?.items.length ?? 0) === 0 && (
+              {!loading && logItems.length === 0 && (
                 <tr>
                   <td
                     colSpan={10}
@@ -567,7 +570,7 @@ export function MeteringPage({
                   </td>
                 </tr>
               )}
-              {logs?.items.map((row: MeteringRecord) => (
+              {logItems.map((row: MeteringRecord) => (
                 <tr key={row.id}>
                   <td style={cellStyle}>{formatDateTime(row.created_at)}</td>
                   <td style={cellStyle}>{row.model_id}</td>
