@@ -320,6 +320,105 @@ func TestCopilotAdapterExecuteStream_DisableAuthRetryMakesSingleAttempt(t *testi
 	}
 }
 
+func TestCopilotAdapterExecuteStream_AnthropicRequestsBufferCompletedResponse(t *testing.T) {
+	var capturedPath string
+	var capturedPayload map[string]interface{}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		if err := json.NewDecoder(r.Body).Decode(&capturedPayload); err != nil {
+			t.Fatalf("failed to decode request payload: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"resp_buffered","model":"gpt-5.4","status":"completed","output":[{"type":"message","id":"msg_1","role":"assistant","content":[{"type":"output_text","text":"pong"}]}],"usage":{"input_tokens":3,"output_tokens":1}}`))
+	}))
+	defer server.Close()
+
+	provider := NewGitHubCopilotProvider("github-copilot-test", "")
+	provider.baseURL = server.URL
+	provider.token = "test-token"
+	adapter := provider.GetAdapter().(*CopilotAdapter)
+	inboundShape := "anthropic"
+
+	eventCh, err := adapter.ExecuteStream(context.Background(), &cif.CanonicalRequest{
+		Model: "gpt-5.4",
+		Messages: []cif.CIFMessage{
+			cif.CIFUserMessage{Role: "user", Content: []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: "ping"}}},
+		},
+		Stream: true,
+		Extensions: &cif.Extensions{
+			InboundAPIShape: &inboundShape,
+		},
+	})
+	if err != nil {
+		t.Fatalf("ExecuteStream returned error: %v", err)
+	}
+
+	var sawTextDelta bool
+	for event := range eventCh {
+		if delta, ok := event.(cif.CIFContentDelta); ok {
+			if text, ok := delta.Delta.(cif.TextDelta); ok && text.Text == "pong" {
+				sawTextDelta = true
+			}
+		}
+	}
+	if !sawTextDelta {
+		t.Fatal("expected buffered response to be locally streamed")
+	}
+	if capturedPath != "/responses" {
+		t.Fatalf("expected buffered Anthropic request to use /responses, got %q", capturedPath)
+	}
+	if stream, _ := capturedPayload["stream"].(bool); stream {
+		t.Fatalf("expected upstream request to be buffered with stream=false, got payload %#v", capturedPayload)
+	}
+}
+
+func TestCopilotAdapterExecuteStream_OpenAIShapeGPT5StreamsResponses(t *testing.T) {
+	var capturedPath string
+	var capturedPayload map[string]interface{}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		if err := json.NewDecoder(r.Body).Decode(&capturedPayload); err != nil {
+			t.Fatalf("failed to decode request payload: %v", err)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(strings.TrimSpace(`
+data: {"type":"response.created","response":{"id":"resp_stream","model":"gpt-5.4"}}
+
+data: {"type":"response.output_text.delta","delta":"pong"}
+
+data: {"type":"response.completed","response":{"id":"resp_stream","model":"gpt-5.4","status":"completed","output":[]}}
+		`) + "\n\n"))
+	}))
+	defer server.Close()
+
+	provider := NewGitHubCopilotProvider("github-copilot-test", "")
+	provider.baseURL = server.URL
+	provider.token = "test-token"
+	adapter := provider.GetAdapter().(*CopilotAdapter)
+
+	eventCh, err := adapter.ExecuteStream(context.Background(), &cif.CanonicalRequest{
+		Model: "gpt-5.4",
+		Messages: []cif.CIFMessage{
+			cif.CIFUserMessage{Role: "user", Content: []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: "ping"}}},
+		},
+		Stream: true,
+	})
+	if err != nil {
+		t.Fatalf("ExecuteStream returned error: %v", err)
+	}
+
+	for range eventCh {
+	}
+	if capturedPath != "/responses" {
+		t.Fatalf("expected GPT-5 stream to use /responses, got %q", capturedPath)
+	}
+	if stream, _ := capturedPayload["stream"].(bool); !stream {
+		t.Fatalf("expected OpenAI-shape GPT-5 request to stream upstream, got payload %#v", capturedPayload)
+	}
+}
+
 func TestCopilotAdapterExecute_GPT5FamilyRoutesToResponsesEndpoint(t *testing.T) {
 	var capturedPath string
 	var capturedPayload map[string]interface{}
@@ -471,7 +570,7 @@ func TestCopilotAdapterExecute_FallsBackToResponsesOnUnsupportedAPIError(t *test
 
 	resp, err := adapter.Execute(context.Background(), &cif.CanonicalRequest{
 		// Note: model name does NOT match the gpt-5 prefix — exercises the
-		// upstream-error fallback path rather than shouldUseResponsesAPI.
+		// upstream-error fallback path rather than GPT-5 family auto-routing.
 		Model: "future-responses-only",
 		Messages: []cif.CIFMessage{
 			cif.CIFUserMessage{

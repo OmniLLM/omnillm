@@ -40,6 +40,14 @@ func (a *CopilotAdapter) Execute(ctx context.Context, request *cif.CanonicalRequ
 }
 
 func (a *CopilotAdapter) ExecuteStream(ctx context.Context, request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
+	if a.shouldBufferAnthropicStreaming(request) {
+		response, err := a.Execute(ctx, request)
+		if err != nil {
+			return nil, err
+		}
+		return shared.StreamResponse(response), nil
+	}
+
 	model := ""
 	if request != nil {
 		model = a.RemapModel(request.Model)
@@ -48,6 +56,13 @@ func (a *CopilotAdapter) ExecuteStream(ctx context.Context, request *cif.Canonic
 		return a.executeResponsesStream(ctx, request)
 	}
 	return a.executeOpenAIStream(ctx, request)
+}
+
+func (a *CopilotAdapter) shouldBufferAnthropicStreaming(request *cif.CanonicalRequest) bool {
+	return request != nil &&
+		request.Extensions != nil &&
+		request.Extensions.InboundAPIShape != nil &&
+		strings.EqualFold(strings.TrimSpace(*request.Extensions.InboundAPIShape), "anthropic")
 }
 
 func (a *CopilotAdapter) forceChatCompletions(request *cif.CanonicalRequest) bool {
