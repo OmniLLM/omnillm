@@ -246,6 +246,9 @@ func (a *CopilotAdapter) convertOpenAIToCIF(openaiResp map[string]interface{}, t
 
 			if message, ok := choice["message"].(map[string]interface{}); ok {
 				response.Content = a.convertOpenAIMessageToCIF(message, toolNameMapper)
+				if response.StopReason != cif.StopReasonToolUse && containsToolCall(response.Content) {
+					response.StopReason = cif.StopReasonToolUse
+				}
 			}
 		}
 	}
@@ -279,6 +282,9 @@ func (a *CopilotAdapter) convertOpenAIMessageToCIF(message map[string]interface{
 			if toolCall, ok := tc.(map[string]interface{}); ok {
 				if function, ok := toolCall["function"].(map[string]interface{}); ok {
 					id, _ := toolCall["id"].(string)
+					if id == "" {
+						id, _ = toolCall["call_id"].(string)
+					}
 					name, _ := function["name"].(string)
 					args, _ := function["arguments"].(string)
 
@@ -297,4 +303,13 @@ func (a *CopilotAdapter) convertOpenAIMessageToCIF(message map[string]interface{
 	}
 
 	return parts
+}
+
+func containsToolCall(parts []cif.CIFContentPart) bool {
+	for _, part := range parts {
+		if _, ok := part.(cif.CIFToolCallPart); ok {
+			return true
+		}
+	}
+	return false
 }

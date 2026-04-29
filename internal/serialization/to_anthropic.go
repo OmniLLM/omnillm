@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"omnillm/internal/cif"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 )
@@ -52,7 +53,7 @@ func SerializeToAnthropicWithSuppression(response *cif.CanonicalResponse, suppre
 		case cif.CIFToolCallPart:
 			content = append(content, AnthropicContentBlock{
 				Type:  "tool_use",
-				ID:    p.ToolCallID,
+				ID:    normalizeAnthropicToolUseID(p.ToolCallID),
 				Name:  p.ToolName,
 				Input: p.ToolArguments,
 			})
@@ -324,13 +325,27 @@ func createContentBlockStartEvent(contentBlock cif.CIFContentPart, index int) ma
 			"index": index,
 			"content_block": map[string]interface{}{
 				"type":  "tool_use",
-				"id":    cb.ToolCallID,
+				"id":    normalizeAnthropicToolUseID(cb.ToolCallID),
 				"name":  cb.ToolName,
 				"input": map[string]interface{}{},
 			},
 		}
 	default:
 		return nil
+	}
+}
+
+func normalizeAnthropicToolUseID(id string) string {
+	id = strings.TrimSpace(id)
+	switch {
+	case id == "":
+		return "toolu_empty"
+	case strings.HasPrefix(id, "toolu_"):
+		return id
+	case strings.HasPrefix(id, "tooluse_"):
+		return "toolu_" + strings.TrimPrefix(id, "tooluse_")
+	default:
+		return "toolu_" + id
 	}
 }
 

@@ -210,7 +210,7 @@ func TestOpenAICompatibleAnthropicStreamingIsBufferedDownstream(t *testing.T) {
 	var firstArgs strings.Builder
 	for _, evt := range firstEvents {
 		if contentBlock, ok := evt.Data["content_block"].(map[string]interface{}); ok {
-			if contentBlock["type"] == "tool_use" && contentBlock["name"] == "Read" && contentBlock["id"] == "call_readme" {
+			if contentBlock["type"] == "tool_use" && contentBlock["name"] == "Read" && contentBlock["id"] == "toolu_call_readme" {
 				firstToolUse = true
 			}
 		}

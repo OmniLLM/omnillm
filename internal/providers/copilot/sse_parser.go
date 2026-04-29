@@ -19,6 +19,8 @@ func (a *CopilotAdapter) parseOpenAISSE(body io.ReadCloser, eventCh chan cif.CIF
 	scanner.Buffer(make([]byte, 0, 4*1024), 1024*1024)
 	var streamStartSent bool
 	var contentBlockIndex int
+	providerToolIndexToBlock := map[int]int{}
+	toolCallsSeen := map[int]bool{}
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -28,9 +30,13 @@ func (a *CopilotAdapter) parseOpenAISSE(body io.ReadCloser, eventCh chan cif.CIF
 
 		data := strings.TrimPrefix(line, "data: ")
 		if data == "[DONE]" {
+			stopReason := cif.StopReasonEndTurn
+			if len(toolCallsSeen) > 0 {
+				stopReason = cif.StopReasonToolUse
+			}
 			eventCh <- cif.CIFStreamEnd{
 				Type:       "stream_end",
-				StopReason: cif.StopReasonEndTurn,
+				StopReason: stopReason,
 			}
 			return
 		}
@@ -73,9 +79,14 @@ func (a *CopilotAdapter) parseOpenAISSE(body io.ReadCloser, eventCh chan cif.CIF
 				}
 			}
 
+			stopReason := a.convertOpenAIStopReason(finishReason)
+			if stopReason != cif.StopReasonToolUse && len(toolCallsSeen) > 0 {
+				stopReason = cif.StopReasonToolUse
+			}
+
 			eventCh <- cif.CIFStreamEnd{
 				Type:       "stream_end",
-				StopReason: a.convertOpenAIStopReason(finishReason),
+				StopReason: stopReason,
 				Usage:      usage,
 			}
 			return
@@ -108,8 +119,20 @@ func (a *CopilotAdapter) parseOpenAISSE(body io.ReadCloser, eventCh chan cif.CIF
 					continue
 				}
 
-				if id, ok := tcMap["id"].(string); ok && id != "" {
+				providerIdx := 0
+				if idxRaw, ok := tcMap["index"].(float64); ok {
+					providerIdx = int(idxRaw)
+				}
+
+				id, _ := tcMap["id"].(string)
+				if id == "" {
+					id, _ = tcMap["call_id"].(string)
+				}
+
+				if id != "" {
 					contentBlockIndex++
+					providerToolIndexToBlock[providerIdx] = contentBlockIndex
+					toolCallsSeen[providerIdx] = true
 					funcMap, _ := tcMap["function"].(map[string]interface{})
 					name, _ := funcMap["name"].(string)
 
@@ -127,11 +150,27 @@ func (a *CopilotAdapter) parseOpenAISSE(body io.ReadCloser, eventCh chan cif.CIF
 							PartialJSON: "",
 						},
 					}
+					if funcMap != nil {
+						if args, ok := funcMap["arguments"].(string); ok && args != "" {
+							eventCh <- cif.CIFContentDelta{
+								Type:  "content_delta",
+								Index: contentBlockIndex,
+								Delta: cif.ToolArgumentsDelta{
+									Type:        "tool_arguments_delta",
+									PartialJSON: args,
+								},
+							}
+						}
+					}
 				} else if funcMap, ok := tcMap["function"].(map[string]interface{}); ok {
 					if args, ok := funcMap["arguments"].(string); ok && args != "" {
+						blockIndex, exists := providerToolIndexToBlock[providerIdx]
+						if !exists {
+							continue
+						}
 						eventCh <- cif.CIFContentDelta{
 							Type:  "content_delta",
-							Index: contentBlockIndex,
+							Index: blockIndex,
 							Delta: cif.ToolArgumentsDelta{
 								Type:        "tool_arguments_delta",
 								PartialJSON: args,

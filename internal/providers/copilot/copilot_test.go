@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"omnillm/internal/providers/shared"
 	ghservice "omnillm/internal/services/github"
 )
 
@@ -536,6 +537,142 @@ func TestCopilotAdapterExecute_NonGPT5StaysOnChatCompletions(t *testing.T) {
 
 	if capturedPath != "/chat/completions" {
 		t.Fatalf("expected /chat/completions for non-gpt-5 model, got %q", capturedPath)
+	}
+}
+
+func TestCopilotAdapterExecute_ClaudeToolCallsUpgradeStopAndAcceptCallID(t *testing.T) {
+	models := []string{"claude-haiku-4.5", "claude-sonnet-4.6"}
+
+	for _, model := range models {
+		t.Run(model, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/chat/completions" {
+					http.NotFound(w, r)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{
+					"id":    "chatcmpl_tool",
+					"model": model,
+					"choices": []map[string]interface{}{{
+						"index": 0,
+						"message": map[string]interface{}{
+							"role": "assistant",
+							"tool_calls": []map[string]interface{}{{
+								"call_id": "call_weather",
+								"type":    "function",
+								"function": map[string]interface{}{
+									"name":      "get_weather",
+									"arguments": `{"location":"Shanghai"}`,
+								},
+							}},
+						},
+						"finish_reason": "stop",
+					}},
+				})
+			}))
+			defer server.Close()
+
+			provider := NewGitHubCopilotProvider("github-copilot-test", "")
+			provider.baseURL = server.URL
+			provider.token = "test-token"
+			adapter := provider.GetAdapter().(*CopilotAdapter)
+
+			resp, err := adapter.Execute(context.Background(), &cif.CanonicalRequest{
+				Model: model,
+				Messages: []cif.CIFMessage{
+					cif.CIFUserMessage{Role: "user", Content: []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: "weather"}}},
+				},
+				Tools: []cif.CIFTool{{Name: "get_weather"}},
+			})
+			if err != nil {
+				t.Fatalf("Execute returned error: %v", err)
+			}
+			if resp.StopReason != cif.StopReasonToolUse {
+				t.Fatalf("expected tool_use stop reason, got %v", resp.StopReason)
+			}
+			if len(resp.Content) != 1 {
+				t.Fatalf("expected one content part, got %#v", resp.Content)
+			}
+			toolCall, ok := resp.Content[0].(cif.CIFToolCallPart)
+			if !ok {
+				t.Fatalf("expected tool call, got %T", resp.Content[0])
+			}
+			if toolCall.ToolCallID != "call_weather" || toolCall.ToolName != "get_weather" {
+				t.Fatalf("unexpected tool call: %#v", toolCall)
+			}
+			if toolCall.ToolArguments["location"] != "Shanghai" {
+				t.Fatalf("unexpected tool args: %#v", toolCall.ToolArguments)
+			}
+		})
+	}
+}
+
+func TestCopilotAdapterExecuteStream_ClaudeToolCallsPreserveIndexedArguments(t *testing.T) {
+	models := []string{"claude-haiku-4.5", "claude-sonnet-4.6"}
+
+	for _, model := range models {
+		t.Run(model, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/chat/completions" {
+					http.NotFound(w, r)
+					return
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = w.Write([]byte(strings.TrimSpace(`
+data: {"id":"chatcmpl_tool_stream","model":"`+model+`","choices":[{"index":0,"delta":{"role":"assistant"}}]}
+
+data: {"id":"chatcmpl_tool_stream","model":"`+model+`","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"call_id":"call_weather","type":"function","function":{"name":"get_weather","arguments":"{\"location\""}}]}}]}
+
+data: {"id":"chatcmpl_tool_stream","model":"`+model+`","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":":\"Shanghai\"}"}}]}}]}
+
+data: [DONE]
+				`) + "\n\n"))
+			}))
+			defer server.Close()
+
+			provider := NewGitHubCopilotProvider("github-copilot-test", "")
+			provider.baseURL = server.URL
+			provider.token = "test-token"
+			adapter := provider.GetAdapter().(*CopilotAdapter)
+			forceChatCompletions := true
+
+			eventCh, err := adapter.ExecuteStream(context.Background(), &cif.CanonicalRequest{
+				Model: model,
+				Messages: []cif.CIFMessage{
+					cif.CIFUserMessage{Role: "user", Content: []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: "weather"}}},
+				},
+				Tools:  []cif.CIFTool{{Name: "get_weather"}},
+				Stream: true,
+				Extensions: &cif.Extensions{
+					ForceChatCompletions: &forceChatCompletions,
+				},
+			})
+			if err != nil {
+				t.Fatalf("ExecuteStream returned error: %v", err)
+			}
+
+			resp, err := shared.CollectStream(eventCh)
+			if err != nil {
+				t.Fatalf("CollectStream returned error: %v", err)
+			}
+			if resp.StopReason != cif.StopReasonToolUse {
+				t.Fatalf("expected tool_use stop reason, got %v", resp.StopReason)
+			}
+			if len(resp.Content) != 1 {
+				t.Fatalf("expected one content part, got %#v", resp.Content)
+			}
+			toolCall, ok := resp.Content[0].(cif.CIFToolCallPart)
+			if !ok {
+				t.Fatalf("expected tool call, got %T", resp.Content[0])
+			}
+			if toolCall.ToolCallID != "call_weather" || toolCall.ToolName != "get_weather" {
+				t.Fatalf("unexpected tool call: %#v", toolCall)
+			}
+			if toolCall.ToolArguments["location"] != "Shanghai" {
+				t.Fatalf("unexpected tool args: %#v", toolCall.ToolArguments)
+			}
+		})
 	}
 }
 
