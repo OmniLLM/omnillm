@@ -3,6 +3,7 @@
   "description": "Request-level usage data captured after CIF responses finalize, with token totals, latency, provider attribution, and raw request logs.",
   "byModel": "By model",
   "byProvider": "By provider",
+  "byClient": "By client",
   "requestLog": "Request log",
   "requestLogDescription": "Raw metering rows captured from OpenAI and Anthropic response paths.",
   "stats": {
@@ -23,12 +24,14 @@
     "all": "All",
     "allModels": "All models",
     "allProviders": "All providers",
+    "allClients": "All clients",
     "rowsPerPage": "Rows per page",
     "maxRows": "Max rows"
   },
   "table": {
     "model": "model",
     "provider": "provider",
+    "client": "client",
     "requests": "requests",
     "input": "input",
     "output": "output",

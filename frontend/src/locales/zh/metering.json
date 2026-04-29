@@ -3,6 +3,7 @@
   "description": "CIF 响应完成后的请求级使用数据，包含令牌总数、延迟、提供者归属和原始请求日志。",
   "byModel": "按模型",
   "byProvider": "按提供者",
+  "byClient": "按客户端",
   "requestLog": "请求日志",
   "requestLogDescription": "从 OpenAI 和 Anthropic 响应路径捕获的原始计量行。",
   "stats": {
@@ -23,12 +24,14 @@
     "all": "全部",
     "allModels": "全部模型",
     "allProviders": "全部提供者",
+    "allClients": "全部客户端",
     "rowsPerPage": "每页行数",
     "maxRows": "最大行数"
   },
   "table": {
     "model": "模型",
     "provider": "提供者",
+    "client": "客户端",
     "requests": "请求数",
     "input": "输入",
     "output": "输出",
