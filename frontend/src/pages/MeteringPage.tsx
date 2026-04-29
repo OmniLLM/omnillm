@@ -240,14 +240,14 @@ export function MeteringPage({
     value.setHours(value.getHours() - 24)
     return isoInputValue(value)
   }, [now])
-  const defaultUntil = useMemo(() => isoInputValue(now), [now])
 
   const [since, setSince] = useState(defaultSince)
-  const [until, setUntil] = useState(defaultUntil)
+  const [until, setUntil] = useState("")
   const [modelId, setModelId] = useState("")
   const [providerId, setProviderId] = useState("")
   const [apiShape, setAPIShape] = useState("")
   const [page, setPage] = useState(1)
+  const [reloadKey, setReloadKey] = useState(0)
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState<MeteringStats | null>(null)
   const [logs, setLogs] = useState<MeteringLogsResponse | null>(null)
@@ -264,7 +264,7 @@ export function MeteringPage({
       page,
       page_size: 50,
     }),
-    [apiShape, modelId, page, providerId, since, until],
+    [apiShape, modelId, page, providerId, reloadKey, since, until],
   )
 
   useEffect(() => {
@@ -343,7 +343,10 @@ export function MeteringPage({
         </div>
         <button
           className="btn btn-ghost btn-sm"
-          onClick={() => setPage(1)}
+          onClick={() => {
+            setPage(1)
+            setReloadKey((value) => value + 1)
+          }}
           disabled={loading}
         >
           Refresh
