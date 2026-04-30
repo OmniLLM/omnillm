@@ -28,8 +28,9 @@ func main() {
 	// Server lifecycle
 	rootCmd.AddCommand(commands.StartCmd)
 
-	// Auth helpers (legacy top-level aliases kept for backwards compatibility)
+	// Provider/backend management helpers
 	rootCmd.AddCommand(commands.AuthCmd)
+	rootCmd.AddCommand(commands.UsageCmd)
 	rootCmd.AddCommand(commands.CheckUsageCmd)
 	rootCmd.AddCommand(commands.SyncNamesCmd)
 	rootCmd.AddCommand(commands.DebugCmd)

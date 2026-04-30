@@ -185,7 +185,8 @@ func handleGetChatSession(c *gin.Context) {
 func handleUpdateChatSession(c *gin.Context) {
 	sessionID := c.Param("id")
 	var req struct {
-		Title string `json:"title"`
+		Title   string `json:"title"`
+		ModelID string `json:"model_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
@@ -193,7 +194,7 @@ func handleUpdateChatSession(c *gin.Context) {
 	}
 
 	chatStore := database.NewChatStore()
-	if err := chatStore.UpdateSessionTitle(sessionID, req.Title); err != nil {
+	if err := chatStore.UpdateSession(sessionID, req.Title, req.ModelID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update session"})
 		return
 	}

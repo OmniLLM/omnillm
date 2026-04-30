@@ -7,7 +7,6 @@ import (
 	"io"
 	"mime/multipart"
 	"os"
-	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -54,12 +53,10 @@ var configListCmd = &cobra.Command{
 		}
 		configs, _ := resp["configs"].([]interface{})
 		if len(configs) == 0 {
-			fmt.Println("No config files available.")
-			return nil
+			return PrintEmpty(cmd.OutOrStdout(), "config files available")
 		}
 
-		fmt.Printf("%-16s  %-36s  %s\n", "NAME", "LABEL", "EXISTS")
-		fmt.Println(strings.Repeat("─", 70))
+		table := NewTable("NAME", "LABEL", "EXISTS")
 		for _, item := range configs {
 			cfg, _ := item.(map[string]interface{})
 			name, _ := cfg["name"].(string)
@@ -68,9 +65,9 @@ var configListCmd = &cobra.Command{
 			if v, ok := cfg["exists"].(bool); ok && v {
 				exists = "yes"
 			}
-			fmt.Printf("%-16s  %-36s  %s\n", padRight(name, 16), padRight(label, 36), exists)
+			table.AddRow(name, label, exists)
 		}
-		return nil
+		return table.Render(cmd.OutOrStdout())
 	},
 }
 
@@ -145,7 +142,7 @@ var configSetCmd = &cobra.Command{
 			c.PrintJSON(data)
 			return nil
 		}
-		SuccessMsg("Config '%s' saved.", args[0])
+		SuccessMsg(cmd,"Config '%s' saved.", args[0])
 		return nil
 	},
 }
@@ -185,7 +182,7 @@ var configImportCmd = &cobra.Command{
 			c.PrintJSON(data)
 			return nil
 		}
-		SuccessMsg("Config '%s' imported from %s.", args[0], filePath)
+		SuccessMsg(cmd,"Config '%s' imported from %s.", args[0], filePath)
 		return nil
 	},
 }
@@ -209,11 +206,11 @@ var configBackupCmd = &cobra.Command{
 		var resp map[string]interface{}
 		if err := json.Unmarshal(data, &resp); err == nil {
 			if backup, ok := resp["backup"].(string); ok {
-				SuccessMsg("Backup saved to %s", backup)
+				SuccessMsg(cmd,"Backup saved to %s", backup)
 				return nil
 			}
 		}
-		SuccessMsg("Config '%s' backed up.", args[0])
+		SuccessMsg(cmd,"Config '%s' backed up.", args[0])
 		return nil
 	},
 }

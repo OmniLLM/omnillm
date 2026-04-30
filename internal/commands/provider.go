@@ -9,6 +9,43 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type authProviderOption struct {
+	Type  string
+	Label string
+}
+
+type providerPromptField struct {
+	FlagName   string
+	Label      string
+	Secret     bool
+	Required   bool
+	Options    []string
+	AllowEmpty bool
+	Default    string
+}
+
+var supportedAuthProviders = []authProviderOption{
+	{Type: "github-copilot", Label: "GitHub Copilot"},
+	{Type: "openai-compatible", Label: "OpenAI-Compatible"},
+	{Type: "alibaba", Label: "Alibaba DashScope"},
+	{Type: "azure-openai", Label: "Azure OpenAI"},
+	{Type: "google", Label: "Google AI"},
+	{Type: "kimi", Label: "Kimi"},
+	{Type: "codex", Label: "OpenAI Codex"},
+}
+
+var supportedAuthProviderTypes = []string{
+	"github-copilot",
+	"openai-compatible",
+	"alibaba",
+	"azure-openai",
+	"google",
+	"kimi",
+	"codex",
+}
+
+const supportedAuthProviderTypesSummary = "github-copilot, openai-compatible, alibaba, azure-openai, google, kimi, and codex"
+
 var ProviderCmd = &cobra.Command{
 	Use:   "provider",
 	Short: "Manage LLM providers",
@@ -20,12 +57,7 @@ func init() {
 	ProviderCmd.AddCommand(providerListCmd)
 
 	// provider add
-	providerAddCmd.Flags().String("api-key", "", "API key for the provider")
-	providerAddCmd.Flags().String("token", "", "GitHub token (github-copilot)")
-	providerAddCmd.Flags().String("endpoint", "", "Base URL endpoint (openai-compatible)")
-	providerAddCmd.Flags().String("region", "", "Region (alibaba, azure-openai)")
-	providerAddCmd.Flags().String("plan", "", "Plan (alibaba: standard|coding-plan)")
-	providerAddCmd.Flags().BoolP("yes", "y", false, "Skip confirmations")
+	addProviderAuthFlags(providerAddCmd)
 	ProviderCmd.AddCommand(providerAddCmd)
 
 	// provider delete
@@ -72,13 +104,10 @@ var providerListCmd = &cobra.Command{
 		}
 
 		if len(providers) == 0 {
-			fmt.Println("No providers configured.")
-			return nil
+			return PrintEmpty(cmd.OutOrStdout(), "providers configured")
 		}
 
-		fmt.Printf("%-36s  %-20s  %-36s  %-15s  %-8s  %s\n",
-			"ID", "TYPE", "NAME", "AUTH", "ACTIVE", "MODELS")
-		fmt.Println(strings.Repeat("─", 130))
+		table := NewTable("ID", "TYPE", "NAME", "AUTH", "ACTIVE", "MODELS")
 		for _, p := range providers {
 			id, _ := p["id"].(string)
 			pType, _ := p["type"].(string)
@@ -91,11 +120,9 @@ var providerListCmd = &cobra.Command{
 			total, _ := p["totalModelCount"].(float64)
 			enabled, _ := p["enabledModelCount"].(float64)
 			models := fmt.Sprintf("%d/%d", int(enabled), int(total))
-			fmt.Printf("%-36s  %-20s  %-36s  %-15s  %-8s  %s\n",
-				padRight(id, 36), padRight(pType, 20), padRight(name, 36),
-				padRight(auth, 15), padRight(active, 8), models)
+			table.AddRow(id, pType, name, auth, active, models)
 		}
-		return nil
+		return table.Render(cmd.OutOrStdout())
 	},
 }
 
@@ -114,85 +141,209 @@ var providerAddCmd = &cobra.Command{
   codex             OpenAI Codex (requires --api-key)`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		providerType := args[0]
-		c := NewClient(cmd)
+		return authAndCreateProvider(cmd, args[0])
+	},
+}
 
-		apiKey, _ := cmd.Flags().GetString("api-key")
-		token, _ := cmd.Flags().GetString("token")
-		endpoint, _ := cmd.Flags().GetString("endpoint")
-		region, _ := cmd.Flags().GetString("region")
-		plan, _ := cmd.Flags().GetString("plan")
+func selectProviderTypeInteractive() (string, error) {
+	return SelectAuthProvider("Select a provider to authenticate:", supportedAuthProviders)
+}
 
-		body := map[string]interface{}{
-			"api_key":  apiKey,
-			"apiKey":   apiKey,
-			"token":    token,
-			"endpoint": endpoint,
-			"region":   region,
-			"plan":     plan,
+func promptForProviderAuth(cmd *cobra.Command, providerType string) error {
+	yes, _ := cmd.Flags().GetBool("yes")
+	if yes {
+		return nil
+	}
+
+	switch providerType {
+	case "github-copilot":
+		return promptForGitHubCopilotAuth(cmd)
+	case "openai-compatible":
+		return promptForMissingFields(cmd,
+			providerPromptField{FlagName: "endpoint", Label: "Endpoint", Required: true},
+			providerPromptField{FlagName: "api-key", Label: "API key", Secret: true},
+		)
+	case "alibaba":
+		return promptForMissingFields(cmd,
+			providerPromptField{FlagName: "api-key", Label: "API key", Secret: true, Required: true},
+			providerPromptField{FlagName: "region", Label: "Region", Options: []string{"global", "china"}, Default: "global", AllowEmpty: true},
+			providerPromptField{FlagName: "plan", Label: "Plan", Options: []string{"standard", "coding-plan"}, Default: "standard", AllowEmpty: true},
+		)
+	case "azure-openai":
+		return promptForMissingFields(cmd,
+			providerPromptField{FlagName: "api-key", Label: "API key", Secret: true, Required: true},
+		)
+	case "google", "kimi", "codex":
+		return promptForMissingFields(cmd,
+			providerPromptField{FlagName: "api-key", Label: "API key", Secret: true, Required: true},
+		)
+	default:
+		return nil
+	}
+}
+
+func promptForGitHubCopilotAuth(cmd *cobra.Command) error {
+	token, _ := cmd.Flags().GetString("token")
+	method, _ := cmd.Flags().GetString("method")
+	if strings.TrimSpace(token) != "" {
+		if strings.TrimSpace(method) == "" {
+			return cmd.Flags().Set("method", "token")
 		}
+		return nil
+	}
 
-		data, err := c.Post("/api/admin/providers/auth-and-create/"+providerType, body)
+	if strings.TrimSpace(method) == "" {
+		selectedMethod, err := SelectFromOptions("Authenticate with GitHub Copilot using:", []string{"Browser login", "Personal token"})
 		if err != nil {
 			return err
 		}
+		if selectedMethod == "Personal token" {
+			method = "token"
+		} else {
+			method = "oauth"
+		}
+		if err := cmd.Flags().Set("method", method); err != nil {
+			return err
+		}
+	}
 
-		var resp map[string]interface{}
-		if err := json.Unmarshal(data, &resp); err != nil {
-			return fmt.Errorf("parse response: %w", err)
+	if method == "token" {
+		return promptForMissingFields(cmd, providerPromptField{FlagName: "token", Label: "GitHub token", Secret: true, Required: true})
+	}
+	return nil
+}
+
+func promptForMissingFields(cmd *cobra.Command, fields ...providerPromptField) error {
+	for _, field := range fields {
+		currentValue, _ := cmd.Flags().GetString(field.FlagName)
+		if strings.TrimSpace(currentValue) != "" {
+			continue
 		}
 
-		// Handle device-code OAuth flow
-		if requiresAuth, ok := resp["requiresAuth"].(bool); ok && requiresAuth {
-			verifyURI, _ := resp["verification_uri"].(string)
-			userCode, _ := resp["user_code"].(string)
-			fmt.Printf("\n  Visit: %s\n  Code:  %s\n\nWaiting for authorization", verifyURI, userCode)
-
-			// Poll auth-status until complete or error
-			for {
-				time.Sleep(3 * time.Second)
-				fmt.Print(".")
-
-				statusData, err := c.Get("/api/admin/auth-status")
-				if err != nil {
-					continue
-				}
-				var statusResp map[string]interface{}
-				if err := json.Unmarshal(statusData, &statusResp); err != nil {
-					continue
-				}
-				status, _ := statusResp["status"].(string)
-				switch status {
-				case "complete":
-					fmt.Println()
-					providerID, _ := statusResp["providerId"].(string)
-					SuccessMsg("Provider '%s' authenticated successfully.", providerID)
-					return nil
-				case "error":
-					fmt.Println()
-					errMsg, _ := statusResp["error"].(string)
-					return fmt.Errorf("authentication failed: %s", errMsg)
-				}
+		var value string
+		var err error
+		if len(field.Options) > 0 {
+			value, err = SelectFromOptions(field.Label, field.Options)
+			if err != nil {
+				return err
+			}
+		} else if field.Secret {
+			value, err = PromptSecret(field.Label, field.Required)
+			if err != nil {
+				return err
+			}
+		} else {
+			value, err = PromptText(field.Label, field.Required, field.Default)
+			if err != nil {
+				return err
 			}
 		}
 
-		if c.IsJSON() {
-			c.PrintJSON(data)
-			return nil
+		value = strings.TrimSpace(value)
+		if value == "" && field.Default != "" && field.AllowEmpty {
+			value = field.Default
 		}
+		if value == "" && field.Required {
+			return fmt.Errorf("%s is required", strings.ToLower(field.Label))
+		}
+		if value == "" {
+			continue
+		}
+		if err := cmd.Flags().Set(field.FlagName, value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
-		success, _ := resp["success"].(bool)
-		if !success {
-			msg, _ := resp["message"].(string)
-			return fmt.Errorf("failed: %s", msg)
+func addProviderAuthFlags(cmd *cobra.Command) {
+	cmd.Flags().String("api-key", "", "API key for the provider")
+	cmd.Flags().String("token", "", "Provider token (for providers that support token auth)")
+	cmd.Flags().String("method", "", "Authentication method (for providers that support multiple methods)")
+	cmd.Flags().String("endpoint", "", "Base URL endpoint (openai-compatible)")
+	cmd.Flags().String("region", "", "Region (alibaba, azure-openai)")
+	cmd.Flags().String("plan", "", "Plan (alibaba: standard|coding-plan)")
+	cmd.Flags().BoolP("yes", "y", false, "Skip confirmations")
+}
+
+func authAndCreateProvider(cmd *cobra.Command, providerType string) error {
+	c := NewClient(cmd)
+
+	apiKey, _ := cmd.Flags().GetString("api-key")
+	token, _ := cmd.Flags().GetString("token")
+	method, _ := cmd.Flags().GetString("method")
+	endpoint, _ := cmd.Flags().GetString("endpoint")
+	region, _ := cmd.Flags().GetString("region")
+	plan, _ := cmd.Flags().GetString("plan")
+
+	body := map[string]interface{}{
+		"api_key":  apiKey,
+		"apiKey":   apiKey,
+		"token":    token,
+		"method":   method,
+		"endpoint": endpoint,
+		"region":   region,
+		"plan":     plan,
+	}
+
+	data, err := c.Post("/api/admin/providers/auth-and-create/"+providerType, body)
+	if err != nil {
+		return err
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return fmt.Errorf("parse response: %w", err)
+	}
+
+	if requiresAuth, ok := resp["requiresAuth"].(bool); ok && requiresAuth {
+		verifyURI, _ := resp["verification_uri"].(string)
+		userCode, _ := resp["user_code"].(string)
+		fmt.Printf("\n  Visit: %s\n  Code:  %s\n\nWaiting for authorization", verifyURI, userCode)
+
+		for {
+			time.Sleep(3 * time.Second)
+			fmt.Print(".")
+
+			statusData, err := c.Get("/api/admin/auth-status")
+			if err != nil {
+				continue
+			}
+			var statusResp map[string]interface{}
+			if err := json.Unmarshal(statusData, &statusResp); err != nil {
+				continue
+			}
+			status, _ := statusResp["status"].(string)
+			switch status {
+			case "complete":
+				fmt.Println()
+				providerID, _ := statusResp["providerId"].(string)
+				SuccessMsg(cmd,"Provider '%s' authenticated successfully.", providerID)
+				return nil
+			case "error":
+				fmt.Println()
+				errMsg, _ := statusResp["error"].(string)
+				return fmt.Errorf("authentication failed: %s", errMsg)
+			}
 		}
-		if prov, ok := resp["provider"].(map[string]interface{}); ok {
-			id, _ := prov["id"].(string)
-			name, _ := prov["name"].(string)
-			SuccessMsg("Provider '%s' (%s) added successfully.", id, name)
-		}
+	}
+
+	if c.IsJSON() {
+		c.PrintJSON(data)
 		return nil
-	},
+	}
+
+	success, _ := resp["success"].(bool)
+	if !success {
+		msg, _ := resp["message"].(string)
+		return fmt.Errorf("failed: %s", msg)
+	}
+	if prov, ok := resp["provider"].(map[string]interface{}); ok {
+		id, _ := prov["id"].(string)
+		name, _ := prov["name"].(string)
+		SuccessMsg(cmd,"Provider '%s' (%s) added successfully.", id, name)
+	}
+	return nil
 }
 
 // ─── delete ───────────────────────────────────────────────────────────────────
@@ -204,8 +355,8 @@ var providerDeleteCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		id := args[0]
 		yes, _ := cmd.Flags().GetBool("yes")
-		if !yes && !Confirm(fmt.Sprintf("Delete provider '%s'?", id)) {
-			fmt.Println("Cancelled.")
+		if !yes && !Confirm(cmd, fmt.Sprintf("Delete provider '%s'?", id)) {
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Cancelled.")
 			return nil
 		}
 		c := NewClient(cmd)
@@ -217,7 +368,7 @@ var providerDeleteCmd = &cobra.Command{
 			c.PrintJSON(data)
 			return nil
 		}
-		SuccessMsg("Provider '%s' deleted.", id)
+		SuccessMsg(cmd,"Provider '%s' deleted.", id)
 		return nil
 	},
 }
@@ -238,7 +389,7 @@ var providerActivateCmd = &cobra.Command{
 			c.PrintJSON(data)
 			return nil
 		}
-		SuccessMsg("Provider '%s' activated.", args[0])
+		SuccessMsg(cmd,"Provider '%s' activated.", args[0])
 		return nil
 	},
 }
@@ -259,7 +410,7 @@ var providerDeactivateCmd = &cobra.Command{
 			c.PrintJSON(data)
 			return nil
 		}
-		SuccessMsg("Provider '%s' deactivated.", args[0])
+		SuccessMsg(cmd,"Provider '%s' deactivated.", args[0])
 		return nil
 	},
 }
@@ -281,7 +432,7 @@ var providerSwitchCmd = &cobra.Command{
 			c.PrintJSON(data)
 			return nil
 		}
-		SuccessMsg("Switched active provider to '%s'.", args[0])
+		SuccessMsg(cmd,"Switched active provider to '%s'.", args[0])
 		return nil
 	},
 }
@@ -314,7 +465,7 @@ var providerRenameCmd = &cobra.Command{
 			c.PrintJSON(data)
 			return nil
 		}
-		SuccessMsg("Provider '%s' renamed.", args[0])
+		SuccessMsg(cmd,"Provider '%s' renamed.", args[0])
 		return nil
 	},
 }
@@ -343,12 +494,11 @@ var providerPrioritiesCmd = &cobra.Command{
 				return err
 			}
 			priorities, _ := resp["priorities"].(map[string]interface{})
-			fmt.Printf("%-40s  %s\n", "PROVIDER ID", "PRIORITY")
-			fmt.Println(strings.Repeat("─", 50))
+			table := NewTable("PROVIDER ID", "PRIORITY")
 			for id, p := range priorities {
-				fmt.Printf("%-40s  %.0f\n", id, p)
+				table.AddRow(id, fmt.Sprintf("%.0f", p))
 			}
-			return nil
+			return table.Render(cmd.OutOrStdout())
 		}
 
 		// POST — parse "id:N" pairs
@@ -373,7 +523,7 @@ var providerPrioritiesCmd = &cobra.Command{
 			c.PrintJSON(data)
 			return nil
 		}
-		SuccessMsg("Provider priorities updated.")
+		SuccessMsg(cmd,"Provider priorities updated.")
 		return nil
 	},
 }

@@ -9,8 +9,166 @@ package commands
 //   - Client env-var and flag resolution via NewClient
 
 import (
+	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
+
+// ─── auth and usage commands ──────────────────────────────────────────────────
+
+func TestAuthCmdIsGenericProviderAuth(t *testing.T) {
+	if strings.Contains(AuthCmd.Short, "GitHub Copilot") {
+		t.Fatalf("auth short help should not be GitHub Copilot-specific: %q", AuthCmd.Short)
+	}
+	for _, flagName := range []string{"api-key", "token", "endpoint", "region", "plan", "yes"} {
+		if AuthCmd.Flags().Lookup(flagName) == nil {
+			t.Errorf("auth: missing flag --%s", flagName)
+		}
+	}
+}
+
+func TestSupportedAuthProviderTypes(t *testing.T) {
+	expected := []string{"github-copilot", "openai-compatible", "alibaba", "azure-openai", "google", "kimi", "codex"}
+	if len(supportedAuthProviderTypes) != len(expected) {
+		t.Fatalf("supportedAuthProviderTypes length = %d, want %d", len(supportedAuthProviderTypes), len(expected))
+	}
+	for i, providerType := range expected {
+		if supportedAuthProviderTypes[i] != providerType {
+			t.Fatalf("supportedAuthProviderTypes[%d] = %q, want %q", i, supportedAuthProviderTypes[i], providerType)
+		}
+	}
+}
+
+func TestSupportedAuthProviders(t *testing.T) {
+	if len(supportedAuthProviders) != len(supportedAuthProviderTypes) {
+		t.Fatalf("supportedAuthProviders length = %d, want %d", len(supportedAuthProviders), len(supportedAuthProviderTypes))
+	}
+	for i, provider := range supportedAuthProviders {
+		if provider.Type != supportedAuthProviderTypes[i] {
+			t.Fatalf("supportedAuthProviders[%d].Type = %q, want %q", i, provider.Type, supportedAuthProviderTypes[i])
+		}
+		if provider.Label == "" {
+			t.Fatalf("supportedAuthProviders[%d].Label should not be empty", i)
+		}
+	}
+}
+
+func TestSelectFromListValid(t *testing.T) {
+	selected, err := SelectFromList("Pick one:", []string{"a", "b", "c"}, strings.NewReader("2\n"))
+	if err != nil {
+		t.Fatalf("SelectFromList returned error: %v", err)
+	}
+	if selected != "b" {
+		t.Fatalf("SelectFromList returned %q, want %q", selected, "b")
+	}
+}
+
+func TestSelectFromListNonNumeric(t *testing.T) {
+	_, err := SelectFromList("Pick one:", []string{"a", "b", "c"}, strings.NewReader("abc\n"))
+	if err == nil || !strings.Contains(err.Error(), "must be a number") {
+		t.Fatalf("SelectFromList error = %v, want number error", err)
+	}
+}
+
+func TestSelectFromListOutOfRange(t *testing.T) {
+	_, err := SelectFromList("Pick one:", []string{"a", "b", "c"}, strings.NewReader("0\n"))
+	if err == nil || !strings.Contains(err.Error(), "out of range") {
+		t.Fatalf("SelectFromList error = %v, want range error", err)
+	}
+}
+
+func TestResolveAuthProviderTypeUsesArgWhenProvided(t *testing.T) {
+	providerType, err := resolveAuthProviderType([]string{"google"})
+	if err != nil {
+		t.Fatalf("resolveAuthProviderType returned error: %v", err)
+	}
+	if providerType != "google" {
+		t.Fatalf("resolveAuthProviderType returned %q, want %q", providerType, "google")
+	}
+}
+
+func TestPromptForProviderAuthSkipsWhenYesFlagIsSet(t *testing.T) {
+	cmd := &cobra.Command{}
+	addProviderAuthFlags(cmd)
+	if err := cmd.Flags().Set("yes", "true"); err != nil {
+		t.Fatalf("set yes flag: %v", err)
+	}
+	if err := promptForProviderAuth(cmd, "azure-openai"); err != nil {
+		t.Fatalf("promptForProviderAuth returned error: %v", err)
+	}
+}
+
+func TestPromptForGitHubCopilotAuthSetsMethodFromToken(t *testing.T) {
+	cmd := &cobra.Command{}
+	addProviderAuthFlags(cmd)
+	if err := cmd.Flags().Set("token", "ghp_test"); err != nil {
+		t.Fatalf("set token flag: %v", err)
+	}
+	if err := promptForProviderAuth(cmd, "github-copilot"); err != nil {
+		t.Fatalf("promptForProviderAuth returned error: %v", err)
+	}
+	method, _ := cmd.Flags().GetString("method")
+	if method != "token" {
+		t.Fatalf("method = %q, want %q", method, "token")
+	}
+}
+
+func TestResolveAuthProviderTypeUsesInteractiveSelection(t *testing.T) {
+	t.Skip("interactive provider selection is covered manually")
+}
+
+func TestUsageCmdFlags(t *testing.T) {
+	if UsageCmd.Use != "usage" {
+		t.Errorf("expected Use='usage', got %q", UsageCmd.Use)
+	}
+	for _, flagName := range []string{"provider-id", "model-id", "client", "api-shape", "since", "until", "breakdown"} {
+		if UsageCmd.Flags().Lookup(flagName) == nil {
+			t.Errorf("usage: missing flag --%s", flagName)
+		}
+	}
+	if strings.Contains(CheckUsageCmd.Short, "GitHub Copilot") {
+		t.Fatalf("check-usage short help should not be GitHub Copilot-specific: %q", CheckUsageCmd.Short)
+	}
+}
+
+func TestUsageHelpers(t *testing.T) {
+	cmd := &cobra.Command{}
+	addUsageFlags(cmd)
+	_ = cmd.Flags().Set("provider-id", "provider one")
+	_ = cmd.Flags().Set("model-id", "qwen3")
+	_ = cmd.Flags().Set("api-shape", "openai")
+
+	query := usageQuery(cmd)
+	for _, expected := range []string{"api_shape=openai", "model_id=qwen3", "provider_id=provider+one"} {
+		if !strings.Contains(query, expected) {
+			t.Errorf("usage query %q missing %q", query, expected)
+		}
+	}
+
+	cases := map[string]string{
+		"provider":  "/api/admin/metering/by-provider",
+		"providers": "/api/admin/metering/by-provider",
+		"model":     "/api/admin/metering/by-model",
+		"models":    "/api/admin/metering/by-model",
+		"client":    "/api/admin/metering/by-client",
+		"clients":   "/api/admin/metering/by-client",
+		"none":      "",
+	}
+	for breakdown, expected := range cases {
+		path, err := usageBreakdownPath(breakdown)
+		if err != nil {
+			t.Fatalf("usageBreakdownPath(%q) returned error: %v", breakdown, err)
+		}
+		if path != expected {
+			t.Errorf("usageBreakdownPath(%q) = %q, want %q", breakdown, path, expected)
+		}
+	}
+
+	if _, err := usageBreakdownPath("bad"); err == nil {
+		t.Fatal("usageBreakdownPath should reject invalid breakdown values")
+	}
+}
 
 // ─── provider command ─────────────────────────────────────────────────────────
 
