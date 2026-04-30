@@ -123,11 +123,16 @@ export default function AppComponent() {
   const isMobile = useMediaQuery("(max-width: 768px)")
   const [mobileOpen, setMobileOpen] = useState(false)
 
-  // Create NAV_ITEMS with translations
+  // Create NAV_ITEMS with translations, ordered by priority
   const NAV_ITEMS = useMemo(
     () => [
       { id: "metering" as const, label: t("nav:metering"), icon: BarChart3 },
       { id: "providers" as const, label: t("nav:providers"), icon: Database },
+      {
+        id: "tokens" as const,
+        label: t("nav:accessTokens"),
+        icon: KeyRound,
+      },
       { id: "chat" as const, label: t("nav:chat"), icon: MessageSquare },
       { id: "logging" as const, label: t("nav:logging"), icon: BarChart3 },
       {
@@ -139,11 +144,6 @@ export default function AppComponent() {
         id: "config" as const,
         label: t("nav:toolConfig"),
         icon: SlidersHorizontal,
-      },
-      {
-        id: "tokens" as const,
-        label: t("nav:accessTokens"),
-        icon: KeyRound,
       },
       { id: "about" as const, label: t("nav:about"), icon: Settings },
     ],
@@ -263,7 +263,15 @@ export default function AppComponent() {
                   borderBottom: "1px solid var(--color-separator)",
                 }}
               >
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    cursor: "pointer",
+                  }}
+                  onClick={() => handleTabChange("metering")}
+                >
                   <div
                     style={{
                       width: 32,
@@ -523,7 +531,9 @@ export default function AppComponent() {
                   fontSize: 12,
                   color: "var(--color-text-tertiary)",
                   fontFamily: "var(--font-text)",
+                  cursor: "pointer",
                 }}
+                onClick={() => handleTabChange("metering")}
               >
                 {t("common:headers.omnillm")}
               </span>
