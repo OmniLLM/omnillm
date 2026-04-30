@@ -77,7 +77,7 @@ var settingsSetLogLevelCmd = &cobra.Command{
 			c.PrintJSON(data)
 			return nil
 		}
-		SuccessMsg("Log level set to '%s'.", args[0])
+		SuccessMsg(cmd,"Log level set to '%s'.", args[0])
 		return nil
 	},
 }

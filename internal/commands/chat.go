@@ -4,11 +4,26 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"os"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
 )
+
+type replCommandResult struct {
+	handled bool
+	exit    bool
+	model   string
+}
+
+type chatSessionState struct {
+	ID     string
+	Model  string
+	IsTTY  bool
+	Picker modelPickerFunc
+}
+
+type modelPickerFunc func(string, []chatModelInfo) (string, error)
 
 var ChatCmd = &cobra.Command{
 	Use:   "chat",
@@ -76,22 +91,19 @@ var chatSessionsListCmd = &cobra.Command{
 		}
 		sessions, _ := resp["sessions"].([]interface{})
 		if len(sessions) == 0 {
-			fmt.Println("No chat sessions.")
-			return nil
+			return PrintEmpty(cmd.OutOrStdout(), "chat sessions")
 		}
 
-		fmt.Printf("%-36s  %-30s  %-30s  %s\n", "SESSION ID", "TITLE", "MODEL", "MESSAGES")
-		fmt.Println(strings.Repeat("─", 110))
+		table := NewTable("SESSION ID", "TITLE", "MODEL", "MESSAGES")
 		for _, s := range sessions {
 			session, _ := s.(map[string]interface{})
 			id, _ := session["id"].(string)
 			title, _ := session["title"].(string)
 			model, _ := session["model_id"].(string)
 			msgs, _ := session["message_count"].(float64)
-			fmt.Printf("%-36s  %-30s  %-30s  %.0f\n",
-				padRight(id, 36), padRight(title, 30), padRight(model, 30), msgs)
+			table.AddRow(id, title, model, fmt.Sprintf("%.0f", msgs))
 		}
-		return nil
+		return table.Render(cmd.OutOrStdout())
 	},
 }
 
@@ -122,11 +134,11 @@ var chatSessionsCreateCmd = &cobra.Command{
 		var resp map[string]interface{}
 		if err := json.Unmarshal(data, &resp); err == nil {
 			if sid, ok := resp["session_id"].(string); ok {
-				SuccessMsg("Session created: %s", sid)
+				SuccessMsg(cmd, "Session created: %s", sid)
 				return nil
 			}
 		}
-		SuccessMsg("Session created.")
+		SuccessMsg(cmd, "Session created.")
 		return nil
 	},
 }
@@ -195,7 +207,7 @@ var chatSessionsRenameCmd = &cobra.Command{
 			c.PrintJSON(data)
 			return nil
 		}
-		SuccessMsg("Session '%s' renamed.", args[0])
+		SuccessMsg(cmd, "Session '%s' renamed.", args[0])
 		return nil
 	},
 }
@@ -211,8 +223,8 @@ var chatSessionsDeleteCmd = &cobra.Command{
 		c := NewClient(cmd)
 
 		if all {
-			if !yes && !Confirm("Delete all chat sessions?") {
-				fmt.Println("Cancelled.")
+			if !yes && !Confirm(cmd, "Delete all chat sessions?") {
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Cancelled.")
 				return nil
 			}
 			data, err := c.Delete("/api/admin/chat/sessions")
@@ -223,15 +235,15 @@ var chatSessionsDeleteCmd = &cobra.Command{
 				c.PrintJSON(data)
 				return nil
 			}
-			SuccessMsg("All sessions deleted.")
+			SuccessMsg(cmd, "All sessions deleted.")
 			return nil
 		}
 
 		if len(args) == 0 {
 			return fmt.Errorf("provide a session-id or use --all")
 		}
-		if !yes && !Confirm(fmt.Sprintf("Delete session '%s'?", args[0])) {
-			fmt.Println("Cancelled.")
+		if !yes && !Confirm(cmd, fmt.Sprintf("Delete session '%s'?", args[0])) {
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Cancelled.")
 			return nil
 		}
 		data, err := c.Delete("/api/admin/chat/sessions/" + args[0])
@@ -242,7 +254,7 @@ var chatSessionsDeleteCmd = &cobra.Command{
 			c.PrintJSON(data)
 			return nil
 		}
-		SuccessMsg("Session '%s' deleted.", args[0])
+		SuccessMsg(cmd, "Session '%s' deleted.", args[0])
 		return nil
 	},
 }
@@ -271,11 +283,11 @@ var chatSendCmd = &cobra.Command{
 		var resp map[string]interface{}
 		if err := json.Unmarshal(data, &resp); err == nil {
 			if msgID, ok := resp["message_id"].(string); ok {
-				SuccessMsg("Message added: %s", msgID)
+				SuccessMsg(cmd, "Message added: %s", msgID)
 				return nil
 			}
 		}
-		SuccessMsg("Message added.")
+		SuccessMsg(cmd, "Message added.")
 		return nil
 	},
 }
@@ -284,43 +296,23 @@ var chatSendCmd = &cobra.Command{
 
 func runInteractiveChat(cmd *cobra.Command, args []string) error {
 	c := NewClient(cmd)
-	model, _ := cmd.Flags().GetString("model")
+	requestedModel, _ := cmd.Flags().GetString("model")
 	existingSession, _ := cmd.Flags().GetString("session")
 
-	// Determine session ID
-	sessionID := existingSession
-	if sessionID == "" {
-		// Create a new session
-		title := "CLI session"
-		body := map[string]interface{}{
-			"title":     title,
-			"model_id":  model,
-			"api_shape": "openai",
-		}
-		data, err := c.Post("/api/admin/chat/sessions", body)
-		if err != nil {
-			return fmt.Errorf("create session: %w", err)
-		}
-		var resp map[string]interface{}
-		if err := json.Unmarshal(data, &resp); err != nil {
-			return err
-		}
-		sid, ok := resp["session_id"].(string)
-		if !ok {
-			return fmt.Errorf("server did not return a session_id")
-		}
-		sessionID = sid
-		fmt.Printf("Started session: %s\n", sessionID)
-	} else {
-		fmt.Printf("Resuming session: %s\n", sessionID)
+	session, err := ensureChatSession(cmd, c, existingSession, requestedModel)
+	if err != nil {
+		return err
 	}
+	session.IsTTY = IsTerminalWriter(cmd.OutOrStdout())
+	session.Picker = promptModelPicker
 
-	fmt.Println("Type your message and press Enter. Type /quit or /exit to quit.")
-	fmt.Println()
+	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Type your message and press Enter.")
+	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Use /help to see interactive commands. Use /models to browse and switch models.")
+	_, _ = fmt.Fprintln(cmd.OutOrStdout())
 
-	scanner := bufio.NewScanner(os.Stdin)
+	scanner := bufio.NewScanner(cmd.InOrStdin())
 	for {
-		fmt.Print("You: ")
+		_, _ = fmt.Fprint(cmd.OutOrStdout(), FormatChatPrompt("You", session.IsTTY))
 		if !scanner.Scan() {
 			break
 		}
@@ -328,96 +320,357 @@ func runInteractiveChat(cmd *cobra.Command, args []string) error {
 		if line == "" {
 			continue
 		}
-		if line == "/quit" || line == "/exit" || line == "exit" || line == "quit" {
-			fmt.Println("Goodbye.")
-			break
+
+		if strings.HasPrefix(line, "/") {
+			result, err := handleChatSlashCommand(cmd, c, &session, line)
+			if err != nil {
+				ErrorMsg(cmd, "%v", err)
+				continue
+			}
+			if result.model != "" {
+				session.Model = result.model
+			}
+			if result.exit {
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Goodbye.")
+				break
+			}
+			if result.handled {
+				continue
+			}
 		}
 
-		// Store user message
-		msgBody := map[string]string{"role": "user", "content": line}
-		if _, err := c.Post("/api/admin/chat/sessions/"+sessionID+"/messages", msgBody); err != nil {
-			ErrorMsg("store message: %v", err)
+		if err := postChatSessionMessage(c, session.ID, "user", line); err != nil {
+			ErrorMsg(cmd, "store message: %v", err)
 			continue
 		}
 
-		// Send to /v1/chat/completions for a real LLM response
-		// Build a minimal OpenAI-style request using all session messages
-		sessionData, err := c.Get("/api/admin/chat/sessions/" + sessionID)
+		loadedSession, messages, err := loadChatSessionMessages(c, session.ID)
 		if err != nil {
-			ErrorMsg("load session: %v", err)
+			ErrorMsg(cmd, "%v", err)
 			continue
 		}
-		var session map[string]interface{}
-		if err := json.Unmarshal(sessionData, &session); err != nil {
-			ErrorMsg("parse session: %v", err)
-			continue
+		if loadedSession.Model != "" {
+			session.Model = loadedSession.Model
 		}
 
-		// Collect messages
-		type chatMsg struct {
-			Role    string `json:"role"`
-			Content string `json:"content"`
-		}
-		var messages []chatMsg
-		if msgs, ok := session["messages"].([]interface{}); ok {
-			for _, m := range msgs {
-				msg, _ := m.(map[string]interface{})
-				role, _ := msg["role"].(string)
-				content, _ := msg["content"].(string)
-				messages = append(messages, chatMsg{Role: role, Content: content})
-			}
-		}
-
-		reqModel := model
-		if reqModel == "" {
-			if mid, ok := session["model_id"].(string); ok && mid != "" {
-				reqModel = mid
-			} else {
-				reqModel = "gpt-4"
-			}
-		}
-
-		completionBody := map[string]interface{}{
-			"model":    reqModel,
-			"messages": messages,
-			"stream":   false,
-		}
-
-		respData, err := c.Post("/v1/chat/completions", completionBody)
+		assistantContent, err := runChatCompletion(c, session.Model, messages)
 		if err != nil {
-			ErrorMsg("completion: %v", err)
+			ErrorMsg(cmd, "completion: %v", err)
 			continue
 		}
-
-		var completion map[string]interface{}
-		if err := json.Unmarshal(respData, &completion); err != nil {
-			fmt.Println(string(respData))
-			continue
-		}
-
-		// Extract assistant reply
-		assistantContent := ""
-		if choices, ok := completion["choices"].([]interface{}); ok && len(choices) > 0 {
-			choice, _ := choices[0].(map[string]interface{})
-			if message, ok := choice["message"].(map[string]interface{}); ok {
-				assistantContent, _ = message["content"].(string)
-			}
-		}
-
 		if assistantContent == "" {
-			fmt.Println("(no response)")
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "(no response)")
 			continue
 		}
 
-		fmt.Printf("Assistant: %s\n\n", assistantContent)
-
-		// Store assistant reply in session
-		aBody := map[string]string{"role": "assistant", "content": assistantContent}
-		if _, err := c.Post("/api/admin/chat/sessions/"+sessionID+"/messages", aBody); err != nil {
-			// Non-fatal — just log
-			ErrorMsg("store assistant message: %v", err)
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), FormatChatHeader("Assistant", session.IsTTY))
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\n\n", assistantContent)
+		if err := postChatSessionMessage(c, session.ID, "assistant", assistantContent); err != nil {
+			ErrorMsg(cmd, "store assistant message: %v", err)
 		}
 	}
 
 	return scanner.Err()
+}
+
+func ensureChatSession(cmd *cobra.Command, c *Client, existingSession string, requestedModel string) (chatSessionState, error) {
+	if existingSession != "" {
+		session, _, err := loadChatSessionMessages(c, existingSession)
+		if err != nil {
+			return chatSessionState{}, err
+		}
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Resuming session: %s\n", existingSession)
+		if requestedModel != "" && requestedModel != session.Model {
+			if err := updateChatSessionModel(c, existingSession, requestedModel); err != nil {
+				return chatSessionState{}, err
+			}
+			session.Model = requestedModel
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Using model: %s\n", requestedModel)
+		}
+		return session, nil
+	}
+
+	body := map[string]interface{}{
+		"title":     "CLI session",
+		"model_id":  requestedModel,
+		"api_shape": "openai",
+	}
+	data, err := c.Post("/api/admin/chat/sessions", body)
+	if err != nil {
+		return chatSessionState{}, fmt.Errorf("create session: %w", err)
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return chatSessionState{}, err
+	}
+	sid, ok := resp["session_id"].(string)
+	if !ok {
+		return chatSessionState{}, fmt.Errorf("server did not return a session_id")
+	}
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Started session: %s\n", sid)
+	if requestedModel != "" {
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Using model: %s\n", requestedModel)
+	}
+	return chatSessionState{ID: sid, Model: requestedModel}, nil
+}
+
+func handleChatSlashCommand(cmd *cobra.Command, c *Client, session *chatSessionState, line string) (replCommandResult, error) {
+	fields := strings.Fields(line)
+	if len(fields) == 0 {
+		return replCommandResult{handled: true}, nil
+	}
+
+	switch fields[0] {
+	case "/quit", "/exit":
+		return replCommandResult{handled: true, exit: true}, nil
+	case "/help":
+		printChatHelp(cmd)
+		return replCommandResult{handled: true}, nil
+	case "/model":
+		if len(fields) == 1 {
+			currentModel, err := currentChatModel(c, session.ID, session.Model)
+			if err != nil {
+				return replCommandResult{}, err
+			}
+			if currentModel == "" {
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Current model: (server default)")
+			} else {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Current model: %s\n", currentModel)
+			}
+			return replCommandResult{handled: true, model: currentModel}, nil
+		}
+		newModel := fields[1]
+		if err := updateChatSessionModel(c, session.ID, newModel); err != nil {
+			return replCommandResult{}, err
+		}
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Switched model to %s\n", newModel)
+		return replCommandResult{handled: true, model: newModel}, nil
+	case "/models":
+		models, err := listChatModels(c)
+		if err != nil {
+			return replCommandResult{}, err
+		}
+		if len(models) == 0 {
+			return replCommandResult{handled: true}, PrintEmpty(cmd.OutOrStdout(), "models")
+		}
+		filter := ""
+		if len(fields) > 1 {
+			filter = strings.Join(fields[1:], " ")
+		}
+		filtered := filterChatModels(models, filter)
+		if session.IsTTY && filter == "" && session.Picker != nil {
+			selected, err := session.Picker("Select a model", models)
+			if err != nil {
+				return replCommandResult{handled: true}, nil
+			}
+			if selected == "" {
+				return replCommandResult{handled: true}, nil
+			}
+			if err := updateChatSessionModel(c, session.ID, selected); err != nil {
+				return replCommandResult{}, err
+			}
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Switched model to %s\n", selected)
+			return replCommandResult{handled: true, model: selected}, nil
+		}
+		if len(filtered) == 0 {
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "No models match %q\n", filter)
+			return replCommandResult{handled: true}, nil
+		}
+		table := NewTable("MODEL", "OWNER", "NAME")
+		for _, model := range filtered {
+			table.AddRow(model.ID, model.Owner, model.Name)
+		}
+		if err := table.Render(cmd.OutOrStdout()); err != nil {
+			return replCommandResult{}, err
+		}
+		return replCommandResult{handled: true}, nil
+	case "/session":
+		currentModel, err := currentChatModel(c, session.ID, session.Model)
+		if err != nil {
+			return replCommandResult{}, err
+		}
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Session: %s\n", session.ID)
+		if currentModel == "" {
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Model:   (server default)")
+		} else {
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Model:   %s\n", currentModel)
+		}
+		return replCommandResult{handled: true, model: currentModel}, nil
+	default:
+		return replCommandResult{}, fmt.Errorf("unknown command %q; use /help", fields[0])
+	}
+}
+
+func printChatHelp(cmd *cobra.Command) {
+	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Interactive commands:")
+	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  /help              Show this help")
+	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  /session           Show current session details")
+	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  /model             Show the current model")
+	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  /model <id>        Switch to a different model")
+	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  /models            Open the model selector in a terminal")
+	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  /models <filter>   List models matching a filter")
+	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  /quit, /exit       Leave the chat shell")
+}
+
+
+type chatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type chatModelInfo struct {
+	ID    string
+	Owner string
+	Name  string
+}
+
+func promptModelPicker(prompt string, models []chatModelInfo) (string, error) {
+	items := make([]string, 0, len(models))
+	for _, model := range models {
+		label := model.ID
+		if model.Name != "" && model.Name != model.ID {
+			label = fmt.Sprintf("%s — %s", model.ID, model.Name)
+		}
+		items = append(items, label)
+	}
+
+	selected, err := SelectFromOptions(prompt, items)
+	if err != nil {
+		return "", err
+	}
+	for i, item := range items {
+		if item == selected {
+			return models[i].ID, nil
+		}
+	}
+	return "", nil
+}
+
+func filterChatModels(models []chatModelInfo, filter string) []chatModelInfo {
+	filter = strings.TrimSpace(strings.ToLower(filter))
+	if filter == "" {
+		return models
+	}
+
+	filtered := make([]chatModelInfo, 0, len(models))
+	for _, model := range models {
+		if strings.Contains(strings.ToLower(model.ID), filter) || strings.Contains(strings.ToLower(model.Name), filter) || strings.Contains(strings.ToLower(model.Owner), filter) {
+			filtered = append(filtered, model)
+		}
+	}
+	return filtered
+}
+
+func currentChatModel(c *Client, sessionID string, fallback string) (string, error) {
+	session, _, err := loadChatSessionMessages(c, sessionID)
+	if err != nil {
+		return "", err
+	}
+	if session.Model != "" {
+		return session.Model, nil
+	}
+	return fallback, nil
+}
+
+func loadChatSessionMessages(c *Client, sessionID string) (chatSessionState, []chatMessage, error) {
+	sessionData, err := c.Get("/api/admin/chat/sessions/" + sessionID)
+	if err != nil {
+		return chatSessionState{}, nil, fmt.Errorf("load session: %w", err)
+	}
+	var session map[string]interface{}
+	if err := json.Unmarshal(sessionData, &session); err != nil {
+		return chatSessionState{}, nil, fmt.Errorf("parse session: %w", err)
+	}
+
+	state := chatSessionState{ID: sessionID}
+	if mid, ok := session["model_id"].(string); ok {
+		state.Model = mid
+	}
+
+	var messages []chatMessage
+	if msgs, ok := session["messages"].([]interface{}); ok {
+		for _, m := range msgs {
+			msg, _ := m.(map[string]interface{})
+			role, _ := msg["role"].(string)
+			content, _ := msg["content"].(string)
+			messages = append(messages, chatMessage{Role: role, Content: content})
+		}
+	}
+
+	return state, messages, nil
+}
+
+func postChatSessionMessage(c *Client, sessionID string, role string, content string) error {
+	_, err := c.Post("/api/admin/chat/sessions/"+sessionID+"/messages", map[string]string{
+		"role":    role,
+		"content": content,
+	})
+	return err
+}
+
+func runChatCompletion(c *Client, model string, messages []chatMessage) (string, error) {
+	reqModel := model
+	if reqModel == "" {
+		reqModel = "gpt-4"
+	}
+
+	completionBody := map[string]interface{}{
+		"model":    reqModel,
+		"messages": messages,
+		"stream":   false,
+	}
+
+	respData, err := c.Post("/v1/chat/completions", completionBody)
+	if err != nil {
+		return "", err
+	}
+
+	var completion map[string]interface{}
+	if err := json.Unmarshal(respData, &completion); err != nil {
+		return string(respData), nil
+	}
+
+	if choices, ok := completion["choices"].([]interface{}); ok && len(choices) > 0 {
+		choice, _ := choices[0].(map[string]interface{})
+		if message, ok := choice["message"].(map[string]interface{}); ok {
+			assistantContent, _ := message["content"].(string)
+			return assistantContent, nil
+		}
+	}
+
+	return "", nil
+}
+
+func updateChatSessionModel(c *Client, sessionID string, modelID string) error {
+	_, err := c.Put("/api/admin/chat/sessions/"+sessionID, map[string]string{
+		"model_id": modelID,
+	})
+	return err
+}
+
+func listChatModels(c *Client) ([]chatModelInfo, error) {
+	data, err := c.Get("/models")
+	if err != nil {
+		return nil, err
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, err
+	}
+
+	items, _ := resp["data"].([]interface{})
+	models := make([]chatModelInfo, 0, len(items))
+	for _, item := range items {
+		entry, _ := item.(map[string]interface{})
+		id, _ := entry["id"].(string)
+		owner, _ := entry["owned_by"].(string)
+		name, _ := entry["display_name"].(string)
+		models = append(models, chatModelInfo{ID: id, Owner: owner, Name: name})
+	}
+
+	sort.Slice(models, func(i, j int) bool {
+		return models[i].ID < models[j].ID
+	})
+	return models, nil
 }

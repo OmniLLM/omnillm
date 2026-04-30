@@ -63,13 +63,10 @@ var vmListCmd = &cobra.Command{
 		}
 		items, _ := resp["data"].([]interface{})
 		if len(items) == 0 {
-			fmt.Println("No virtual models configured.")
-			return nil
+			return PrintEmpty(cmd.OutOrStdout(), "virtual models configured")
 		}
 
-		fmt.Printf("%-30s  %-30s  %-14s  %-10s  %-9s  %s\n",
-			"ID", "NAME", "STRATEGY", "API SHAPE", "UPSTREAMS", "ENABLED")
-		fmt.Println(strings.Repeat("─", 110))
+		table := NewTable("ID", "NAME", "STRATEGY", "API SHAPE", "UPSTREAMS", "ENABLED")
 		for _, item := range items {
 			vm, _ := item.(map[string]interface{})
 			id, _ := vm["virtual_model_id"].(string)
@@ -81,11 +78,9 @@ var vmListCmd = &cobra.Command{
 			if v, ok := vm["enabled"].(bool); ok && v {
 				enabled = "yes"
 			}
-			fmt.Printf("%-30s  %-30s  %-14s  %-10s  %-9d  %s\n",
-				padRight(id, 30), padRight(name, 30), padRight(strategy, 14),
-				padRight(apiShape, 10), len(upstreams), enabled)
+			table.AddRow(id, name, strategy, apiShape, fmt.Sprintf("%d", len(upstreams)), enabled)
 		}
-		return nil
+		return table.Render(cmd.OutOrStdout())
 	},
 }
 
@@ -184,7 +179,7 @@ var vmCreateCmd = &cobra.Command{
 			c.PrintJSON(data)
 			return nil
 		}
-		SuccessMsg("Virtual model '%s' created.", args[0])
+		SuccessMsg(cmd,"Virtual model '%s' created.", args[0])
 		return nil
 	},
 }
@@ -244,7 +239,7 @@ var vmUpdateCmd = &cobra.Command{
 			c.PrintJSON(data)
 			return nil
 		}
-		SuccessMsg("Virtual model '%s' updated.", args[0])
+		SuccessMsg(cmd,"Virtual model '%s' updated.", args[0])
 		return nil
 	},
 }
@@ -257,8 +252,8 @@ var vmDeleteCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		yes, _ := cmd.Flags().GetBool("yes")
-		if !yes && !Confirm(fmt.Sprintf("Delete virtual model '%s'?", args[0])) {
-			fmt.Println("Cancelled.")
+		if !yes && !Confirm(cmd, fmt.Sprintf("Delete virtual model '%s'?", args[0])) {
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Cancelled.")
 			return nil
 		}
 		c := NewClient(cmd)
@@ -270,7 +265,7 @@ var vmDeleteCmd = &cobra.Command{
 			c.PrintJSON(data)
 			return nil
 		}
-		SuccessMsg("Virtual model '%s' deleted.", args[0])
+		SuccessMsg(cmd,"Virtual model '%s' deleted.", args[0])
 		return nil
 	},
 }

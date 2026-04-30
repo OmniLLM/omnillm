@@ -27,6 +27,17 @@ func (cs *ChatStore) UpdateSessionTitle(sessionID, title string) error {
 	return err
 }
 
+func (cs *ChatStore) UpdateSession(sessionID, title, modelID string) error {
+	_, err := cs.db.db.Exec(`
+		UPDATE chat_sessions
+		SET title = COALESCE(NULLIF(?, ''), title),
+		    model_id = COALESCE(NULLIF(?, ''), model_id),
+		    updated_at = datetime('now')
+		WHERE session_id = ?
+	`, title, modelID, sessionID)
+	return err
+}
+
 func (cs *ChatStore) TouchSession(sessionID string) error {
 	_, err := cs.db.db.Exec(`
 		UPDATE chat_sessions SET updated_at = datetime('now') WHERE session_id = ?

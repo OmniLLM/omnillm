@@ -3,7 +3,6 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -54,12 +53,10 @@ var modelListCmd = &cobra.Command{
 
 		models, _ := resp["models"].([]interface{})
 		if len(models) == 0 {
-			fmt.Println("No models found.")
-			return nil
+			return PrintEmpty(cmd.OutOrStdout(), "models found")
 		}
 
-		fmt.Printf("%-50s  %-36s  %s\n", "MODEL ID", "NAME", "ENABLED")
-		fmt.Println(strings.Repeat("─", 100))
+		table := NewTable("MODEL ID", "NAME", "ENABLED")
 		for _, m := range models {
 			model, _ := m.(map[string]interface{})
 			id, _ := model["id"].(string)
@@ -68,11 +65,14 @@ var modelListCmd = &cobra.Command{
 			if v, ok := model["enabled"].(bool); ok && v {
 				enabled = "yes"
 			}
-			fmt.Printf("%-50s  %-36s  %s\n", padRight(id, 50), padRight(name, 36), enabled)
+			table.AddRow(id, name, enabled)
+		}
+		if err := table.Render(cmd.OutOrStdout()); err != nil {
+			return err
 		}
 		total, _ := resp["total"].(float64)
-		fmt.Printf("\n%d model(s)\n", int(total))
-		return nil
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "\n%d model(s)\n", int(total))
+		return err
 	},
 }
 
@@ -95,7 +95,7 @@ var modelRefreshCmd = &cobra.Command{
 		var resp map[string]interface{}
 		_ = json.Unmarshal(data, &resp)
 		total, _ := resp["total"].(float64)
-		SuccessMsg("Model list refreshed. %d model(s) available.", int(total))
+		SuccessMsg(cmd,"Model list refreshed. %d model(s) available.", int(total))
 		return nil
 	},
 }
@@ -131,7 +131,7 @@ var modelToggleCmd = &cobra.Command{
 		if !enabled {
 			state = "disabled"
 		}
-		SuccessMsg("Model '%s' %s.", args[1], state)
+		SuccessMsg(cmd,"Model '%s' %s.", args[1], state)
 		return nil
 	},
 }
@@ -185,7 +185,7 @@ var modelVersionSetCmd = &cobra.Command{
 			c.PrintJSON(data)
 			return nil
 		}
-		SuccessMsg("Model '%s' pinned to version '%s'.", args[1], args[2])
+		SuccessMsg(cmd,"Model '%s' pinned to version '%s'.", args[1], args[2])
 		return nil
 	},
 }
