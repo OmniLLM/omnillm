@@ -1,13 +1,5 @@
 package commands
 
-// Tests for the new CLI command registrations.
-// These tests verify:
-//   - Command/subcommand structure (correct Use, Short, subcommand names)
-//   - Flag defaults and types for all new commands
-//   - parseUpstreamArgs helper
-//   - isLevelAtOrAbove helper
-//   - Client env-var and flag resolution via NewClient
-
 import (
 	"strings"
 	"testing"
@@ -190,9 +182,8 @@ func TestProviderCmdStructure(t *testing.T) {
 
 func TestProviderAddFlagDefaults(t *testing.T) {
 	for _, flagName := range []string{"api-key", "token", "endpoint", "region", "plan"} {
-		f := ProviderCmd.Commands()
 		found := false
-		for _, sub := range f {
+		for _, sub := range ProviderCmd.Commands() {
 			if sub.Name() == "add" {
 				if sub.Flags().Lookup(flagName) == nil {
 					t.Errorf("provider add: missing flag --%s", flagName)
@@ -362,10 +353,6 @@ func TestConfigImportRequiresFileFlag(t *testing.T) {
 			if f == nil {
 				t.Error("config import: missing --file flag")
 				return
-			}
-			// The flag should be marked required — annotations contain "required"
-			if sub.Flags().Lookup("file") == nil {
-				t.Error("config import: --file flag not found")
 			}
 			return
 		}
@@ -624,17 +611,13 @@ func TestIsLevelAtOrAboveFiltering(t *testing.T) {
 // ─── NewClient defaults ───────────────────────────────────────────────────────
 
 func TestNewClientDefaultServer(t *testing.T) {
-	// Build a minimal root command that has the persistent flags
 	import_test_root := ChatCmd.Root()
 	if import_test_root == nil {
 		t.Skip("no root command in test context")
 	}
-	// We can't call NewClient without a cobra root that has persistent flags registered,
-	// so we just test the env-var path by unsetting OMNILLM_SERVER and verifying default.
 	t.Setenv("OMNILLM_SERVER", "")
 	t.Setenv("OMNILLM_API_KEY", "")
 
-	// The default is embedded in NewClient; verify the constant matches what start uses
 	const expectedDefault = "http://127.0.0.1:5000"
 	_ = expectedDefault // guard against renaming without updating
 }
