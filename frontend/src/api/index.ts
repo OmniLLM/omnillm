@@ -991,3 +991,38 @@ export const backupConfigFile = (name: string) =>
     `/api/admin/config/${encodeURIComponent(name)}/backup`,
     { method: "POST" },
   )
+
+// ─── Access tokens ──────────────────────────────────────────────────────────
+
+export interface AccessToken {
+  id: string
+  name: string
+  prefix: string
+  created_at: string
+  expires_at: string | null
+  last_used_at: string | null
+  enabled: boolean
+}
+
+export interface CreateAccessTokenResponse {
+  id: string
+  name: string
+  token: string
+  prefix: string
+  expires_at: string | null
+  created_at: string
+}
+
+export const listAccessTokens = () =>
+  apiFetch<Array<AccessToken>>("/api/admin/access-tokens")
+
+export const createAccessToken = (name: string, expiresAt?: string) =>
+  apiFetch<CreateAccessTokenResponse>("/api/admin/access-tokens", {
+    method: "POST",
+    body: JSON.stringify({ name, expires_at: expiresAt }),
+  })
+
+export const deleteAccessToken = (id: string) =>
+  apiFetch<{ deleted: boolean }>(`/api/admin/access-tokens/${id}`, {
+    method: "DELETE",
+  })
