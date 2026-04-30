@@ -42,6 +42,7 @@ func handleGetStatus(c *gin.Context) {
 	providerRegistry := registry.GetProviderRegistry()
 	activeProviders := providerRegistry.GetActiveProviders()
 	var activeProvider map[string]interface{}
+	activeProviderList := make([]map[string]interface{}, 0, len(activeProviders))
 	modelCount := 0
 
 	if len(activeProviders) > 0 {
@@ -50,6 +51,10 @@ func handleGetStatus(c *gin.Context) {
 			"name": activeProviders[0].GetName(),
 		}
 		for _, provider := range activeProviders {
+			activeProviderList = append(activeProviderList, gin.H{
+				"id":   provider.GetInstanceID(),
+				"name": provider.GetName(),
+			})
 			if models, err := loadProviderModels(provider, false); err == nil {
 				modelCount += countEnabledModels(models)
 			}
@@ -83,6 +88,7 @@ func handleGetStatus(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"activeProvider":   activeProvider,
+		"activeProviders":  activeProviderList,
 		"modelCount":       modelCount,
 		"manualApprove":    manualApproval,
 		"rateLimitSeconds": rateLimiter.GetIntervalSeconds(),

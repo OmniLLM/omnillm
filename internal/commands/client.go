@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/manifoldco/promptui"
+	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 )
 
@@ -174,6 +175,44 @@ func PrintJSON(w io.Writer, data []byte) {
 	}
 	out, _ := json.MarshalIndent(v, "", "  ")
 	fmt.Fprintln(w, string(out))
+}
+
+func IsTerminalWriter(w io.Writer) bool {
+	file, ok := w.(*os.File)
+	if !ok {
+		return false
+	}
+	return isatty.IsTerminal(file.Fd()) || isatty.IsCygwinTerminal(file.Fd())
+}
+
+func FormatChatPrompt(role string, tty bool) string {
+	if !tty {
+		return role + "> "
+	}
+
+	switch role {
+	case "You":
+		return "\x1b[36mYou>\x1b[0m "
+	case "Assistant":
+		return "\x1b[35mAssistant>\x1b[0m "
+	default:
+		return role + "> "
+	}
+}
+
+func FormatChatHeader(role string, tty bool) string {
+	if !tty {
+		return role + ">"
+	}
+
+	switch role {
+	case "Assistant":
+		return "\x1b[35mAssistant>\x1b[0m"
+	case "You":
+		return "\x1b[36mYou>\x1b[0m"
+	default:
+		return role + ">"
+	}
 }
 
 // Confirm asks the user for a yes/no confirmation; returns true if yes.

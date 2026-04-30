@@ -17,9 +17,13 @@ type replCommandResult struct {
 }
 
 type chatSessionState struct {
-	ID    string
-	Model string
+	ID     string
+	Model  string
+	IsTTY  bool
+	Picker modelPickerFunc
 }
+
+type modelPickerFunc func(string, []chatModelInfo) (string, error)
 
 var ChatCmd = &cobra.Command{
 	Use:   "chat",
@@ -299,14 +303,16 @@ func runInteractiveChat(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	session.IsTTY = IsTerminalWriter(cmd.OutOrStdout())
+	session.Picker = promptModelPicker
 
 	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Type your message and press Enter.")
-	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Use /help to see interactive commands.")
+	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Use /help to see interactive commands. Use /models to browse and switch models.")
 	_, _ = fmt.Fprintln(cmd.OutOrStdout())
 
 	scanner := bufio.NewScanner(cmd.InOrStdin())
 	for {
-		_, _ = fmt.Fprint(cmd.OutOrStdout(), "You: ")
+		_, _ = fmt.Fprint(cmd.OutOrStdout(), FormatChatPrompt("You", session.IsTTY))
 		if !scanner.Scan() {
 			break
 		}
@@ -357,7 +363,8 @@ func runInteractiveChat(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Assistant: %s\n\n", assistantContent)
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), FormatChatHeader("Assistant", session.IsTTY))
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\n\n", assistantContent)
 		if err := postChatSessionMessage(c, session.ID, "assistant", assistantContent); err != nil {
 			ErrorMsg(cmd, "store assistant message: %v", err)
 		}
@@ -446,8 +453,31 @@ func handleChatSlashCommand(cmd *cobra.Command, c *Client, session *chatSessionS
 		if len(models) == 0 {
 			return replCommandResult{handled: true}, PrintEmpty(cmd.OutOrStdout(), "models")
 		}
+		filter := ""
+		if len(fields) > 1 {
+			filter = strings.Join(fields[1:], " ")
+		}
+		filtered := filterChatModels(models, filter)
+		if session.IsTTY && filter == "" && session.Picker != nil {
+			selected, err := session.Picker("Select a model", models)
+			if err != nil {
+				return replCommandResult{handled: true}, nil
+			}
+			if selected == "" {
+				return replCommandResult{handled: true}, nil
+			}
+			if err := updateChatSessionModel(c, session.ID, selected); err != nil {
+				return replCommandResult{}, err
+			}
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Switched model to %s\n", selected)
+			return replCommandResult{handled: true, model: selected}, nil
+		}
+		if len(filtered) == 0 {
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "No models match %q\n", filter)
+			return replCommandResult{handled: true}, nil
+		}
 		table := NewTable("MODEL", "OWNER", "NAME")
-		for _, model := range models {
+		for _, model := range filtered {
 			table.AddRow(model.ID, model.Owner, model.Name)
 		}
 		if err := table.Render(cmd.OutOrStdout()); err != nil {
@@ -473,13 +503,15 @@ func handleChatSlashCommand(cmd *cobra.Command, c *Client, session *chatSessionS
 
 func printChatHelp(cmd *cobra.Command) {
 	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Interactive commands:")
-	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  /help            Show this help")
-	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  /session         Show current session details")
-	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  /model           Show the current model")
-	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  /model <id>      Switch to a different model")
-	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  /models          List available models")
-	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  /quit, /exit     Leave the chat shell")
+	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  /help              Show this help")
+	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  /session           Show current session details")
+	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  /model             Show the current model")
+	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  /model <id>        Switch to a different model")
+	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  /models            Open the model selector in a terminal")
+	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  /models <filter>   List models matching a filter")
+	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  /quit, /exit       Leave the chat shell")
 }
+
 
 type chatMessage struct {
 	Role    string `json:"role"`
@@ -490,6 +522,43 @@ type chatModelInfo struct {
 	ID    string
 	Owner string
 	Name  string
+}
+
+func promptModelPicker(prompt string, models []chatModelInfo) (string, error) {
+	items := make([]string, 0, len(models))
+	for _, model := range models {
+		label := model.ID
+		if model.Name != "" && model.Name != model.ID {
+			label = fmt.Sprintf("%s — %s", model.ID, model.Name)
+		}
+		items = append(items, label)
+	}
+
+	selected, err := SelectFromOptions(prompt, items)
+	if err != nil {
+		return "", err
+	}
+	for i, item := range items {
+		if item == selected {
+			return models[i].ID, nil
+		}
+	}
+	return "", nil
+}
+
+func filterChatModels(models []chatModelInfo, filter string) []chatModelInfo {
+	filter = strings.TrimSpace(strings.ToLower(filter))
+	if filter == "" {
+		return models
+	}
+
+	filtered := make([]chatModelInfo, 0, len(models))
+	for _, model := range models {
+		if strings.Contains(strings.ToLower(model.ID), filter) || strings.Contains(strings.ToLower(model.Name), filter) || strings.Contains(strings.ToLower(model.Owner), filter) {
+			filtered = append(filtered, model)
+		}
+	}
+	return filtered
 }
 
 func currentChatModel(c *Client, sessionID string, fallback string) (string, error) {

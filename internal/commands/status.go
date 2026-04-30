@@ -41,8 +41,21 @@ func runServerStatus(cmd *cobra.Command, args []string) error {
 	rateLimitSeconds := resp["rateLimitSeconds"]
 	rateLimitWait, _ := resp["rateLimitWait"].(bool)
 
+	activeProviders := []string{}
+	if providers, ok := resp["activeProviders"].([]interface{}); ok {
+		for _, entry := range providers {
+			provider, _ := entry.(map[string]interface{})
+			name, _ := provider["name"].(string)
+			id, _ := provider["id"].(string)
+			if name != "" && id != "" {
+				activeProviders = append(activeProviders, fmt.Sprintf("%s (%s)", name, id))
+			}
+		}
+	}
 	activeProvider := "none"
-	if ap, ok := resp["activeProvider"].(map[string]interface{}); ok {
+	if len(activeProviders) > 0 {
+		activeProvider = strings.Join(activeProviders, ", ")
+	} else if ap, ok := resp["activeProvider"].(map[string]interface{}); ok {
 		name, _ := ap["name"].(string)
 		id, _ := ap["id"].(string)
 		activeProvider = fmt.Sprintf("%s (%s)", name, id)

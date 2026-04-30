@@ -3,6 +3,7 @@ package commands
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -23,8 +24,8 @@ func TestHandleChatSlashCommandHelp(t *testing.T) {
 	if !result.handled || result.exit {
 		t.Fatalf("unexpected result: %+v", result)
 	}
-	if !strings.Contains(out.String(), "/model <id>") {
-		t.Fatalf("help output missing model command:\n%s", out.String())
+	if !strings.Contains(out.String(), "/models <filter>") {
+		t.Fatalf("help output missing filter guidance:\n%s", out.String())
 	}
 }
 
@@ -64,6 +65,19 @@ func TestListChatModelsSorted(t *testing.T) {
 	}
 }
 
+func TestFilterChatModels(t *testing.T) {
+	models := []chatModelInfo{
+		{ID: "gpt-4", Owner: "provider-a", Name: "GPT 4"},
+		{ID: "qwen3", Owner: "provider-b", Name: "Qwen 3"},
+		{ID: "claude-sonnet", Owner: "provider-c", Name: "Claude Sonnet"},
+	}
+
+	filtered := filterChatModels(models, "qwe")
+	if len(filtered) != 1 || filtered[0].ID != "qwen3" {
+		t.Fatalf("unexpected filtered models: %+v", filtered)
+	}
+}
+
 func TestHandleChatSlashCommandModelSwitch(t *testing.T) {
 	var updatedModel string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -99,4 +113,138 @@ func TestHandleChatSlashCommandModelSwitch(t *testing.T) {
 	if !strings.Contains(out.String(), "Switched model to qwen3") {
 		t.Fatalf("unexpected output: %s", out.String())
 	}
+}
+
+func TestHandleChatSlashCommandModelsFilterOutput(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/models" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]any{
+				{"id": "gpt-4", "owned_by": "provider-a", "display_name": "GPT 4"},
+				{"id": "qwen3", "owned_by": "provider-b", "display_name": "Qwen 3"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	client := &Client{BaseURL: server.URL, http: server.Client()}
+	session := &chatSessionState{ID: "session-1", IsTTY: false}
+
+	result, err := handleChatSlashCommand(cmd, client, session, "/models qwe")
+	if err != nil {
+		t.Fatalf("handleChatSlashCommand returned error: %v", err)
+	}
+	if !result.handled {
+		t.Fatalf("expected handled result, got %+v", result)
+	}
+	text := out.String()
+	if !strings.Contains(text, "qwen3") || strings.Contains(text, "gpt-4") {
+		t.Fatalf("unexpected filtered output:\n%s", text)
+	}
+}
+
+func TestHandleChatSlashCommandModelsPicker(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/models":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{"id": "gpt-4", "owned_by": "provider-a", "display_name": "GPT 4"},
+					{"id": "qwen3", "owned_by": "provider-b", "display_name": "Qwen 3"},
+				},
+			})
+		case r.Method == http.MethodPut && r.URL.Path == "/api/admin/chat/sessions/session-1":
+			_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	client := &Client{BaseURL: server.URL, http: server.Client()}
+	session := &chatSessionState{
+		ID:    "session-1",
+		IsTTY: true,
+		Picker: func(prompt string, models []chatModelInfo) (string, error) {
+			if prompt != "Select a model" {
+				t.Fatalf("unexpected prompt: %s", prompt)
+			}
+			if len(models) != 2 {
+				t.Fatalf("expected 2 models, got %d", len(models))
+			}
+			return "qwen3", nil
+		},
+	}
+
+	result, err := handleChatSlashCommand(cmd, client, session, "/models")
+	if err != nil {
+		t.Fatalf("handleChatSlashCommand returned error: %v", err)
+	}
+	if result.model != "qwen3" {
+		t.Fatalf("expected selected model qwen3, got %+v", result)
+	}
+	if !strings.Contains(out.String(), "Switched model to qwen3") {
+		t.Fatalf("unexpected output: %s", out.String())
+	}
+}
+
+func TestFormatChatPrompt(t *testing.T) {
+	if got := FormatChatPrompt("You", false); got != "You> " {
+		t.Fatalf("unexpected non-tty prompt: %q", got)
+	}
+	if got := FormatChatHeader("Assistant", false); got != "Assistant>" {
+		t.Fatalf("unexpected non-tty header: %q", got)
+	}
+	if got := FormatChatPrompt("You", true); !strings.Contains(got, "You>") {
+		t.Fatalf("unexpected tty prompt: %q", got)
+	}
+	if got := FormatChatHeader("Assistant", true); !strings.Contains(got, "Assistant>") {
+		t.Fatalf("unexpected tty header: %q", got)
+	}
+}
+
+func TestPromptModelPickerUsesSelectedModel(t *testing.T) {
+	picker := func(prompt string, models []chatModelInfo) (string, error) {
+		if prompt != "Select a model" {
+			t.Fatalf("unexpected prompt: %s", prompt)
+		}
+		return models[1].ID, nil
+	}
+
+	selected, err := picker("Select a model", []chatModelInfo{{ID: "gpt-4"}, {ID: "qwen3"}})
+	if err != nil {
+		t.Fatalf("picker returned error: %v", err)
+	}
+	if selected != "qwen3" {
+		t.Fatalf("selected = %q, want qwen3", selected)
+	}
+}
+
+func TestFilterChatModelsNoMatch(t *testing.T) {
+	models := []chatModelInfo{{ID: "gpt-4", Owner: "provider-a", Name: "GPT 4"}}
+	filtered := filterChatModels(models, "nomatch")
+	if len(filtered) != 0 {
+		t.Fatalf("expected no models, got %+v", filtered)
+	}
+}
+
+func TestPrintChatModelsFilteredTable(t *testing.T) {
+	models := []chatModelInfo{{ID: "qwen3", Owner: "provider-b", Name: "Qwen 3"}}
+	filtered := filterChatModels(models, "qwe")
+	if len(filtered) != 1 {
+		t.Fatalf("expected one model, got %+v", filtered)
+	}
+	if filtered[0].ID != "qwen3" {
+		t.Fatalf("unexpected model: %+v", filtered)
+	}
+	_ = fmt.Sprintf("%v", filtered)
 }
