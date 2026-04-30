@@ -1,5 +1,5 @@
 {
-  "title": "Metering",
+  "title": "Usage",
   "description": "Request-level usage data captured after CIF responses finalize, with token totals, latency, provider attribution, and raw request logs.",
   "byModel": "By model",
   "byProvider": "By provider",

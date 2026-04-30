@@ -10,6 +10,7 @@ import {
   ChevronRight,
   SlidersHorizontal,
   Menu,
+  KeyRound,
 } from "lucide-react"
 import { useState, useEffect, useMemo } from "react"
 import { useTranslation } from "react-i18next"
@@ -21,6 +22,7 @@ import { useLanguage } from "@/hooks/useLanguage"
 import { createLogger } from "@/lib/logger"
 import { ConfirmProvider } from "@/lib/useConfirm"
 import { useMediaQuery } from "@/lib/useMediaQuery"
+import { AccessTokensPage } from "@/pages/AccessTokensPage"
 import { ChatPage } from "@/pages/ChatPage"
 import { ConfigPage } from "@/pages/ConfigPage"
 import { LoggingPage } from "@/pages/LoggingPage"
@@ -38,6 +40,7 @@ type Tab =
   | "metering"
   | "virtualmodel"
   | "config"
+  | "tokens"
   | "about"
 type Theme = "dark" | "light"
 
@@ -61,6 +64,7 @@ function isTab(value: string): value is Tab {
     || value === "metering"
     || value === "virtualmodel"
     || value === "config"
+    || value === "tokens"
     || value === "about"
   )
 }
@@ -77,9 +81,9 @@ function loadTab(): Tab {
       return stored
     }
 
-    return "providers"
+    return "metering"
   } catch {
-    return "providers"
+    return "metering"
   }
 }
 
@@ -122,10 +126,10 @@ export default function AppComponent() {
   // Create NAV_ITEMS with translations
   const NAV_ITEMS = useMemo(
     () => [
+      { id: "metering" as const, label: t("nav:metering"), icon: BarChart3 },
       { id: "providers" as const, label: t("nav:providers"), icon: Database },
       { id: "chat" as const, label: t("nav:chat"), icon: MessageSquare },
       { id: "logging" as const, label: t("nav:logging"), icon: BarChart3 },
-      { id: "metering" as const, label: t("nav:metering"), icon: BarChart3 },
       {
         id: "virtualmodel" as const,
         label: t("nav:virtualModels"),
@@ -135,6 +139,11 @@ export default function AppComponent() {
         id: "config" as const,
         label: t("nav:toolConfig"),
         icon: SlidersHorizontal,
+      },
+      {
+        id: "tokens" as const,
+        label: t("nav:accessTokens"),
+        icon: KeyRound,
       },
       { id: "about" as const, label: t("nav:about"), icon: Settings },
     ],
@@ -599,6 +608,9 @@ export default function AppComponent() {
                     <VirtualModelPage showToast={showToast} />
                   )}
                   {tab === "config" && <ConfigPage showToast={showToast} />}
+                  {tab === "tokens" && (
+                    <AccessTokensPage showToast={showToast} />
+                  )}
                   {tab === "about" && <AboutPage showToast={showToast} />}
                 </div>
               </div>

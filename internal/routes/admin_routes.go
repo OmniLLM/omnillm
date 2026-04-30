@@ -61,6 +61,9 @@ func SetupAdminRoutes(router *gin.RouterGroup, port int) {
 	// Metering / usage data
 	SetupMeteringRoutes(router)
 
+	// Access token management
+	SetupAccessTokenRoutes(router)
+
 	// Config file management
 	router.GET("/config", handleGetConfigFiles)
 	router.GET("/config/:name", handleGetConfig)

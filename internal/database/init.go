@@ -326,6 +326,21 @@ var migrations = []migration{
 		`ALTER TABLE request_logs ADD COLUMN client TEXT NOT NULL DEFAULT 'unknown'`,
 		`CREATE INDEX IF NOT EXISTS idx_request_logs_client_created_at ON request_logs (client, created_at)`,
 	}},
+	// v9: access tokens table for proxy authentication.
+	{9, []string{
+		`CREATE TABLE IF NOT EXISTS access_tokens (
+			id          TEXT PRIMARY KEY,
+			name        TEXT NOT NULL,
+			token_hash  TEXT NOT NULL UNIQUE,
+			prefix      TEXT NOT NULL,
+			created_at  DATETIME DEFAULT (datetime('now')),
+			expires_at  DATETIME,
+			last_used_at DATETIME,
+			enabled     INTEGER NOT NULL DEFAULT 1
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_access_tokens_token_hash ON access_tokens (token_hash)`,
+		`CREATE INDEX IF NOT EXISTS idx_access_tokens_enabled ON access_tokens (enabled)`,
+	}},
 }
 
 // applyMigrations runs any migrations that have not yet been applied.

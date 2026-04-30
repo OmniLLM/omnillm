@@ -1,5 +1,5 @@
 {
-  "title": "计量",
+  "title": "用量",
   "description": "CIF 响应完成后的请求级使用数据，包含令牌总数、延迟、提供者归属和原始请求日志。",
   "byModel": "按模型",
   "byProvider": "按提供者",
