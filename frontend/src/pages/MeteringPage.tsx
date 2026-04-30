@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react"
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { useTranslation } from "react-i18next"
 
 import {
@@ -460,6 +460,10 @@ export function MeteringPage({
   const [pageSize, setPageSize] = useState(50)
   const [maxRows, setMaxRows] = useState(500)
   const [reloadKey, setReloadKey] = useState(0)
+  const [autoRefreshInterval, setAutoRefreshInterval] = useState<number | null>(
+    null,
+  )
+  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null)
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState<MeteringStats | null>(null)
   const [logs, setLogs] = useState<MeteringLogsResponse | null>(null)
@@ -531,6 +535,30 @@ export function MeteringPage({
     [apiShape, modelId, providerId, reloadKey, since, until],
   )
 
+  const stopAutoRefresh = () => {
+    if (pollTimer.current) {
+      clearInterval(pollTimer.current)
+      pollTimer.current = null
+    }
+  }
+
+  const startAutoRefresh = (intervalSeconds: number) => {
+    stopAutoRefresh()
+    pollTimer.current = setInterval(() => {
+      setPage(1)
+      setReloadKey((value) => value + 1)
+    }, intervalSeconds * 1000)
+  }
+
+  const handleAutoRefreshChange = (intervalSeconds: number | null) => {
+    setAutoRefreshInterval(intervalSeconds)
+    if (intervalSeconds) {
+      startAutoRefresh(intervalSeconds)
+    } else {
+      stopAutoRefresh()
+    }
+  }
+
   useEffect(() => {
     let cancelled = false
     setLoading(true)
@@ -578,6 +606,7 @@ export function MeteringPage({
 
     return () => {
       cancelled = true
+      stopAutoRefresh()
     }
   }, [
     clientOptionsQuery,
@@ -668,6 +697,34 @@ export function MeteringPage({
         >
           {t("refresh")}
         </button>
+        <label
+          style={{
+            display: "flex",
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 12,
+            color: "var(--color-text-secondary)",
+            whiteSpace: "nowrap",
+          }}
+        >
+          <select
+            className="sys-select"
+            style={{ fontSize: 12, padding: "2px 6px" }}
+            value={autoRefreshInterval ?? ""}
+            onChange={(e) => {
+              const interval =
+                e.target.value ? Number.parseInt(e.target.value, 10) : null
+              handleAutoRefreshChange(interval)
+            }}
+          >
+            <option value="">Auto-refresh: Off</option>
+            <option value="5">Every 5s</option>
+            <option value="10">Every 10s</option>
+            <option value="15">Every 15s</option>
+            <option value="30">Every 30s</option>
+          </select>
+        </label>
       </div>
 
       <Card style={{ padding: 18, overflow: "visible" }}>
