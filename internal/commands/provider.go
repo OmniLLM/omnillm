@@ -82,6 +82,35 @@ func init() {
 	ProviderCmd.AddCommand(providerUsageCmd)
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+// parseProviders unmarshals a provider list from a JSON response.
+func parseProviders(data []byte) ([]map[string]interface{}, error) {
+	var providers []map[string]interface{}
+	if err := json.Unmarshal(data, &providers); err != nil {
+		return nil, fmt.Errorf("parse response: %w", err)
+	}
+	return providers, nil
+}
+
+// getStringFlag returns a string flag value, silently ignoring errors.
+func getStringFlag(cmd *cobra.Command, name string) string {
+	v, _ := cmd.Flags().GetString(name)
+	return v
+}
+
+// getStringSliceFlag returns a string slice flag value, silently ignoring errors.
+func getStringSliceFlag(cmd *cobra.Command, name string) []string {
+	v, _ := cmd.Flags().GetStringSlice(name)
+	return v
+}
+
+// getBoolFlag returns a bool flag value, silently ignoring errors.
+func getBoolFlag(cmd *cobra.Command, name string) bool {
+	v, _ := cmd.Flags().GetBool(name)
+	return v
+}
+
 // ─── list ─────────────────────────────────────────────────────────────────────
 
 var providerListCmd = &cobra.Command{
@@ -98,9 +127,9 @@ var providerListCmd = &cobra.Command{
 			return nil
 		}
 
-		var providers []map[string]interface{}
-		if err := json.Unmarshal(data, &providers); err != nil {
-			return fmt.Errorf("parse response: %w", err)
+		providers, err := parseProviders(data)
+		if err != nil {
+			return err
 		}
 
 		if len(providers) == 0 {
@@ -354,8 +383,7 @@ var providerDeleteCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		id := args[0]
-		yes, _ := cmd.Flags().GetBool("yes")
-		if !yes && !Confirm(cmd, fmt.Sprintf("Delete provider '%s'?", id)) {
+		if !getBoolFlag(cmd, "yes") && !Confirm(cmd, fmt.Sprintf("Delete provider '%s'?", id)) {
 			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Cancelled.")
 			return nil
 		}
@@ -444,8 +472,8 @@ var providerRenameCmd = &cobra.Command{
 	Short: "Rename a provider or update its subtitle",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		name, _ := cmd.Flags().GetString("name")
-		subtitle, _ := cmd.Flags().GetString("subtitle")
+		name := getStringFlag(cmd, "name")
+		subtitle := getStringFlag(cmd, "subtitle")
 		if name == "" && subtitle == "" {
 			return fmt.Errorf("at least one of --name or --subtitle is required")
 		}
@@ -477,7 +505,7 @@ var providerPrioritiesCmd = &cobra.Command{
 	Short: "Get or set provider priorities",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := NewClient(cmd)
-		sets, _ := cmd.Flags().GetStringSlice("set")
+		sets := getStringSliceFlag(cmd, "set")
 
 		if len(sets) == 0 {
 			// GET
