@@ -14,10 +14,10 @@ func NewAccessTokenStore() *AccessTokenStore {
 	return &AccessTokenStore{db: GetDatabase()}
 }
 
-// List returns all access tokens (without the hash).
+// List returns all access tokens.
 func (s *AccessTokenStore) List() ([]AccessTokenRecord, error) {
 	rows, err := s.db.db.Query(`
-		SELECT id, name, token_hash, prefix, created_at, expires_at, last_used_at, enabled
+		SELECT id, name, token_hash, token_plaintext, prefix, created_at, expires_at, last_used_at, enabled
 		FROM access_tokens ORDER BY created_at DESC
 	`)
 	if err != nil {
@@ -37,18 +37,18 @@ func (s *AccessTokenStore) List() ([]AccessTokenRecord, error) {
 }
 
 // Create inserts a new access token record.
-func (s *AccessTokenStore) Create(id, name, tokenHash, prefix string, expiresAt *time.Time) error {
+func (s *AccessTokenStore) Create(id, name, tokenHash, tokenPlaintext, prefix string, expiresAt *time.Time) error {
 	_, err := s.db.db.Exec(`
-		INSERT INTO access_tokens (id, name, token_hash, prefix, expires_at)
-		VALUES (?, ?, ?, ?, ?)
-	`, id, name, tokenHash, prefix, expiresAt)
+		INSERT INTO access_tokens (id, name, token_hash, token_plaintext, prefix, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, id, name, tokenHash, tokenPlaintext, prefix, expiresAt)
 	return err
 }
 
 // Get retrieves a single access token by ID.
 func (s *AccessTokenStore) Get(id string) (*AccessTokenRecord, error) {
 	row := s.db.db.QueryRow(`
-		SELECT id, name, token_hash, prefix, created_at, expires_at, last_used_at, enabled
+		SELECT id, name, token_hash, token_plaintext, prefix, created_at, expires_at, last_used_at, enabled
 		FROM access_tokens WHERE id = ?
 	`, id)
 
@@ -57,7 +57,7 @@ func (s *AccessTokenStore) Get(id string) (*AccessTokenRecord, error) {
 	var expiresAtStr, lastUsedAtStr sql.NullString
 	var enabled int
 
-	err := row.Scan(&rec.ID, &rec.Name, &rec.TokenHash, &prefixStr,
+	err := row.Scan(&rec.ID, &rec.Name, &rec.TokenHash, &rec.TokenPlaintext, &prefixStr,
 		&createdAtStr, &expiresAtStr, &lastUsedAtStr, &enabled)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -90,7 +90,7 @@ func (s *AccessTokenStore) Delete(id string) error {
 // Returns nil if not found, disabled, or expired.
 func (s *AccessTokenStore) ValidateByHash(tokenHash string) (*AccessTokenRecord, error) {
 	row := s.db.db.QueryRow(`
-		SELECT id, name, token_hash, prefix, created_at, expires_at, last_used_at, enabled
+		SELECT id, name, token_hash, token_plaintext, prefix, created_at, expires_at, last_used_at, enabled
 		FROM access_tokens WHERE token_hash = ? AND enabled = 1
 	`, tokenHash)
 
@@ -99,7 +99,7 @@ func (s *AccessTokenStore) ValidateByHash(tokenHash string) (*AccessTokenRecord,
 	var expiresAtStr, lastUsedAtStr sql.NullString
 	var enabled int
 
-	err := row.Scan(&rec.ID, &rec.Name, &rec.TokenHash, &prefixStr,
+	err := row.Scan(&rec.ID, &rec.Name, &rec.TokenHash, &rec.TokenPlaintext, &prefixStr,
 		&createdAtStr, &expiresAtStr, &lastUsedAtStr, &enabled)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -114,7 +114,7 @@ func (s *AccessTokenStore) ValidateByHash(tokenHash string) (*AccessTokenRecord,
 	if expiresAtStr.Valid {
 		t := parseTime(expiresAtStr.String)
 		if t.Before(time.Now()) {
-			return nil, nil // expired
+			return nil, nil
 		}
 		rec.ExpiresAt = &t
 	}
@@ -123,7 +123,6 @@ func (s *AccessTokenStore) ValidateByHash(tokenHash string) (*AccessTokenRecord,
 		rec.LastUsedAt = &t
 	}
 
-	// Update last_used_at asynchronously
 	go func() {
 		_, _ = s.db.db.Exec(`UPDATE access_tokens SET last_used_at = datetime('now') WHERE id = ?`, rec.ID)
 	}()
@@ -138,7 +137,7 @@ func scanAccessToken(rows *sql.Rows) (AccessTokenRecord, error) {
 	var expiresAtStr, lastUsedAtStr sql.NullString
 	var enabled int
 
-	err := rows.Scan(&rec.ID, &rec.Name, &rec.TokenHash, &prefixStr,
+	err := rows.Scan(&rec.ID, &rec.Name, &rec.TokenHash, &rec.TokenPlaintext, &prefixStr,
 		&createdAtStr, &expiresAtStr, &lastUsedAtStr, &enabled)
 	if err != nil {
 		return rec, err

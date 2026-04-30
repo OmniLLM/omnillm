@@ -33,17 +33,13 @@ export function AccessTokensPage({ showToast }: Props) {
   const [newTokenExpiry, setNewTokenExpiry] = useState("")
   const [creating, setCreating] = useState(false)
 
-  // Raw tokens kept in memory after creation (id → raw token).
-  // Cleared when the user navigates away or refreshes.
   const [newlyCreatedTokens, setNewlyCreatedTokens] = useState<
     Record<string, string>
   >({})
-  // Which token's inline reveal is currently open in the list.
   const [viewingTokenId, setViewingTokenId] = useState<string | null>(null)
   const [viewingTokenVisible, setViewingTokenVisible] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
 
-  // The just-created token banner (shown once after creation).
   const [justCreatedId, setJustCreatedId] = useState<string | null>(null)
   const [bannerTokenVisible, setBannerTokenVisible] = useState(false)
   const [bannerCopied, setBannerCopied] = useState(false)
@@ -52,6 +48,14 @@ export function AccessTokensPage({ showToast }: Props) {
     try {
       const data = await listAccessTokens()
       setTokens(data)
+      setNewlyCreatedTokens((prev) => {
+        const persisted = Object.fromEntries(
+          data
+            .filter((token) => token.token_plaintext)
+            .map((token) => [token.id, token.token_plaintext as string]),
+        )
+        return { ...persisted, ...prev }
+      })
     } catch {
       showToast("Failed to load tokens", "error")
     } finally {
@@ -74,7 +78,6 @@ export function AccessTokensPage({ showToast }: Props) {
         expiresAt = d.toISOString()
       }
       const res = await createAccessToken(newTokenName.trim(), expiresAt)
-      // Store raw token in memory, show banner.
       setNewlyCreatedTokens((prev) => ({ ...prev, [res.id]: res.token }))
       setJustCreatedId(res.id)
       setBannerTokenVisible(false)
@@ -157,7 +160,6 @@ export function AccessTokensPage({ showToast }: Props) {
     return formatDate(dateStr)
   }
 
-  // ── Just-created banner ────────────────────────────────────────────────────
   const justCreatedRaw =
     justCreatedId ? (newlyCreatedTokens[justCreatedId] ?? null) : null
 
@@ -211,7 +213,6 @@ export function AccessTokensPage({ showToast }: Props) {
     )
   }
 
-  // ── Token list ─────────────────────────────────────────────────────────────
   const renderTokenList = () => {
     if (loading) {
       return <div className="py-12 text-center text-zinc-500">Loading...</div>
@@ -256,94 +257,85 @@ export function AccessTokensPage({ showToast }: Props) {
             {tokens.map((token) => {
               const rawToken = newlyCreatedTokens[token.id]
               const isViewing = viewingTokenId === token.id
-              let tokenDisplay: string | null = null
+              const canReveal = Boolean(rawToken)
+              let tokenCellText = `${token.prefix}...`
               if (isViewing && rawToken) {
-                tokenDisplay =
+                tokenCellText =
                   viewingTokenVisible ? rawToken : (
                     "•".repeat(Math.max(rawToken.length, 24))
                   )
               }
+              const copyLabel = copied === token.id ? "✓" : null
 
               return (
-                <>
-                  <tr key={token.id} className="hover:bg-zinc-800/30">
-                    <td className="px-4 py-3 font-medium text-zinc-200">
-                      {token.name}
-                    </td>
-                    <td className="px-4 py-3">
-                      <code className="rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">
-                        {token.prefix}...
+                <tr key={token.id} className="hover:bg-zinc-800/30">
+                  <td className="px-4 py-3 font-medium text-zinc-200">
+                    {token.name}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <code className="rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400 break-all">
+                        {tokenCellText}
                       </code>
-                    </td>
-                    <td className="px-4 py-3 text-zinc-400">
-                      {formatDate(token.created_at)}
-                    </td>
-                    <td className="px-4 py-3 text-zinc-400">
-                      {formatDate(token.last_used_at)}
-                    </td>
-                    <td className="px-4 py-3 text-zinc-400">
-                      {formatExpiry(token.expires_at)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1">
-                        {rawToken && (
-                          <button
-                            type="button"
-                            onClick={() => toggleViewInList(token.id)}
-                            className="rounded p-1.5 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"
-                            title={isViewing ? t("hideToken") : t("showToken")}
-                          >
-                            {isViewing ?
-                              <EyeOff size={14} />
-                            : <Eye size={14} />}
-                          </button>
-                        )}
+                      {isViewing && rawToken && (
                         <button
                           type="button"
-                          onClick={() => handleDelete(token)}
-                          className="rounded px-2 py-1 text-xs text-red-400 hover:bg-red-500/10"
+                          onClick={() => handleCopy(rawToken, token.id)}
+                          className="rounded p-1.5 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"
+                          title={t("copyToken")}
                         >
-                          {t("delete")}
+                          {copyLabel ?
+                            <span className="text-xs text-green-400">
+                              {copyLabel}
+                            </span>
+                          : <Copy size={14} />}
                         </button>
-                      </div>
-                    </td>
-                  </tr>
-                  {isViewing && rawToken && (
-                    <tr key={`${token.id}-reveal`} className="bg-zinc-800/20">
-                      <td colSpan={6} className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <code className="flex-1 rounded bg-zinc-900 px-3 py-2 font-mono text-xs text-zinc-200 break-all">
-                            {tokenDisplay}
-                          </code>
-                          <button
-                            type="button"
-                            onClick={() => setViewingTokenVisible((v) => !v)}
-                            className="shrink-0 rounded bg-zinc-700 p-2 text-zinc-300 hover:bg-zinc-600"
-                            title={
-                              viewingTokenVisible ?
-                                t("hideToken")
-                              : t("showToken")
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-zinc-400">
+                    {formatDate(token.created_at)}
+                  </td>
+                  <td className="px-4 py-3 text-zinc-400">
+                    {formatDate(token.last_used_at)}
+                  </td>
+                  <td className="px-4 py-3 text-zinc-400">
+                    {formatExpiry(token.expires_at)}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-1">
+                      {canReveal && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (isViewing) {
+                              setViewingTokenVisible((v) => !v)
+                            } else {
+                              toggleViewInList(token.id)
                             }
-                          >
-                            {viewingTokenVisible ?
-                              <EyeOff size={14} />
-                            : <Eye size={14} />}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleCopy(rawToken, token.id)}
-                            className="shrink-0 rounded bg-zinc-700 p-2 text-zinc-300 hover:bg-zinc-600"
-                            title={t("copyToken")}
-                          >
-                            {copied === token.id ?
-                              <span className="text-xs text-green-400">✓</span>
-                            : <Copy size={14} />}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </>
+                          }}
+                          className="rounded p-1.5 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"
+                          title={
+                            isViewing && viewingTokenVisible ?
+                              t("hideToken")
+                            : t("showToken")
+                          }
+                        >
+                          {isViewing && viewingTokenVisible ?
+                            <EyeOff size={14} />
+                          : <Eye size={14} />}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(token)}
+                        className="rounded px-2 py-1 text-xs text-red-400 hover:bg-red-500/10"
+                      >
+                        {t("delete")}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
               )
             })}
           </tbody>
@@ -354,7 +346,6 @@ export function AccessTokensPage({ showToast }: Props) {
 
   return (
     <div className="mx-auto max-w-4xl">
-      {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-zinc-100">{t("title")}</h1>
@@ -369,7 +360,6 @@ export function AccessTokensPage({ showToast }: Props) {
         </button>
       </div>
 
-      {/* Create form */}
       {showCreate && (
         <div className="mb-6 rounded-lg border border-zinc-700 bg-zinc-800/50 p-4">
           <h3 className="mb-3 text-sm font-medium text-zinc-200">
@@ -432,10 +422,7 @@ export function AccessTokensPage({ showToast }: Props) {
         </div>
       )}
 
-      {/* Just-created banner */}
       {renderBanner()}
-
-      {/* Token list */}
       {renderTokenList()}
     </div>
   )

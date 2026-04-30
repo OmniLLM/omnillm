@@ -998,6 +998,7 @@ export interface AccessToken {
   id: string
   name: string
   prefix: string
+  token_plaintext?: string
   created_at: string
   expires_at: string | null
   last_used_at: string | null

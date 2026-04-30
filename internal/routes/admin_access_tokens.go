@@ -72,7 +72,7 @@ func handleCreateAccessToken(c *gin.Context) {
 	}
 
 	store := database.NewAccessTokenStore()
-	if err := store.Create(id, req.Name, tokenHash, prefix, expiresAt); err != nil {
+	if err := store.Create(id, req.Name, tokenHash, rawToken, prefix, expiresAt); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
