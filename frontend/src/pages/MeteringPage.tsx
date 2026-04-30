@@ -706,8 +706,8 @@ export function MeteringPage({
         style={{
           display: "flex",
           justifyContent: "space-between",
-          alignItems: "flex-start",
-          gap: 16,
+          alignItems: "center",
+          gap: 20,
           flexWrap: "wrap",
         }}
       >
@@ -735,44 +735,66 @@ export function MeteringPage({
             {t("description")}
           </p>
         </div>
-        <button
-          className="btn btn-ghost btn-sm"
-          onClick={() => {
-            setPage(1)
-            setReloadKey((value) => value + 1)
-          }}
-          disabled={loading}
-        >
-          {t("refresh")}
-        </button>
-        <label
-          style={{
-            display: "flex",
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 6,
-            fontSize: 12,
-            color: "var(--color-text-secondary)",
-            whiteSpace: "nowrap",
-          }}
-        >
-          <select
-            className="sys-select"
-            style={{ fontSize: 12, padding: "2px 6px" }}
-            value={autoRefreshInterval ?? ""}
-            onChange={(e) => {
-              const interval =
-                e.target.value ? Number.parseInt(e.target.value, 10) : null
-              handleAutoRefreshChange(interval)
+        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              setPage(1)
+              setReloadKey((value) => value + 1)
+            }}
+            disabled={loading}
+            title="Refresh metering data"
+          >
+            {t("refresh")}
+          </button>
+          <div
+            style={{
+              width: "1px",
+              height: "24px",
+              background: "var(--color-separator)",
+            }}
+          />
+          <label
+            style={{
+              display: "flex",
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
+              fontSize: 12,
+              color: "var(--color-text-secondary)",
+              whiteSpace: "nowrap",
             }}
           >
-            <option value="">Auto-refresh: Off</option>
-            <option value="5">Every 5s</option>
-            <option value="10">Every 10s</option>
-            <option value="15">Every 15s</option>
-            <option value="30">Every 30s</option>
-          </select>
-        </label>
+            <select
+              className="sys-select"
+              style={{ fontSize: 12, padding: "4px 6px" }}
+              value={autoRefreshInterval ?? ""}
+              onChange={(e) => {
+                const interval =
+                  e.target.value ? Number.parseInt(e.target.value, 10) : null
+                handleAutoRefreshChange(interval)
+              }}
+              title="Auto-refresh interval"
+            >
+              <option value="">Off</option>
+              <option value="5">5s</option>
+              <option value="10">10s</option>
+              <option value="15">15s</option>
+              <option value="30">30s</option>
+            </select>
+            {autoRefreshInterval && (
+              <div
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  background: "var(--color-blue)",
+                  animation: "pulse 2s infinite",
+                }}
+              />
+            )}
+          </label>
+        </div>
       </div>
 
       <Card style={{ padding: 18, overflow: "visible" }}>
