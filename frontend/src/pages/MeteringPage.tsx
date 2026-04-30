@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react"
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { useTranslation } from "react-i18next"
 
 import {
@@ -105,7 +105,18 @@ function StatCard({
   subtext?: string
 }) {
   return (
-    <Card style={{ padding: 18, borderTop: `2px solid ${accent}` }}>
+    <Card
+      style={{
+        padding: 24,
+        borderTop: "none",
+        borderLeft: `3px solid ${accent}`,
+        background: `linear-gradient(135deg, var(--color-bg-elevated) 0%, color-mix(in srgb, ${accent} 3%, var(--color-bg-elevated) 97%))`,
+        transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+        cursor: "default",
+        position: "relative",
+        overflow: "hidden",
+      }}
+    >
       <div
         style={{
           fontSize: 11,
@@ -113,18 +124,20 @@ function StatCard({
           letterSpacing: "0.08em",
           textTransform: "uppercase",
           color: "var(--color-text-tertiary)",
+          marginBottom: 16,
         }}
       >
         {label}
       </div>
       <div
         style={{
-          marginTop: 10,
-          fontSize: 28,
+          fontSize: 36,
           fontWeight: 700,
           color: accent,
           fontFamily: "var(--font-mono)",
-          letterSpacing: "-0.03em",
+          letterSpacing: "-0.02em",
+          marginBottom: 12,
+          lineHeight: 1,
         }}
       >
         {value}
@@ -132,9 +145,9 @@ function StatCard({
       {subtext && (
         <div
           style={{
-            marginTop: 8,
             fontSize: 12,
             color: "var(--color-text-secondary)",
+            lineHeight: 1.5,
           }}
         >
           {subtext}
@@ -362,7 +375,18 @@ function BreakdownTable({
               </tr>
             )}
             {pageItems.map((item, index) => (
-              <tr key={`${item[valueKey] ?? "unknown"}-${index}`}>
+              <tr
+                key={`${item[valueKey] ?? "unknown"}-${index}`}
+                style={{ transition: "background-color 0.15s ease" }}
+                onMouseEnter={(e) => {
+                  const el = e.currentTarget
+                  el.style.backgroundColor = "rgba(255,255,255,0.02)"
+                }}
+                onMouseLeave={(e) => {
+                  const el = e.currentTarget
+                  el.style.backgroundColor = "transparent"
+                }}
+              >
                 <td style={groupedKeyCellStyle}>{item[valueKey] ?? "—"}</td>
                 <td style={cellStyle}>{formatNumber(item.requests)}</td>
                 <td style={cellStyle}>{formatNumber(item.input_tokens)}</td>
@@ -412,13 +436,15 @@ function BreakdownTable({
 
 const groupedHeaderCellStyle: CSSProperties = {
   textAlign: "left",
-  padding: "10px 14px",
+  padding: "12px 14px",
   fontSize: 11,
   textTransform: "uppercase",
   letterSpacing: "0.06em",
   color: "var(--color-text-tertiary)",
   borderBottom: "1px solid var(--color-separator)",
   whiteSpace: "nowrap",
+  fontWeight: 600,
+  transition: "background-color 0.2s ease, color 0.2s ease",
 }
 
 const groupedKeyCellStyle: CSSProperties = {
@@ -435,7 +461,28 @@ const cellStyle: CSSProperties = {
   color: "var(--color-text-secondary)",
   fontFamily: "var(--font-mono)",
   fontSize: 12,
+  transition: "background-color 0.15s ease",
 }
+
+const pageStyles = `
+  @keyframes pulse {
+    0%, 100% { opacity: 1 }
+    50% { opacity: 0.5 }
+  }
+
+  table tbody tr:hover {
+    background-color: rgba(255, 255, 255, 0.02);
+  }
+
+  table th {
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+
+  table th:hover {
+    background-color: rgba(255, 255, 255, 0.03);
+    color: var(--color-text);
+  }
+`
 
 export function MeteringPage({
   showToast,
@@ -460,6 +507,10 @@ export function MeteringPage({
   const [pageSize, setPageSize] = useState(50)
   const [maxRows, setMaxRows] = useState(500)
   const [reloadKey, setReloadKey] = useState(0)
+  const [autoRefreshInterval, setAutoRefreshInterval] = useState<number | null>(
+    null,
+  )
+  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null)
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState<MeteringStats | null>(null)
   const [logs, setLogs] = useState<MeteringLogsResponse | null>(null)
@@ -531,6 +582,30 @@ export function MeteringPage({
     [apiShape, modelId, providerId, reloadKey, since, until],
   )
 
+  const stopAutoRefresh = () => {
+    if (pollTimer.current) {
+      clearInterval(pollTimer.current)
+      pollTimer.current = null
+    }
+  }
+
+  const startAutoRefresh = (intervalSeconds: number) => {
+    stopAutoRefresh()
+    pollTimer.current = setInterval(() => {
+      setPage(1)
+      setReloadKey((value) => value + 1)
+    }, intervalSeconds * 1000)
+  }
+
+  const handleAutoRefreshChange = (intervalSeconds: number | null) => {
+    setAutoRefreshInterval(intervalSeconds)
+    if (intervalSeconds) {
+      startAutoRefresh(intervalSeconds)
+    } else {
+      stopAutoRefresh()
+    }
+  }
+
   useEffect(() => {
     let cancelled = false
     setLoading(true)
@@ -578,6 +653,7 @@ export function MeteringPage({
 
     return () => {
       cancelled = true
+      stopAutoRefresh()
     }
   }, [
     clientOptionsQuery,
@@ -625,12 +701,13 @@ export function MeteringPage({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <style>{pageStyles}</style>
       <div
         style={{
           display: "flex",
           justifyContent: "space-between",
-          alignItems: "flex-start",
-          gap: 16,
+          alignItems: "center",
+          gap: 20,
           flexWrap: "wrap",
         }}
       >
@@ -658,16 +735,66 @@ export function MeteringPage({
             {t("description")}
           </p>
         </div>
-        <button
-          className="btn btn-ghost btn-sm"
-          onClick={() => {
-            setPage(1)
-            setReloadKey((value) => value + 1)
-          }}
-          disabled={loading}
-        >
-          {t("refresh")}
-        </button>
+        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              setPage(1)
+              setReloadKey((value) => value + 1)
+            }}
+            disabled={loading}
+            title="Refresh metering data"
+          >
+            {t("refresh")}
+          </button>
+          <div
+            style={{
+              width: "1px",
+              height: "24px",
+              background: "var(--color-separator)",
+            }}
+          />
+          <label
+            style={{
+              display: "flex",
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
+              fontSize: 12,
+              color: "var(--color-text-secondary)",
+              whiteSpace: "nowrap",
+            }}
+          >
+            <select
+              className="sys-select"
+              style={{ fontSize: 12, padding: "4px 6px" }}
+              value={autoRefreshInterval ?? ""}
+              onChange={(e) => {
+                const interval =
+                  e.target.value ? Number.parseInt(e.target.value, 10) : null
+                handleAutoRefreshChange(interval)
+              }}
+              title="Auto-refresh interval"
+            >
+              <option value="">Off</option>
+              <option value="5">5s</option>
+              <option value="10">10s</option>
+              <option value="15">15s</option>
+              <option value="30">30s</option>
+            </select>
+            {autoRefreshInterval && (
+              <div
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  background: "var(--color-blue)",
+                  animation: "pulse 2s infinite",
+                }}
+              />
+            )}
+          </label>
+        </div>
       </div>
 
       <Card style={{ padding: 18, overflow: "visible" }}>
@@ -978,7 +1105,18 @@ export function MeteringPage({
                 </tr>
               )}
               {logItems.map((row: MeteringRecord) => (
-                <tr key={row.id}>
+                <tr
+                  key={row.id}
+                  style={{ transition: "background-color 0.15s ease" }}
+                  onMouseEnter={(e) => {
+                    const el = e.currentTarget
+                    el.style.backgroundColor = "rgba(255,255,255,0.02)"
+                  }}
+                  onMouseLeave={(e) => {
+                    const el = e.currentTarget
+                    el.style.backgroundColor = "transparent"
+                  }}
+                >
                   <td style={{ ...cellStyle, minWidth: 170 }}>
                     {formatDateTime(row.created_at)}
                   </td>
