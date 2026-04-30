@@ -132,14 +132,15 @@ type VirtualModelUpstreamRecord struct {
 
 // AccessTokenRecord holds a generated access token for authenticating with the proxy.
 type AccessTokenRecord struct {
-	ID         string     `json:"id"`
-	Name       string     `json:"name"`
-	TokenHash  string     `json:"-"`               // SHA-256 hash, never exposed via JSON
-	Prefix     string     `json:"prefix"`           // first 8 chars for display
-	CreatedAt  time.Time  `json:"created_at"`
-	ExpiresAt  *time.Time `json:"expires_at"`       // nil means no expiry
-	LastUsedAt *time.Time `json:"last_used_at"`
-	Enabled    bool       `json:"enabled"`
+	ID             string     `json:"id"`
+	Name           string     `json:"name"`
+	TokenHash      string     `json:"-"`               // SHA-256 hash, never exposed via JSON
+	TokenPlaintext string     `json:"token_plaintext,omitempty"`
+	Prefix         string     `json:"prefix"`           // first 8 chars for display
+	CreatedAt      time.Time  `json:"created_at"`
+	ExpiresAt      *time.Time `json:"expires_at"`       // nil means no expiry
+	LastUsedAt     *time.Time `json:"last_used_at"`
+	Enabled        bool       `json:"enabled"`
 }
 
 // MeteringRecord holds per-request usage data recorded after each API call.

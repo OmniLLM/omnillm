@@ -341,6 +341,10 @@ var migrations = []migration{
 		`CREATE INDEX IF NOT EXISTS idx_access_tokens_token_hash ON access_tokens (token_hash)`,
 		`CREATE INDEX IF NOT EXISTS idx_access_tokens_enabled ON access_tokens (enabled)`,
 	}},
+	// v10: persist raw token for admin reveal-after-refresh behavior.
+	{10, []string{
+		`ALTER TABLE access_tokens ADD COLUMN token_plaintext TEXT NOT NULL DEFAULT ''`,
+	}},
 }
 
 // applyMigrations runs any migrations that have not yet been applied.
