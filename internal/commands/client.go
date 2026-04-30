@@ -156,6 +156,11 @@ func (c *Client) GetStream(path string) (*http.Response, error) {
 // IsJSON returns true when --output json was requested.
 func (c *Client) IsJSON() bool { return c.OutputMode == "json" }
 
+// parseJSON unmarshals JSON data into a value.
+func (c *Client) parseJSON(data []byte, v interface{}) error {
+	return json.Unmarshal(data, v)
+}
+
 // PrintJSON pretty-prints raw JSON to stdout, or prints as-is on parse error.
 func (c *Client) PrintJSON(data []byte) {
 	var v interface{}

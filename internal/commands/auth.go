@@ -2,14 +2,8 @@ package commands
 
 import (
 	"fmt"
-	"omnillm/internal/database"
-	"omnillm/internal/providers/copilot"
-	"omnillm/internal/providers/types"
-	"omnillm/internal/registry"
-	"os"
-	"path/filepath"
+	"time"
 
-	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 
 	ghservice "omnillm/internal/services/github"
@@ -20,16 +14,6 @@ var AuthCmd = &cobra.Command{
 	Short: "Authenticate with GitHub Copilot",
 	Long:  "Authenticate with GitHub Copilot using the device code flow",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Initialize database (needed for token storage)
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("failed to get home directory: %w", err)
-		}
-		configDir := filepath.Join(homeDir, ".config", "omnillm")
-		if err := database.InitializeDatabase(configDir); err != nil {
-			return fmt.Errorf("failed to initialize database: %w", err)
-		}
-
 		fmt.Println("Authenticating with GitHub Copilot...")
 		fmt.Println()
 
@@ -53,64 +37,81 @@ var AuthCmd = &cobra.Command{
 		fmt.Println("Authorization successful!")
 		fmt.Println()
 
-		// Step 3: Get user info
+		// Step 3: Get user info and Copilot token
 		user, err := ghservice.GetUser(accessToken)
-		if err != nil {
-			log.Warn().Err(err).Msg("Failed to get user info")
-		} else {
-			login, _ := user["login"].(string)
-			fmt.Printf("Authenticated as: %s\n", login)
+		if err == nil {
+			if login, ok := user["login"].(string); ok {
+				fmt.Printf("Authenticated as: %s\n", login)
+			}
 		}
 
-		// Step 4: Get Copilot token to verify access
-		copilotToken, err := ghservice.GetCopilotToken(accessToken)
+		_, err = ghservice.GetCopilotToken(accessToken)
 		if err != nil {
 			return fmt.Errorf("failed to get Copilot token (do you have Copilot access?): %w", err)
 		}
 
 		fmt.Println("Copilot access verified!")
+		fmt.Println()
 
-		// Step 5: Save token to database
-		tokenStore := database.NewTokenStore()
-		tokenData := map[string]interface{}{
-			"github_token":  accessToken,
-			"copilot_token": copilotToken.Token,
-			"expires_at":    copilotToken.ExpiresAt,
+		// Step 4: Register provider via backend
+		c := NewClient(cmd)
+		body := map[string]interface{}{
+			"token": accessToken,
 		}
-		if user != nil {
-			if login, ok := user["login"].(string); ok {
-				tokenData["username"] = login
+
+		data, err := c.Post("/api/admin/providers/auth-and-create/github-copilot", body)
+		if err != nil {
+			return err
+		}
+
+		// Handle device-code OAuth flow if needed
+		var resp map[string]interface{}
+		if err := c.parseJSON(data, &resp); err != nil {
+			return err
+		}
+
+		if requiresAuth, ok := resp["requiresAuth"].(bool); ok && requiresAuth {
+			verifyURI, _ := resp["verification_uri"].(string)
+			userCode, _ := resp["user_code"].(string)
+			fmt.Printf("\n  Visit: %s\n  Code:  %s\n\nWaiting for authorization", verifyURI, userCode)
+
+			// Poll auth-status until complete
+			for {
+				time.Sleep(3 * time.Second)
+				fmt.Print(".")
+
+				statusData, err := c.Get("/api/admin/auth-status")
+				if err != nil {
+					continue
+				}
+				var statusResp map[string]interface{}
+				if err := c.parseJSON(statusData, &statusResp); err != nil {
+					continue
+				}
+
+				switch status, _ := statusResp["status"].(string); status {
+				case "complete":
+					fmt.Println()
+					if providerID, ok := statusResp["providerId"].(string); ok {
+						SuccessMsg("Provider '%s' authenticated successfully.", providerID)
+					}
+					return nil
+				case "error":
+					fmt.Println()
+					if errMsg, ok := statusResp["error"].(string); ok {
+						return fmt.Errorf("authentication failed: %s", errMsg)
+					}
+					return fmt.Errorf("authentication failed")
+				}
 			}
 		}
 
-		instanceID := "github-copilot-1"
-		if user != nil {
-			if login, ok := user["login"].(string); ok {
-				instanceID = fmt.Sprintf("github-copilot-%s", login)
+		// Provider created successfully
+		if prov, ok := resp["provider"].(map[string]interface{}); ok {
+			if id, ok := prov["id"].(string); ok {
+				SuccessMsg("Provider '%s' created and authenticated.", id)
 			}
 		}
-
-		if err := tokenStore.Save(instanceID, tokenData); err != nil {
-			return fmt.Errorf("failed to save token: %w", err)
-		}
-
-		// Register provider in registry
-		providerRegistry := registry.GetProviderRegistry()
-		copilotProvider := copilot.NewGitHubCopilotProvider(instanceID, "")
-		if err := copilotProvider.SetupAuth(&types.AuthOptions{GithubToken: copilotToken.Token}); err != nil {
-			return fmt.Errorf("failed to configure provider auth: %w", err)
-		}
-		if err := providerRegistry.Register(copilotProvider, true); err != nil {
-			return fmt.Errorf("failed to register provider: %w", err)
-		}
-		if _, err := providerRegistry.SetActive(instanceID); err != nil {
-			return fmt.Errorf("failed to activate provider: %w", err)
-		}
-
-		fmt.Println()
-		fmt.Printf("Provider '%s' is ready. Start the server with:\n", instanceID)
-		fmt.Println("  omnillm start")
-		fmt.Println()
 
 		return nil
 	},
