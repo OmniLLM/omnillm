@@ -46,6 +46,9 @@ var table = map[string]APIShape{
 	// DashScope speaks the OpenAI-compatible chat completions protocol.
 	"alibaba": ChatCompletions,
 
+	// ModelScope speaks the OpenAI-compatible chat completions protocol.
+	"alibaba-modelscope": ChatCompletions,
+
 	"kimi": ChatCompletions,
 
 	// Generic user-configured endpoints default to chat completions.

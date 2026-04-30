@@ -14,6 +14,7 @@ import (
 	azurepkg "omnillm/internal/providers/azure"
 	codexpkg "omnillm/internal/providers/codex"
 	copilot "omnillm/internal/providers/copilot"
+	modelscopepkg "omnillm/internal/providers/modelscope"
 	openaicompatprovider "omnillm/internal/providers/openaicompatprovider"
 	generic "omnillm/internal/providers/generic"
 	"omnillm/internal/database"
@@ -124,7 +125,7 @@ func handleAddProviderInstance(c *gin.Context) {
 	switch providerType {
 	case "github-copilot":
 		provider = copilot.NewGitHubCopilotProvider(instanceID, "")
-	case "antigravity", "alibaba", "azure-openai", "google", "kimi":
+	case "antigravity", "alibaba", "alibaba-modelscope", "azure-openai", "google", "kimi":
 		provider = generic.NewGenericProvider(providerType, instanceID, "")
 	case "openai-compatible":
 		provider = openaicompatprovider.NewProvider(instanceID, "")
@@ -220,6 +221,50 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 		canonicalID := "alibaba-" + planSlug + "-" + region + "-" + suffix
 
 		prov := alibabapkg.NewProvider(canonicalID, "")
+		if err := prov.SetupAuth(&req); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": fmt.Sprintf("Authentication failed: %v", err),
+			})
+			return
+		}
+
+		if err := providerRegistry.Register(prov, true); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": fmt.Sprintf("Failed to register provider: %v", err),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"provider": gin.H{
+				"id":         prov.GetInstanceID(),
+				"type":       prov.GetID(),
+				"name":       prov.GetName(),
+				"isActive":   false,
+				"authStatus": "authenticated",
+			},
+		})
+
+	// ——————————————————————————————————————————————————————————————
+	case "alibaba-modelscope":
+		if req.APIKey == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"message": "API key is required for ModelScope authentication",
+			})
+			return
+		}
+
+		suffix := req.APIKey
+		if len(suffix) > 6 {
+			suffix = suffix[len(suffix)-6:]
+		}
+		canonicalID := "modelscope-" + suffix
+
+		prov := modelscopepkg.NewProvider(canonicalID, "")
 		if err := prov.SetupAuth(&req); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"success": false,
@@ -811,6 +856,35 @@ func handleProviderAuth(c *gin.Context) {
 				"id":         aliProv.GetInstanceID(),
 				"type":       aliProv.GetID(),
 				"name":       aliProv.GetName(),
+				"authStatus": "authenticated",
+			},
+		})
+		return
+	}
+
+	// ModelScope: API-key only.
+	if msProv, ok := provider.(*modelscopepkg.Provider); ok {
+		if req.APIKey == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"message": "API key is required for ModelScope authentication",
+			})
+			return
+		}
+		if err := msProv.SetupAuth(&req); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": fmt.Sprintf("Authentication failed: %v", err)})
+			return
+		}
+		if err := providerRegistry.Register(msProv, true); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": fmt.Sprintf("Failed to update provider: %v", err)})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"provider": gin.H{
+				"id":         msProv.GetInstanceID(),
+				"type":       msProv.GetID(),
+				"name":       msProv.GetName(),
 				"authStatus": "authenticated",
 			},
 		})

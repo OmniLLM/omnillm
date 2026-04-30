@@ -460,6 +460,52 @@ function AlibabaAuthForm({
   )
 }
 
+function ModelScopeAuthForm({
+  onSubmit,
+  onCancel,
+}: {
+  onSubmit: (body: Record<string, string>) => Promise<void>
+  onCancel: () => void
+}) {
+  const [apiKey, setApiKey] = useState("")
+  const submit = async () => {
+    if (!apiKey.trim()) return
+    await onSubmit({
+      method: "api-key",
+      apiKey: apiKey.trim(),
+    })
+  }
+  return (
+    <AuthFormWrapper title="Authenticate ModelScope">
+      <div
+        style={{
+          fontSize: 12,
+          color: "var(--color-text-tertiary)",
+          marginBottom: 12,
+        }}
+      >
+        Only API key authentication is supported for ModelScope.
+      </div>
+      <FormRow label="ModelScope API Key">
+        <SecretInput
+          className="sys-input"
+          placeholder="sk-…"
+          value={apiKey}
+          onChange={setApiKey}
+        />
+      </FormRow>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button className="btn btn-primary btn-sm" onClick={submit}>
+          Submit
+        </button>
+        <button className="btn btn-ghost btn-sm" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </AuthFormWrapper>
+  )
+}
+
 function CopilotAuthForm({
   onSubmit,
   onCancel,
@@ -2998,6 +3044,12 @@ function ProviderCard({
               onCancel={() => setShowAuthForm(false)}
             />
           )}
+          {provider.type === "alibaba-modelscope" && (
+            <ModelScopeAuthForm
+              onSubmit={handleAuthSubmit}
+              onCancel={() => setShowAuthForm(false)}
+            />
+          )}
           {provider.type === "github-copilot" && (
             <CopilotAuthForm
               onSubmit={handleAuthSubmit}
@@ -3350,6 +3402,9 @@ function AddProviderFlow({
           {selectedType === "alibaba" && (
             <AddFlowAlibabaForm {...authFormProps} />
           )}
+          {selectedType === "alibaba-modelscope" && (
+            <AddFlowModelScopeForm {...authFormProps} />
+          )}
           {selectedType === "github-copilot" && (
             <AddFlowCopilotForm {...authFormProps} />
           )}
@@ -3586,6 +3641,74 @@ function AddFlowAlibabaForm({
       <AddFlowHint>
         Standard is the right default for `qwen3.6-plus`. Use Coding Plan only
         when you have a dedicated Coding Plan key and base URL.
+      </AddFlowHint>
+      <div style={{ display: "flex", gap: 8, paddingTop: 4 }}>
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={submit}
+          disabled={submitting}
+        >
+          {submitting ?
+            <>
+              <Spin size={13} /> Connecting…
+            </>
+          : "Add Provider"}
+        </button>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={onCancel}
+          disabled={submitting}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function AddFlowModelScopeForm({
+  onSubmit,
+  onCancel,
+  submitting,
+}: AddFlowFormProps) {
+  const [endpoint, setEndpoint] = useState("")
+  const [apiKey, setApiKey] = useState("")
+  const submit = async () => {
+    if (!apiKey.trim()) return
+    const body: Record<string, string> = {
+      method: "api-key",
+      apiKey: apiKey.trim(),
+    }
+    if (endpoint.trim()) {
+      body.endpoint = endpoint.trim()
+    }
+    await onSubmit(body)
+  }
+  return (
+    <div style={addFlowPanelStyle}>
+      <AddFlowHint>
+        Only API key authentication is supported for ModelScope.
+      </AddFlowHint>
+      <FormRow label="Base URL (optional)">
+        <input
+          type="text"
+          placeholder="https://api-inference.modelscope.cn/v1"
+          value={endpoint}
+          onChange={(e) => setEndpoint(e.target.value)}
+          style={addFlowTextInputStyle}
+        />
+      </FormRow>
+      <FormRow label="ModelScope API Key">
+        <SecretInput
+          placeholder="sk-…"
+          value={apiKey}
+          onChange={setApiKey}
+          style={addFlowTextInputStyle}
+        />
+      </FormRow>
+      <AddFlowHint>
+        ModelScope provides access to community models like DeepSeek, Qwen, and
+        more. Get your API key from modelscope.cn.
       </AddFlowHint>
       <div style={{ display: "flex", gap: 8, paddingTop: 4 }}>
         <button
@@ -4272,6 +4395,11 @@ const PROVIDER_TYPES = [
     id: "alibaba",
     name: "Alibaba DashScope",
     desc: "Qwen models via API key",
+  },
+  {
+    id: "alibaba-modelscope",
+    name: "Alibaba ModelScope",
+    desc: "ModelScope models (DeepSeek, Qwen, etc.) via API key",
   },
   {
     id: "azure-openai",

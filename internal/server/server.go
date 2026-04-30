@@ -24,6 +24,8 @@ import (
 
 	alibabapkg "omnillm/internal/providers/alibaba"
 
+	modelscopepkg "omnillm/internal/providers/modelscope"
+
 	openaicompatprovider "omnillm/internal/providers/openaicompatprovider"
 )
 
@@ -288,6 +290,12 @@ func registerDefaultProviders(reg *registry.ProviderRegistry, options StartOptio
 				provider = p
 			case "alibaba":
 				p := alibabapkg.NewProvider(inst.InstanceID, inst.Name)
+				if err := p.LoadFromDB(); err != nil {
+					log.Warn().Err(err).Str("instance", inst.InstanceID).Msg("Failed to load provider token")
+				}
+				provider = p
+			case "alibaba-modelscope":
+				p := modelscopepkg.NewProvider(inst.InstanceID, inst.Name)
 				if err := p.LoadFromDB(); err != nil {
 					log.Warn().Err(err).Str("instance", inst.InstanceID).Msg("Failed to load provider token")
 				}

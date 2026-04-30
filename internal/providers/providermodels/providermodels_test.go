@@ -30,6 +30,10 @@ func TestUpstreamAPI(t *testing.T) {
 		{"alibaba", "deepseek-v4-flash", providermodels.ChatCompletions},
 		{"alibaba", "qwq-32b", providermodels.ChatCompletions},
 
+		// ModelScope — always chat completions
+		{"alibaba-modelscope", "deepseek-ai/DeepSeek-V4-Flash", providermodels.ChatCompletions},
+		{"alibaba-modelscope", "Qwen/Qwen3-32B", providermodels.ChatCompletions},
+
 		// Kimi — always chat completions
 		{"kimi", "moonshot-v1-8k", providermodels.ChatCompletions},
 
