@@ -345,6 +345,18 @@ var migrations = []migration{
 	{10, []string{
 		`ALTER TABLE access_tokens ADD COLUMN token_plaintext TEXT NOT NULL DEFAULT ''`,
 	}},
+	// v11: migrate existing Alibaba instances backed by ModelScope endpoints
+	// to the new "alibaba-modelscope" provider type.  Only rows whose
+	// provider_configs.config_data contains "modelscope.cn" are affected;
+	// DashScope instances remain unchanged.
+	{11, []string{
+		`UPDATE provider_instances SET provider_id = 'alibaba-modelscope'
+		 WHERE provider_id = 'alibaba'
+		 AND instance_id IN (
+		     SELECT pc.instance_id FROM provider_configs pc
+		     WHERE pc.config_data LIKE '%modelscope.cn%'
+		 )`,
+	}},
 }
 
 // applyMigrations runs any migrations that have not yet been applied.

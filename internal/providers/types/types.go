@@ -18,6 +18,7 @@ const (
 	ProviderGoogle           ProviderID = "google"
 	ProviderKimi             ProviderID = "kimi"
 	ProviderOpenAICompatible ProviderID = "openai-compatible"
+	ProviderModelScope      ProviderID = "alibaba-modelscope"
 )
 
 // AuthOptions is decoded from JSON request bodies.  Fields accept both

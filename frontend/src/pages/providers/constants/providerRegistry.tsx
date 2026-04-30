@@ -4,6 +4,7 @@ export const PROVIDER_ACCENT: Record<string, string> = {
   "github-copilot": "#0a84ff",
   antigravity: "#30d158",
   alibaba: "#ff9f0a",
+  "alibaba-modelscope": "#ff6f0a",
   "azure-openai": "#0078d4",
   google: "#4285f4",
   kimi: "#e040fb",
@@ -34,6 +35,12 @@ export const PROVIDER_ICONS: Record<string, ReactNode> = {
   alibaba: (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
       <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+    </svg>
+  ),
+  "alibaba-modelscope": (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+      <circle cx="12" cy="12" r="2" />
     </svg>
   ),
   "azure-openai": (
@@ -92,6 +99,7 @@ export const TYPE_NAMES: Record<string, string> = {
   "github-copilot": "GitHub Copilot",
   antigravity: "Antigravity (Google)",
   alibaba: "Alibaba DashScope",
+  "alibaba-modelscope": "Alibaba ModelScope",
   "azure-openai": "Azure OpenAI",
   google: "Google Gemini",
   kimi: "Kimi (Moonshot)",
@@ -102,6 +110,7 @@ export const PROVIDER_TYPES = [
   "github-copilot",
   "antigravity",
   "alibaba",
+  "alibaba-modelscope",
   "azure-openai",
   "google",
   "kimi",
