@@ -70,8 +70,10 @@ func LoadConfig() Config {
 
 // Cacheable reports whether a canonical request is eligible for exact-match
 // caching. It is intentionally conservative: any doubt means "not cacheable".
+// Streaming IS eligible — a streaming response is accumulated to a
+// CanonicalResponse on the way out and replayed as synthetic SSE on a hit.
 func Cacheable(req *cif.CanonicalRequest) bool {
-	if req == nil || req.Stream {
+	if req == nil {
 		return false
 	}
 	// Require an explicit temperature of exactly 0 — greedy decoding.
@@ -274,4 +276,29 @@ func parsePositiveInt(s string) (int, error) {
 	var n int
 	err := json.Unmarshal([]byte(s), &n)
 	return n, err
+}
+
+// encodeToolArgs serializes tool-call arguments to a JSON string for stream
+// replay. Returns "{}" on failure so the synthesized delta is always valid JSON.
+func encodeToolArgs(args map[string]interface{}) string {
+	if len(args) == 0 {
+		return "{}"
+	}
+	raw, err := json.Marshal(args)
+	if err != nil {
+		return "{}"
+	}
+	return string(raw)
+}
+
+// decodeToolArgs parses accumulated raw tool-argument JSON back into a map.
+func decodeToolArgs(raw string) map[string]interface{} {
+	if raw == "" {
+		return map[string]interface{}{}
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		return map[string]interface{}{}
+	}
+	return m
 }

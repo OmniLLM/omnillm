@@ -27,7 +27,7 @@ func TestCacheable(t *testing.T) {
 		want bool
 	}{
 		{"temp0 non-stream", func(r *cif.CanonicalRequest) {}, true},
-		{"streaming", func(r *cif.CanonicalRequest) { r.Stream = true }, false},
+		{"streaming now cacheable", func(r *cif.CanonicalRequest) { r.Stream = true }, true},
 		{"temp nil", func(r *cif.CanonicalRequest) { r.Temperature = nil }, false},
 		{"temp > 0", func(r *cif.CanonicalRequest) { r.Temperature = f64(0.7) }, false},
 		{"top_p < 1", func(r *cif.CanonicalRequest) { r.TopP = f64(0.5) }, false},
