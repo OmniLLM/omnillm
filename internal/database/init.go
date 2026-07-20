@@ -146,6 +146,17 @@ func (db *Database) createTables() error {
 			FOREIGN KEY (instance_id) REFERENCES provider_instances (instance_id) ON DELETE CASCADE
 		)`,
 
+		// Exact-match LLM response cache (deterministic, non-streaming requests only).
+		`CREATE TABLE IF NOT EXISTS response_cache (
+			cache_key     TEXT PRIMARY KEY,
+			model_id      TEXT NOT NULL,
+			response_data TEXT NOT NULL,
+			hit_count     INTEGER NOT NULL DEFAULT 0,
+			created_at    DATETIME NOT NULL DEFAULT (datetime('now')),
+			last_hit_at   DATETIME
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_response_cache_created_at ON response_cache (created_at)`,
+
 		// Chat sessions.
 		`CREATE TABLE IF NOT EXISTS chat_sessions (
 			session_id    TEXT PRIMARY KEY,
@@ -380,6 +391,16 @@ var migrations = []migration{
 	}},
 	// v14: bind provider model cache rows to provider type so reused instance IDs cannot read stale model lists.
 	{14, []string{`ALTER TABLE provider_models_cache ADD COLUMN provider_id TEXT NOT NULL DEFAULT ''`}},
+	// v15: exact-match LLM response cache (deterministic, non-streaming requests only).
+	{15, []string{`CREATE TABLE IF NOT EXISTS response_cache (
+		cache_key    TEXT PRIMARY KEY,
+		model_id     TEXT NOT NULL,
+		response_data TEXT NOT NULL,
+		hit_count    INTEGER NOT NULL DEFAULT 0,
+		created_at   DATETIME NOT NULL DEFAULT (datetime('now')),
+		last_hit_at  DATETIME
+	)`,
+		`CREATE INDEX IF NOT EXISTS idx_response_cache_created_at ON response_cache (created_at)`}},
 }
 
 // applyMigrations runs any migrations that have not yet been applied.

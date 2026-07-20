@@ -42,6 +42,9 @@ func SetupAdminRoutes(router *gin.RouterGroup, port int) {
 	// Settings
 	router.GET("/settings/log-level", handleGetLogLevel)
 	router.PUT("/settings/log-level", handleSetLogLevel)
+	router.GET("/settings/response-cache", handleGetResponseCache)
+	router.PUT("/settings/response-cache", handleSetResponseCache)
+	router.DELETE("/settings/response-cache", handleClearResponseCache)
 	router.POST("/settings/test-log", handleTestLog)
 	router.POST("/settings/debug-log", handleDebugLog)
 

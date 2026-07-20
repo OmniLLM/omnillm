@@ -9,6 +9,7 @@ import (
 	"omnillm/internal/ingestion"
 	"omnillm/internal/lib/affinity"
 	"omnillm/internal/lib/modelrouting"
+	"omnillm/internal/lib/responsecache"
 	"omnillm/internal/providerdispatch"
 	"omnillm/internal/providers/types"
 	"omnillm/internal/serialization"
@@ -86,6 +87,27 @@ func handleMessages(c *gin.Context) {
 
 	originalModel := prepareCanonicalRequest(c, canonicalRequest, "anthropic")
 	logAnthropicToolLoopRequest(requestIDStr, canonicalRequest)
+
+	// Exact-match response cache (opt-in, deterministic non-streaming only).
+	// Shape-agnostic: a CanonicalResponse cached via the OpenAI route can satisfy
+	// this Anthropic request and vice versa.
+	cacheCfg := responsecache.LoadConfig()
+	bypass := responsecache.ParseBypass(c.GetHeader(responsecache.BypassHeader))
+	cacheEligible := cacheCfg.Enabled && bypass != responsecache.BypassAll && responsecache.Cacheable(canonicalRequest)
+	if cacheEligible {
+		cacheKey := responsecache.Key(canonicalRequest)
+		if bypass != responsecache.BypassRead {
+			if hit := responsecache.Get(cacheCfg, canonicalRequest, cacheKey); hit != nil {
+				suppressThinking := !strings.Contains(c.GetHeader("anthropic-beta"), "interleaved-thinking")
+				if anthropicResp, err := serialization.SerializeToAnthropicWithSuppression(hit, suppressThinking); err == nil {
+					c.Header("X-OmniLLM-Cache", "hit")
+					c.JSON(http.StatusOK, anthropicResp)
+					return
+				}
+			}
+		}
+		c.Set("responsecache_key", cacheKey)
+	}
 
 	var resolveStart time.Time
 	if log.Logger.GetLevel() <= zerolog.DebugLevel {
@@ -191,6 +213,13 @@ func handleAnthropicNonStreamingResponse(c *gin.Context, adapter types.ProviderA
 		Int64("latency_ms", time.Since(startTime).Milliseconds()).
 		Msg("\x1b[32m<--\x1b[0m RESPONSE")
 	recordUsage(requestID, originalModel, response.Model, providerID, normalizeMeteringClient(c.GetHeader("User-Agent")), "anthropic", response.Usage, time.Since(startTime).Milliseconds(), false, http.StatusOK, "")
+
+	if key, ok := c.Get("responsecache_key"); ok {
+		if keyStr, _ := key.(string); keyStr != "" {
+			responsecache.Put(responsecache.LoadConfig(), canonicalRequest, keyStr, response)
+			c.Header("X-OmniLLM-Cache", "miss")
+		}
+	}
 
 	c.JSON(http.StatusOK, anthropicResp)
 	return nil

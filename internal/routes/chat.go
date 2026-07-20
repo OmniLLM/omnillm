@@ -10,6 +10,7 @@ import (
 	"omnillm/internal/lib/approval"
 	"omnillm/internal/lib/modelrouting"
 	"omnillm/internal/lib/ratelimit"
+	"omnillm/internal/lib/responsecache"
 	"omnillm/internal/providerdispatch"
 	"omnillm/internal/providers/types"
 	"omnillm/internal/serialization"
@@ -107,6 +108,31 @@ func (h *chatCompletionHandler) handleChatCompletions(c *gin.Context) {
 
 	originalModel := prepareCanonicalRequest(c, canonicalRequest, "openai")
 
+	// Exact-match response cache (opt-in, deterministic non-streaming only).
+	cacheCfg := responsecache.LoadConfig()
+	bypass := responsecache.ParseBypass(c.GetHeader(responsecache.BypassHeader))
+	var cacheKey string
+	cacheEligible := cacheCfg.Enabled && bypass != responsecache.BypassAll && responsecache.Cacheable(canonicalRequest)
+	if cacheEligible {
+		cacheKey = responsecache.Key(canonicalRequest)
+		if bypass != responsecache.BypassRead {
+			if hit := responsecache.Get(cacheCfg, canonicalRequest, cacheKey); hit != nil {
+				openaiResp, err := serialization.SerializeToOpenAI(hit)
+				if err == nil {
+					c.Header("X-OmniLLM-Cache", "hit")
+					logCompletedResponse("openai", requestIDStr, originalModel, hit.Model, "cache", false, hit.StopReason, hit.Usage, startTime)
+					c.JSON(http.StatusOK, openaiResp)
+					return
+				}
+				log.Warn().Err(err).Str("request_id", requestIDStr).Msg("Cache hit failed to serialize; falling through to upstream")
+			}
+		}
+	}
+
+	if cacheEligible {
+		c.Set("responsecache_key", cacheKey)
+	}
+
 	// Resolve providers for the requested model
 	attempts := resolveRequestedModels(requestIDStr, canonicalRequest.Model)
 	executor := providerdispatch.NewExecutor(providerdispatch.ApplyGitHubCopilotSingleUpstreamMode, providerdispatch.DefaultUpstreamAPI)
@@ -178,6 +204,14 @@ func handleNonStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, c
 
 	logCompletedResponse("openai", requestID, originalModel, response.Model, providerID, false, response.StopReason, response.Usage, startTime)
 	recordUsage(requestID, originalModel, response.Model, providerID, normalizeMeteringClient(c.GetHeader("User-Agent")), "openai", response.Usage, time.Since(startTime).Milliseconds(), false, http.StatusOK, "")
+
+	// Populate the exact-match response cache if this request was eligible.
+	if key, ok := c.Get("responsecache_key"); ok {
+		if keyStr, _ := key.(string); keyStr != "" {
+			responsecache.Put(responsecache.LoadConfig(), canonicalRequest, keyStr, response)
+			c.Header("X-OmniLLM-Cache", "miss")
+		}
+	}
 
 	c.JSON(http.StatusOK, openaiResp)
 	return nil
