@@ -9,39 +9,29 @@ import (
 	"sync"
 	"time"
 
+	"omnillm/internal/providers/shared"
 	ghservice "omnillm/internal/services/github"
 
 	"golang.org/x/sync/singleflight"
 )
 
-// Shared HTTP clients: one for normal requests with timeout, one for streaming.
+// Shared HTTP clients. Chat completions and /responses get separate budgets:
+// /responses fronts reasoning models that can think for minutes before
+// emitting headers, so a chat-sized cap would make them structurally
+// impossible to satisfy. The stream client has no timeout at all.
 var (
-	copilotHTTPClient = &http.Client{
-		Timeout: 120 * time.Second,
-		Transport: &http.Transport{
-			Proxy:                 http.ProxyFromEnvironment,
-			ForceAttemptHTTP2:     true,
-			MaxIdleConns:          100,
-			MaxIdleConnsPerHost:   20,
-			MaxConnsPerHost:       50,
-			IdleConnTimeout:       90 * time.Second,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ExpectContinueTimeout: 1 * time.Second,
-		},
-	}
-	copilotStreamClient = &http.Client{
-		Transport: &http.Transport{
-			Proxy:                 http.ProxyFromEnvironment,
-			ForceAttemptHTTP2:     true,
-			MaxIdleConns:          100,
-			MaxIdleConnsPerHost:   20,
-			MaxConnsPerHost:       50,
-			IdleConnTimeout:       90 * time.Second,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ExpectContinueTimeout: 1 * time.Second,
-		},
-	}
+	copilotHTTPClient = shared.DefaultHTTPClient(
+		shared.TimeoutFromEnv("COPILOT_HTTP_TIMEOUT", shared.DefaultRequestTimeout))
+	// copilotResponsesClient is used for POST /responses only.
+	copilotResponsesClient = shared.DefaultHTTPClient(
+		shared.TimeoutFromEnv("COPILOT_RESPONSES_TIMEOUT", shared.DefaultResponsesTimeout))
+	copilotStreamClient = shared.DefaultStreamClient()
 )
+
+// copilotResponsesBudget reports the configured timeout for /responses calls.
+func copilotResponsesBudget() time.Duration {
+	return copilotResponsesClient.Timeout
+}
 
 type GitHubCopilotProvider struct {
 	// mu guards the mutable auth fields (token, githubToken, expiresAt, name)

@@ -353,7 +353,7 @@ func ExecuteResponses(ctx context.Context, url string, headers map[string]string
 		return nil, fmt.Errorf("openaicompat: create responses request: %w", err)
 	}
 
-	resp, err := doPOST(req, false)
+	resp, err := doPOSTResponses(req, false)
 	if err != nil {
 		return nil, fmt.Errorf("openaicompat: responses request failed: %w", err)
 	}
@@ -382,7 +382,7 @@ func StreamResponses(ctx context.Context, url string, headers map[string]string,
 		return nil, fmt.Errorf("openaicompat: create responses stream request: %w", err)
 	}
 
-	resp, err := doPOST(req, true)
+	resp, err := doPOSTResponses(req, true)
 	if err != nil {
 		return nil, fmt.Errorf("openaicompat: responses stream request failed: %w", err)
 	}

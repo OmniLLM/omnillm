@@ -9,37 +9,14 @@ import (
 	"net/http"
 	"omnillm/internal/cif"
 	"strings"
-	"time"
 
 	"github.com/rs/zerolog/log"
 )
 
 var (
-	openAIHTTPClient = &http.Client{
-		Timeout: 120 * time.Second,
-		Transport: &http.Transport{
-			Proxy:                 http.ProxyFromEnvironment,
-			ForceAttemptHTTP2:     true,
-			MaxIdleConns:          100,
-			MaxIdleConnsPerHost:   20,
-			MaxConnsPerHost:       50,
-			IdleConnTimeout:       90 * time.Second,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ExpectContinueTimeout: 1 * time.Second,
-		},
-	}
-	openAIStreamClient = &http.Client{
-		Transport: &http.Transport{
-			Proxy:                 http.ProxyFromEnvironment,
-			ForceAttemptHTTP2:     true,
-			MaxIdleConns:          100,
-			MaxIdleConnsPerHost:   20,
-			MaxConnsPerHost:       50,
-			IdleConnTimeout:       90 * time.Second,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ExpectContinueTimeout: 1 * time.Second,
-		},
-	}
+	openAIHTTPClient = DefaultHTTPClient(
+		TimeoutFromEnv("OPENAI_HTTP_TIMEOUT", DefaultRequestTimeout))
+	openAIStreamClient = DefaultStreamClient()
 )
 
 // ExecuteOpenAIWithPayload performs a non-streaming OpenAI-compatible HTTP request.

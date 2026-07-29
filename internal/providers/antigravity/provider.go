@@ -12,7 +12,6 @@ import (
 	"omnillm/internal/providers/shared"
 	"omnillm/internal/providers/types"
 	"strings"
-	"time"
 
 	"github.com/rs/zerolog/log"
 )
@@ -20,18 +19,7 @@ import (
 const defaultBaseURL = ProductionBaseURL
 
 // Shared HTTP client for Antigravity (only used for streaming).
-var antigravityStreamClient = &http.Client{
-	Transport: &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
-		ForceAttemptHTTP2:     true,
-		MaxIdleConns:          100,
-		MaxIdleConnsPerHost:   20,
-		MaxConnsPerHost:       50,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-	},
-}
+var antigravityStreamClient = shared.DefaultStreamClient()
 
 // Models is the Antigravity model catalog.
 var Models = []types.Model{

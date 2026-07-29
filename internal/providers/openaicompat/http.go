@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"omnillm/internal/cif"
 	"omnillm/internal/providers/shared"
-	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -26,7 +25,14 @@ func cappedBody(b []byte) []byte {
 }
 
 var (
-	httpClient = shared.DefaultHTTPClient(120 * time.Second)
+	httpClient = shared.DefaultHTTPClient(
+		shared.TimeoutFromEnv("OPENAICOMPAT_HTTP_TIMEOUT", shared.DefaultRequestTimeout))
+	// responsesClient is used for the /responses endpoint, which fronts
+	// reasoning models that can think for minutes before emitting response
+	// headers. Sharing the chat-sized budget made those calls structurally
+	// impossible to satisfy rather than merely slow.
+	responsesClient = shared.DefaultHTTPClient(
+		shared.TimeoutFromEnv("OPENAICOMPAT_RESPONSES_TIMEOUT", shared.DefaultResponsesTimeout))
 	streamClient = shared.DefaultStreamClient()
 )
 
@@ -63,6 +69,19 @@ func doPOST(req *http.Request, stream bool) (*http.Response, error) {
 	if stream {
 		client = streamClient
 	}
+	return doPOSTWith(client, req, stream)
+}
+
+// doPOSTResponses executes a /responses POST using the longer-budget client.
+func doPOSTResponses(req *http.Request, stream bool) (*http.Response, error) {
+	client := responsesClient
+	if stream {
+		client = streamClient
+	}
+	return doPOSTWith(client, req, stream)
+}
+
+func doPOSTWith(client *http.Client, req *http.Request, stream bool) (*http.Response, error) {
 	resp, err := client.Do(req)
 	if err != nil {
 		if retryReq := clonePOSTRetryRequest(req, stream, err); retryReq != nil {

@@ -14,7 +14,6 @@ import (
 	"omnillm/internal/providers/shared/gemini"
 	"omnillm/internal/providers/types"
 	"strings"
-	"time"
 
 	"github.com/rs/zerolog/log"
 )
@@ -23,31 +22,9 @@ const defaultBaseURL = "https://generativelanguage.googleapis.com"
 
 // Shared HTTP clients: one for normal requests with timeout, one for streaming.
 var (
-	googleHTTPClient = &http.Client{
-		Timeout: 120 * time.Second,
-		Transport: &http.Transport{
-			Proxy:                 http.ProxyFromEnvironment,
-			ForceAttemptHTTP2:     true,
-			MaxIdleConns:          100,
-			MaxIdleConnsPerHost:   20,
-			MaxConnsPerHost:       50,
-			IdleConnTimeout:       90 * time.Second,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ExpectContinueTimeout: 1 * time.Second,
-		},
-	}
-	googleStreamClient = &http.Client{
-		Transport: &http.Transport{
-			Proxy:                 http.ProxyFromEnvironment,
-			ForceAttemptHTTP2:     true,
-			MaxIdleConns:          100,
-			MaxIdleConnsPerHost:   20,
-			MaxConnsPerHost:       50,
-			IdleConnTimeout:       90 * time.Second,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ExpectContinueTimeout: 1 * time.Second,
-		},
-	}
+	googleHTTPClient = shared.DefaultHTTPClient(
+		shared.TimeoutFromEnv("GOOGLE_HTTP_TIMEOUT", shared.DefaultRequestTimeout))
+	googleStreamClient = shared.DefaultStreamClient()
 )
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
