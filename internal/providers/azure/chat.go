@@ -10,36 +10,13 @@ import (
 	"omnillm/internal/cif"
 	"omnillm/internal/providers/shared"
 	"strings"
-	"time"
 )
 
 // Shared HTTP clients: one for normal requests with timeout, one for streaming.
 var (
-	azureHTTPClient = &http.Client{
-		Timeout: 120 * time.Second,
-		Transport: &http.Transport{
-			Proxy:                 http.ProxyFromEnvironment,
-			ForceAttemptHTTP2:     true,
-			MaxIdleConns:          100,
-			MaxIdleConnsPerHost:   20,
-			MaxConnsPerHost:       50,
-			IdleConnTimeout:       90 * time.Second,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ExpectContinueTimeout: 1 * time.Second,
-		},
-	}
-	azureStreamClient = &http.Client{
-		Transport: &http.Transport{
-			Proxy:                 http.ProxyFromEnvironment,
-			ForceAttemptHTTP2:     true,
-			MaxIdleConns:          100,
-			MaxIdleConnsPerHost:   20,
-			MaxConnsPerHost:       50,
-			IdleConnTimeout:       90 * time.Second,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ExpectContinueTimeout: 1 * time.Second,
-		},
-	}
+	azureHTTPClient = shared.DefaultHTTPClient(
+		shared.TimeoutFromEnv("AZURE_HTTP_TIMEOUT", shared.DefaultRequestTimeout))
+	azureStreamClient = shared.DefaultStreamClient()
 )
 
 // BuildOpenAIPayload builds the Azure OpenAI chat completions request payload.

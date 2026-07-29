@@ -368,24 +368,37 @@ func (a *CopilotAdapter) executeResponsesWithRetry(ctx context.Context, request 
 		req.Header.Set(k, v)
 	}
 
-	var started time.Time
-	if debugEnabled() {
-		started = time.Now()
-	}
-	resp, err := copilotHTTPClient.Do(req)
+	started := time.Now()
+	resp, err := copilotResponsesClient.Do(req)
+	elapsed := time.Since(started)
 	if debugEnabled() {
 		logCopilotElapsed(a.provider.GetInstanceID(), "responses", request.Model, started, "Copilot upstream request completed")
 	}
 	if err != nil {
-		// One retry on timeout.
+		// Retry once on timeout — but only for *early* timeouts (TLS/connect/
+		// transient transport failures). If we burned the full client budget
+		// the upstream is simply slow or stalled; retrying just doubles the
+		// wall-clock before failover without improving the odds.
 		if shouldRetryCopilotResponsesTimeout(err) {
-			retryReq, rerr := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(snapshot))
-			if rerr == nil {
-				for k, v := range a.requestHeaders(request) {
-					retryReq.Header.Set(k, v)
+			switch {
+			case ctx.Err() != nil:
+				// The caller gave up (client disconnect, upstream deadline).
+				// A retry would reuse the same dead context and fail
+				// instantly — pure noise.
+				log.Debug().Err(err).Str("url", url).Dur("elapsed", elapsed).
+					Msg("copilot: /responses aborted by caller context; not retrying")
+			case worthRetryingAfter(elapsed, copilotResponsesBudget()):
+				retryReq, rerr := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(snapshot))
+				if rerr == nil {
+					for k, v := range a.requestHeaders(request) {
+						retryReq.Header.Set(k, v)
+					}
+					log.Warn().Err(err).Str("url", url).Dur("elapsed", elapsed).Msg("copilot: retrying timed-out /responses request once")
+					resp, err = copilotResponsesClient.Do(retryReq)
 				}
-				log.Warn().Err(err).Str("url", url).Msg("copilot: retrying timed-out /responses request once")
-				resp, err = copilotHTTPClient.Do(retryReq)
+			default:
+				log.Warn().Err(err).Str("url", url).Dur("elapsed", elapsed).
+					Msg("copilot: /responses exhausted its timeout budget upstream; failing over without retry")
 			}
 		}
 		if err != nil {
@@ -450,6 +463,21 @@ func (a *CopilotAdapter) executeResponsesStreamWithRetry(ctx context.Context, re
 	eventCh := make(chan cif.CIFStreamEvent, 64)
 	go parseResponsesSSE(ctx, resp.Body, eventCh)
 	return eventCh, nil
+}
+
+// worthRetryingAfter reports whether a timed-out request failed early enough
+// that a retry is worth the latency.
+//
+// A timeout well inside the budget suggests a transient transport fault
+// (connect/TLS/reset) that a second attempt may clear. A timeout at or near
+// the full budget means the upstream accepted the connection and then stalled
+// — retrying there just doubles wall-clock before failover, which is exactly
+// how a 120s cap produced 240s of dead time before failing over.
+func worthRetryingAfter(elapsed, budget time.Duration) bool {
+	if budget <= 0 {
+		return true // no budget configured; preserve retry-once behavior
+	}
+	return elapsed < budget/2
 }
 
 // shouldRetryCopilotResponsesTimeout returns true when a /responses request

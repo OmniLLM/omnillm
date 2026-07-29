@@ -34,25 +34,9 @@ const (
 )
 
 var (
-	codexHTTPClient = &http.Client{
-		Timeout: 120 * time.Second,
-		Transport: &http.Transport{
-			Proxy:               http.ProxyFromEnvironment,
-			ForceAttemptHTTP2:   true,
-			MaxIdleConns:        100,
-			MaxIdleConnsPerHost: 20,
-			IdleConnTimeout:     90 * time.Second,
-		},
-	}
-	codexStreamClient = &http.Client{
-		Transport: &http.Transport{
-			Proxy:               http.ProxyFromEnvironment,
-			ForceAttemptHTTP2:   true,
-			MaxIdleConns:        100,
-			MaxIdleConnsPerHost: 20,
-			IdleConnTimeout:     90 * time.Second,
-		},
-	}
+	codexHTTPClient = shared.DefaultHTTPClient(
+		shared.TimeoutFromEnv("CODEX_HTTP_TIMEOUT", shared.DefaultRequestTimeout))
+	codexStreamClient = shared.DefaultStreamClient()
 )
 
 // CodexProvider authenticates via an OpenAI API key (primary) or a legacy

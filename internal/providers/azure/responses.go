@@ -14,20 +14,11 @@ import (
 	"time"
 )
 
-// Shared HTTP client with default timeout for Responses API requests.
-var responsesHTTPClient = &http.Client{
-	Timeout: 120 * time.Second,
-	Transport: &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
-		ForceAttemptHTTP2:     true,
-		MaxIdleConns:          100,
-		MaxIdleConnsPerHost:   20,
-		MaxConnsPerHost:       50,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-	},
-}
+// Shared HTTP client for Responses API requests. This endpoint fronts
+// reasoning models that can think for minutes before emitting response
+// headers, so it gets a larger budget than plain chat completions.
+var responsesHTTPClient = shared.DefaultHTTPClient(
+	shared.TimeoutFromEnv("AZURE_RESPONSES_TIMEOUT", shared.DefaultResponsesTimeout))
 
 // ─── Tool call ID normalization ───────────────────────────────────────────────
 
