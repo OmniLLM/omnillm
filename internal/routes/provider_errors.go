@@ -1,10 +1,13 @@
 package routes
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
+
+	"github.com/gin-gonic/gin"
 )
 
 // parseRequestMessage returns a user-facing message for a request body parse
@@ -47,6 +50,23 @@ func isAuthenticationError(err error) bool {
 	return strings.Contains(msg, "status 401") ||
 		strings.Contains(msg, "token expired") ||
 		strings.Contains(msg, "unauthorized")
+}
+
+// isClientCanceled reports whether err is the result of the *client* going away
+// (browser tab closed, editor cancelled the request, Ctrl-C in a CLI) rather
+// than an actual provider failure.  Both conditions matter: the error itself
+// must be a cancellation, and the inbound request context must actually be
+// done.  Checking only the error would misclassify an upstream-initiated
+// cancellation; checking only the context would misclassify an unrelated
+// provider error that happened to race with a disconnect.
+func isClientCanceled(c *gin.Context, err error) bool {
+	if err == nil || c == nil || c.Request == nil {
+		return false
+	}
+	if !errors.Is(err, context.Canceled) {
+		return false
+	}
+	return errors.Is(c.Request.Context().Err(), context.Canceled)
 }
 
 func shouldFallbackToNonStreaming(err error) bool {

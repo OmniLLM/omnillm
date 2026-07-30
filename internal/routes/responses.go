@@ -133,6 +133,14 @@ func handleResponses(c *gin.Context) {
 				err = handleResponsesNonStreamingResponse(c, candidate.Adapter, candidate.Request, requestIDStr, originalModel, providerID, startTime)
 			}
 			if err != nil {
+				if isClientCanceled(c, err) {
+					log.Info().
+						Str("request_id", requestIDStr).
+						Str("provider", providerID).
+						Str("upstream_model", candidate.UpstreamModel).
+						Msg("Client canceled request, abandoning failover")
+					return providerdispatch.Abort(err)
+				}
 				log.Warn().Err(err).
 					Str("request_id", requestIDStr).
 					Str("provider", providerID).
@@ -186,7 +194,7 @@ func handleResponsesNonStreamingResponse(c *gin.Context, adapter types.ProviderA
 func handleResponsesStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID, originalModel, providerID string, startTime time.Time) error {
 	eventCh, err := adapter.ExecuteStream(c.Request.Context(), canonicalRequest)
 	if err != nil {
-		if shouldFallbackToNonStreaming(err) {
+		if !isClientCanceled(c, err) && shouldFallbackToNonStreaming(err) {
 			log.Warn().Err(err).Str("request_id", requestID).Msg("Streaming request failed before stream start, retrying as non-streaming")
 			canonicalRequest.Stream = false
 			return handleResponsesNonStreamingResponse(c, adapter, canonicalRequest, requestID, originalModel, providerID, startTime)

@@ -51,6 +51,15 @@ func logRequestReceived(c *gin.Context, requestID, apiShape string, request *cif
 }
 
 func writeProviderFailure(c *gin.Context, defaultType string, lastErr error) {
+	// A client disconnect is not a provider failure.  Log it at info level and
+	// skip the JSON body entirely -- nobody is listening on the other end, and
+	// emitting a 502 here both pollutes error logs and misattributes the cause.
+	if isClientCanceled(c, lastErr) {
+		log.Info().Str("request_id", c.GetString("request_id")).Msg("Client canceled request before completion")
+		c.Abort()
+		return
+	}
+
 	errMsg := "All providers failed"
 	if lastErr != nil {
 		log.Error().Err(lastErr).Msg("Provider failure details")
