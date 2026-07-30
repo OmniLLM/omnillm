@@ -360,6 +360,48 @@ func anthropicContentHasToolUse(content []AnthropicContentBlock) bool {
 	return false
 }
 
+// FinalizeAnthropicStream returns the terminal SSE events needed to close a
+// stream that ended without a CIFStreamEnd event (e.g. the upstream provider
+// dropped the connection, or the provider goroutine closed the event channel
+// after an error).
+//
+// Without this, the proxy simply stops writing bytes mid-stream: the client has
+// seen message_start (and possibly an open content block) but never receives
+// content_block_stop / message_delta / message_stop, and reports
+// "Connection closed mid-response". Emitting a well-formed terminal sequence
+// turns an unparseable truncation into a normal, if early, end of turn.
+//
+// Returns nil when no message_start was ever sent — in that case nothing has
+// been committed to the wire and the caller should surface a real HTTP error.
+func FinalizeAnthropicStream(state *AnthropicStreamState, stopReason cif.CIFStopReason) []map[string]interface{} {
+	if state == nil || !state.MessageStartSent {
+		return nil
+	}
+
+	var events []map[string]interface{}
+	if state.ContentBlockOpen {
+		events = append(events, map[string]interface{}{
+			"type":  "content_block_stop",
+			"index": state.CurrentBlockAnthropicIdx,
+		})
+		state.ContentBlockOpen = false
+	}
+
+	events = append(events, map[string]interface{}{
+		"type": "message_delta",
+		"delta": map[string]interface{}{
+			"stop_reason":   convertStopReasonToAnthropic(stopReason),
+			"stop_sequence": nil,
+		},
+		"usage": map[string]interface{}{"output_tokens": 0},
+	})
+	events = append(events, map[string]interface{}{"type": "message_stop"})
+
+	// Mark the stream as terminated so a later call is a no-op.
+	state.MessageStartSent = false
+	return events
+}
+
 func FormatAnthropicSSEData(eventType string, data interface{}) (string, error) {
 	jsonBytes, err := json.Marshal(data)
 	if err != nil {

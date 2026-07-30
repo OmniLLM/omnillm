@@ -159,6 +159,14 @@ func handleMessages(c *gin.Context) {
 				err = handleAnthropicNonStreamingResponse(c, candidate.Adapter, candidate.Request, requestIDStr, originalModel, providerID, startTime)
 			}
 			if err != nil {
+				if isClientCanceled(c, err) {
+					log.Info().
+						Str("request_id", requestIDStr).
+						Str("provider", providerID).
+						Str("upstream_model", candidate.UpstreamModel).
+						Msg("Client canceled request, abandoning failover")
+					return providerdispatch.Abort(err)
+				}
 				log.Warn().Err(err).
 					Str("request_id", requestIDStr).
 					Str("provider", providerID).
@@ -233,7 +241,7 @@ func handleAnthropicNonStreamingResponse(c *gin.Context, adapter types.ProviderA
 func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID, originalModel, providerID string, startTime time.Time) error {
 	eventCh, err := adapter.ExecuteStream(c.Request.Context(), canonicalRequest)
 	if err != nil {
-		if shouldFallbackToNonStreaming(err) && allowStreamingFallback(canonicalRequest) {
+		if !isClientCanceled(c, err) && shouldFallbackToNonStreaming(err) && allowStreamingFallback(canonicalRequest) {
 			log.Warn().Err(err).Str("request_id", requestID).Msg("Streaming request failed before stream start, retrying as non-streaming")
 			canonicalRequest.Stream = false
 			return handleAnthropicNonStreamingResponse(c, adapter, canonicalRequest, requestID, originalModel, providerID, startTime)
@@ -269,12 +277,41 @@ func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 		}
 	}
 
+	// streamTerminated records whether a well-formed terminal event sequence
+	// (message_delta + message_stop, or an error event) was written. If the
+	// upstream channel closes or the context is cancelled before that, we
+	// synthesise the terminal events so the client does not see a truncated
+	// stream ("Connection closed mid-response").
+	streamTerminated := false
+
 	c.Stream(func(w io.Writer) bool {
 		select {
 		case <-ctx.Done():
 			return false
 		case event, ok := <-eventCh:
 			if !ok {
+				if !streamTerminated {
+					if finalEvents := serialization.FinalizeAnthropicStream(state, cif.StopReasonEndTurn); len(finalEvents) > 0 {
+						log.Warn().
+							Str("request_id", requestID).
+							Str("provider", providerID).
+							Str("model_used", modelUsed).
+							Int64("latency_ms", time.Since(startTime).Milliseconds()).
+							Msg("Upstream stream ended without a terminal event; synthesising message_stop")
+						for _, evt := range finalEvents {
+							eventType, _ := evt["type"].(string)
+							formatted, ferr := serialization.FormatAnthropicSSEData(eventType, evt)
+							if ferr != nil {
+								break
+							}
+							fmt.Fprint(w, formatted)
+						}
+						if flusher != nil {
+							flusher.Flush()
+						}
+						streamTerminated = true
+					}
+				}
 				return false
 			}
 			toolCallTracker.Observe(event)
@@ -303,6 +340,7 @@ func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 			}
 
 			if endEvt, isEnd := event.(cif.CIFStreamEnd); isEnd {
+				streamTerminated = true
 				inputTokens := 0
 				outputTokens := 0
 				if endEvt.Usage != nil {
@@ -337,6 +375,24 @@ func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 			}
 
 			if errEvt, isErr := event.(cif.CIFStreamError); isErr {
+				// The error event has already been written to the wire above.
+				// Follow it with a well-formed terminal sequence so clients that
+				// ignore mid-stream error events still see a complete message
+				// rather than a truncated one.
+				if finalEvents := serialization.FinalizeAnthropicStream(state, cif.StopReasonEndTurn); len(finalEvents) > 0 {
+					for _, evt := range finalEvents {
+						eventType, _ := evt["type"].(string)
+						formatted, ferr := serialization.FormatAnthropicSSEData(eventType, evt)
+						if ferr != nil {
+							break
+						}
+						fmt.Fprint(w, formatted)
+					}
+					if flusher != nil {
+						flusher.Flush()
+					}
+				}
+				streamTerminated = true
 				log.Warn().
 					Str("request_id", requestID).
 					Str("api_shape", "anthropic").
