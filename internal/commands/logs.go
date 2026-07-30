@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -55,6 +56,7 @@ var logsTailCmd = &cobra.Command{
 		fmt.Fprintf(cmd.ErrOrStderr(), "Connected to log stream (Ctrl+C to stop)\n\n")
 
 		out := cmd.OutOrStdout()
+		useColor := IsTerminalWriter(out) && os.Getenv("NO_COLOR") == ""
 		scanner := bufio.NewScanner(resp.Body)
 		for scanner.Scan() {
 			line := scanner.Text()
@@ -93,7 +95,15 @@ var logsTailCmd = &cobra.Command{
 			}
 
 			levelStr := padRight(strings.ToUpper(level), 5)
-			fmt.Fprintf(out, "%s  %s  %s\n", ts, levelStr, message)
+			if useColor {
+				c := levelColor(level)
+				fmt.Fprintf(out, "%s%s%s  %s%s%s  %s%s%s\n",
+					colorDim, ts, colorReset,
+					c, levelStr, colorReset,
+					c, message, colorReset)
+			} else {
+				fmt.Fprintf(out, "%s  %s  %s\n", ts, levelStr, message)
+			}
 		}
 
 		if err := scanner.Err(); err != nil {
@@ -101,6 +111,38 @@ var logsTailCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+// ANSI colors for log level rendering.
+const (
+	colorReset   = "\x1b[0m"
+	colorDim     = "\x1b[90m"
+	colorRed     = "\x1b[31m"
+	colorBoldRed = "\x1b[1;31m"
+	colorYellow  = "\x1b[33m"
+	colorGreen   = "\x1b[32m"
+	colorCyan    = "\x1b[36m"
+	colorMagenta = "\x1b[35m"
+)
+
+// levelColor returns the ANSI color for a log level.
+func levelColor(level string) string {
+	switch strings.ToLower(level) {
+	case "fatal", "panic":
+		return colorBoldRed
+	case "error":
+		return colorRed
+	case "warn", "warning":
+		return colorYellow
+	case "info":
+		return colorGreen
+	case "debug":
+		return colorCyan
+	case "trace":
+		return colorMagenta
+	default:
+		return colorReset
+	}
 }
 
 // levelOrder maps log level names to severity (lower = more severe).
