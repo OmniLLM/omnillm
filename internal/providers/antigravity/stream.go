@@ -114,7 +114,7 @@ func ParseAntigravitySSE(ctx context.Context, body io.ReadCloser, eventCh chan c
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
+	if err := scanner.Err(); err != nil && !shared.IsBenignStreamEndError(ctx, err) {
 		eventCh <- cif.CIFStreamError{
 			Type:  "stream_error",
 			Error: cif.ErrorInfo{Type: "stream_error", Message: err.Error()},

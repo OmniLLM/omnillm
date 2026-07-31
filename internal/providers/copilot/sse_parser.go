@@ -2,18 +2,24 @@ package copilot
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"io"
 	"strings"
 
 	"omnillm/internal/cif"
+	"omnillm/internal/providers/shared"
 
 	"github.com/rs/zerolog/log"
 )
 
-func (a *CopilotAdapter) parseOpenAISSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent, toolNameMapper *copilotToolNameMapper) {
+func (a *CopilotAdapter) parseOpenAISSE(ctx context.Context, body io.ReadCloser, eventCh chan cif.CIFStreamEvent, toolNameMapper *copilotToolNameMapper) {
 	defer body.Close()
 	defer close(eventCh)
+	// Unblock the scanner's Read when the caller goes away, so this goroutine
+	// (and the underlying connection) is not leaked for the life of the stream.
+	stop := context.AfterFunc(ctx, func() { body.Close() })
+	defer stop()
 
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 4*1024), 1024*1024)
@@ -182,7 +188,7 @@ func (a *CopilotAdapter) parseOpenAISSE(body io.ReadCloser, eventCh chan cif.CIF
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
+	if err := scanner.Err(); err != nil && !shared.IsBenignStreamEndError(ctx, err) {
 		log.Error().Err(err).Msg("SSE scanner error")
 		eventCh <- cif.CIFStreamError{
 			Type: "stream_error",

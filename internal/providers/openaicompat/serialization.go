@@ -439,7 +439,7 @@ func ParseSSE(ctx context.Context, body io.ReadCloser, eventCh chan cif.CIFStrea
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
+	if err := scanner.Err(); err != nil && !shared.IsBenignStreamEndError(ctx, err) {
 		log.Error().Err(err).Str("provider", "openaicompat").Msg("SSE scanner error")
 		eventCh <- cif.CIFStreamError{
 			Type:  "stream_error",
