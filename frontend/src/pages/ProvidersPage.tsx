@@ -18,6 +18,8 @@ import {
   getProviderPriorities,
   setProviderPriorities,
   startAntigravityOAuth,
+  startOpenAIOAuth,
+  pollOpenAIOAuthStatus,
   pollAntigravityOAuthStatus,
   updateProviderConfig,
   refreshProviderModels,
@@ -625,6 +627,118 @@ function useAntigravityOAuth(
     setTimeout(() => clearInterval(timer), 10 * 60 * 1000)
   }
   return { startOAuth }
+}
+
+// Drives the ChatGPT sign-in flow. Unlike the antigravity flow there are no
+// client credentials to collect: the backend uses a fixed public client with
+// PKCE, and the browser redirect lands on a local listener owned by the server.
+function useOpenAIOAuth(
+  providerId: string | undefined,
+  onSuccess: () => void,
+  onError: (msg: string) => void,
+) {
+  const startOAuth = async () => {
+    const resp = await startOpenAIOAuth(providerId)
+    const tab = window.open(resp.auth_url, "_blank")
+    if (!tab) {
+      onError(
+        "Could not open a new tab — please allow popups for this page and try again",
+      )
+      return
+    }
+
+    const timer = setInterval(async () => {
+      try {
+        const status = await pollOpenAIOAuthStatus(resp.provider_id)
+        if (!status.done) return
+        clearInterval(timer)
+        if (status.error) {
+          onError(status.error)
+        } else {
+          onSuccess()
+        }
+      } catch {
+        // ignore transient fetch errors while polling
+      }
+      if (tab.closed) {
+        clearInterval(timer)
+      }
+    }, 1500)
+
+    // Safety: stop polling after 10 minutes regardless.
+    setTimeout(() => clearInterval(timer), 10 * 60 * 1000)
+  }
+  return { startOAuth }
+}
+
+// Re-authenticates an existing ChatGPT provider (e.g. after the refresh token
+// is revoked). Same flow as the add form, scoped to a provider ID.
+function OpenAIAuthForm({
+  provider,
+  onSuccess,
+  onCancel,
+}: {
+  provider: Provider
+  onSuccess: () => void
+  onCancel: () => void
+}) {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const { startOAuth } = useOpenAIOAuth(
+    provider.id,
+    () => {
+      setLoading(false)
+      onSuccess()
+    },
+    (msg) => {
+      setLoading(false)
+      setError(msg)
+    },
+  )
+
+  const submit = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      await startOAuth()
+    } catch (e) {
+      setLoading(false)
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 8 }}>
+      {error && (
+        <div
+          style={{ fontSize: 12, color: "var(--color-error)", marginBottom: 8 }}
+        >
+          {error}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={submit}
+          disabled={loading}
+        >
+          {loading ?
+            <>
+              <Spin size={13} /> Waiting…
+            </>
+          : "Sign in with ChatGPT →"}
+        </button>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={onCancel}
+          disabled={loading}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
 }
 
 function AntigravityAuthForm({
@@ -3077,6 +3191,16 @@ function ProviderCard({
               onCancel={() => setShowAuthForm(false)}
             />
           )}
+          {provider.type === "openai" && (
+            <OpenAIAuthForm
+              provider={provider}
+              onSuccess={() => {
+                setShowAuthForm(false)
+                onModelsChanged?.()
+              }}
+              onCancel={() => setShowAuthForm(false)}
+            />
+          )}
         </div>
       )}
     </div>
@@ -3410,6 +3534,15 @@ function AddProviderFlow({
           {selectedType === "codex" && <AddFlowCodexForm {...authFormProps} />}
           {selectedType === "antigravity" && (
             <AddFlowAntigravityForm
+              onSuccess={() => {
+                setStep("select")
+                onDone?.()
+              }}
+              onCancel={() => setStep("select")}
+            />
+          )}
+          {selectedType === "openai" && (
+            <AddFlowOpenAIForm
               onSuccess={() => {
                 setStep("select")
                 onDone?.()
@@ -3935,6 +4068,77 @@ function AddFlowAntigravityForm({
               <Spin size={13} /> Waiting…
             </>
           : "Start OAuth →"}
+        </button>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={onCancel}
+          disabled={loading}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function AddFlowOpenAIForm({
+  onSuccess,
+  onCancel,
+}: {
+  onSuccess: (providerId: string) => void
+  onCancel: () => void
+}) {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const { startOAuth } = useOpenAIOAuth(
+    undefined,
+    () => {
+      setLoading(false)
+      onSuccess("")
+    },
+    (msg) => {
+      setLoading(false)
+      setError(msg)
+    },
+  )
+
+  const submit = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      await startOAuth()
+    } catch (e) {
+      setLoading(false)
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  return (
+    <div style={addFlowPanelStyle}>
+      {error && (
+        <div
+          style={{ fontSize: 12, color: "var(--color-error)", marginBottom: 8 }}
+        >
+          {error}
+        </div>
+      )}
+      <AddFlowHint>
+        Opens a ChatGPT sign-in tab. No API key is needed — your ChatGPT
+        subscription is used. Requires local port 1455 to be free while signing
+        in.
+      </AddFlowHint>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={submit}
+          disabled={loading}
+        >
+          {loading ?
+            <>
+              <Spin size={13} /> Waiting…
+            </>
+          : "Sign in with ChatGPT →"}
         </button>
         <button
           className="btn btn-ghost btn-sm"

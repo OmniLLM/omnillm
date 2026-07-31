@@ -15,6 +15,7 @@ import (
 	alibabapkg "omnillm/internal/providers/alibaba"
 	azurepkg "omnillm/internal/providers/azure"
 	codexpkg "omnillm/internal/providers/codex"
+	openaipkg "omnillm/internal/providers/openai"
 	copilot "omnillm/internal/providers/copilot"
 	googlepkg "omnillm/internal/providers/google"
 	kimipkg "omnillm/internal/providers/kimi"
@@ -440,6 +441,15 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 				"isActive":   false,
 				"authStatus": "authenticated",
 			},
+		})
+
+	// ——————————————————————————————————————————————————————————————
+	case "openai":
+		// Credentials arrive through the ChatGPT browser OAuth flow; there is
+		// no API-key path for this provider.
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "Use POST /api/admin/providers/openai/start-oauth to sign in with ChatGPT",
 		})
 
 	// ——————————————————————————————————————————————————————————————
@@ -877,6 +887,15 @@ func handleProviderAuth(c *gin.Context) {
 			})
 			return
 		}
+	}
+
+	// OpenAI (ChatGPT OAuth): re-auth must go through the browser flow.
+	if _, isOpenAI := provider.(*openaipkg.Provider); isOpenAI {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "Use POST /api/admin/providers/openai/start-oauth to re-authenticate with ChatGPT",
+		})
+		return
 	}
 
 	// Alibaba: API-key only — OAuth is not supported.

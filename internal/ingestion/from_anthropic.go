@@ -81,6 +81,11 @@ func ParseAnthropicMessages(raw json.RawMessage) (*cif.CanonicalRequest, error) 
 		canonical.UserID = &req.Metadata.UserID
 	}
 
+	// Anthropic tool_result blocks carry only tool_use_id, not the tool name.
+	// Record names from tool_use blocks (which always appear in an earlier
+	// assistant message) so tool_result parts can be resolved back to a name.
+	toolCallNamesByID := make(map[string]string)
+
 	for _, msg := range req.Messages {
 		// Workaround for Claude Code v2.1.154+ ("Lean System Prompt") regression:
 		// it emits role:"system" entries inside the messages[] array, which the
@@ -95,7 +100,7 @@ func ParseAnthropicMessages(raw json.RawMessage) (*cif.CanonicalRequest, error) 
 			continue
 		}
 
-		cifMsg, err := convertAnthropicMessage(msg)
+		cifMsg, err := convertAnthropicMessage(msg, toolCallNamesByID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert message: %w", err)
 		}
@@ -132,8 +137,8 @@ func ParseAnthropicMessages(raw json.RawMessage) (*cif.CanonicalRequest, error) 
 	return canonical, nil
 }
 
-func convertAnthropicMessage(msg AnthropicMessage) (cif.CIFMessage, error) {
-	contentParts, err := convertAnthropicMessageContent(msg.Content)
+func convertAnthropicMessage(msg AnthropicMessage, toolCallNamesByID map[string]string) (cif.CIFMessage, error) {
+	contentParts, err := convertAnthropicMessageContent(msg.Content, toolCallNamesByID)
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +161,7 @@ func convertAnthropicMessage(msg AnthropicMessage) (cif.CIFMessage, error) {
 	}
 }
 
-func convertAnthropicMessageContent(content interface{}) ([]cif.CIFContentPart, error) {
+func convertAnthropicMessageContent(content interface{}, toolCallNamesByID map[string]string) ([]cif.CIFContentPart, error) {
 	switch raw := content.(type) {
 	case string:
 		return []cif.CIFContentPart{
@@ -172,7 +177,7 @@ func convertAnthropicMessageContent(content interface{}) ([]cif.CIFContentPart, 
 			// Build typed block directly from the map to avoid a
 			// marshal→unmarshal roundtrip for each content block.
 			block := anthropicBlockFromMap(blockMap)
-			cifPart, err := convertAnthropicContentBlock(block)
+			cifPart, err := convertAnthropicContentBlock(block, toolCallNamesByID)
 			if err != nil {
 				return nil, err
 			}
@@ -216,7 +221,7 @@ func anthropicBlockFromMap(m map[string]interface{}) AnthropicContentBlock {
 	return block
 }
 
-func convertAnthropicContentBlock(block AnthropicContentBlock) (cif.CIFContentPart, error) {
+func convertAnthropicContentBlock(block AnthropicContentBlock, toolCallNamesByID map[string]string) (cif.CIFContentPart, error) {
 	switch block.Type {
 	case "text":
 		return cif.CIFTextPart{
@@ -257,6 +262,9 @@ func convertAnthropicContentBlock(block AnthropicContentBlock) (cif.CIFContentPa
 		if input == nil {
 			input = map[string]interface{}{}
 		}
+		if toolCallNamesByID != nil && toolCallID != "" && block.Name != "" {
+			toolCallNamesByID[toolCallID] = block.Name
+		}
 		return cif.CIFToolCallPart{
 			Type:          "tool_call",
 			ToolCallID:    toolCallID,
@@ -269,10 +277,17 @@ func convertAnthropicContentBlock(block AnthropicContentBlock) (cif.CIFContentPa
 		if toolCallID == "" {
 			toolCallID = block.ID
 		}
+		// Anthropic tool_result blocks do not carry a name; resolve it from the
+		// originating tool_use block. Fall back to block.Name for non-Anthropic
+		// callers that populate it directly.
+		toolName := block.Name
+		if toolName == "" && toolCallNamesByID != nil {
+			toolName = toolCallNamesByID[toolCallID]
+		}
 		return cif.CIFToolResultPart{
 			Type:       "tool_result",
 			ToolCallID: toolCallID,
-			ToolName:   block.Name,
+			ToolName:   toolName,
 			Content:    normalizeAnthropicToolResultContent(block.Content),
 			IsError:    block.IsError,
 		}, nil
@@ -394,9 +409,10 @@ func normalizeAnthropicToolResultContent(content interface{}) string {
 }
 
 // ConvertAnthropicContentBlockForAgent exposes the existing Anthropic content
-// block conversion logic for the agent runtime.
+// block conversion logic for the agent runtime. Blocks are converted in
+// isolation here, so tool_result names can only come from block.Name.
 func ConvertAnthropicContentBlockForAgent(block AnthropicContentBlock) (cif.CIFContentPart, error) {
-	return convertAnthropicContentBlock(block)
+	return convertAnthropicContentBlock(block, nil)
 }
 
 func normalizeSchema(schema interface{}) map[string]interface{} {

@@ -235,6 +235,7 @@ The current codebase supports these provider families in user-facing flows:
 | Google | API key | Generic Google provider |
 | Kimi | API key | Generic Kimi provider |
 | Codex | API key | OpenAI Codex provider integration |
+| OpenAI (ChatGPT) | ChatGPT OAuth (PKCE) | Browser sign-in; uses a ChatGPT subscription instead of an API key |
 | Antigravity | Google OAuth | Onboarded through the admin OAuth flow |
 
 The admin UI adds providers through auth-first onboarding: credentials or OAuth are validated before the provider instance is registered, so failed setup attempts do not leave unauthenticated placeholder providers behind.

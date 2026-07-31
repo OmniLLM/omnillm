@@ -572,6 +572,86 @@ func TestParseAnthropic_ToolResultBlockFallsBackToID(t *testing.T) {
 	}
 }
 
+func TestParseAnthropic_ToolResultResolvesNameFromPriorToolUse(t *testing.T) {
+	// Anthropic tool_result blocks carry only tool_use_id, never a name. The
+	// name must be resolved from the originating assistant tool_use block.
+	payload := map[string]interface{}{
+		"model": "claude-3-5-sonnet-20241022",
+		"messages": []interface{}{
+			map[string]interface{}{
+				"role": "assistant",
+				"content": []interface{}{
+					map[string]interface{}{
+						"type":  "tool_use",
+						"id":    "toolu_weather",
+						"name":  "get_weather",
+						"input": map[string]interface{}{"city": "SF"},
+					},
+					map[string]interface{}{
+						"type":  "tool_use",
+						"id":    "toolu_read",
+						"name":  "Read",
+						"input": map[string]interface{}{"path": "/tmp/a"},
+					},
+				},
+			},
+			map[string]interface{}{
+				"role": "user",
+				"content": []interface{}{
+					map[string]interface{}{
+						"type":        "tool_result",
+						"tool_use_id": "toolu_read",
+						"content":     "file contents",
+					},
+					map[string]interface{}{
+						"type":        "tool_result",
+						"tool_use_id": "toolu_weather",
+						"content":     "Sunny, 72°F",
+					},
+					map[string]interface{}{
+						"type":        "tool_result",
+						"tool_use_id": "toolu_unknown",
+						"content":     "orphaned result",
+					},
+				},
+			},
+		},
+	}
+	req, err := ParseAnthropicMessages(mustRaw(t, payload))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	userMsg, ok := req.Messages[1].(cif.CIFUserMessage)
+	if !ok {
+		t.Fatalf("expected CIFUserMessage, got %T", req.Messages[1])
+	}
+
+	// Results are matched by ID, not by position, so out-of-order results
+	// must still resolve to the correct tool name.
+	expected := map[string]string{
+		"toolu_read":    "Read",
+		"toolu_weather": "get_weather",
+		"toolu_unknown": "", // no originating tool_use; must stay empty, not guess
+	}
+	if len(userMsg.Content) != len(expected) {
+		t.Fatalf("expected %d content parts, got %d", len(expected), len(userMsg.Content))
+	}
+	for i, part := range userMsg.Content {
+		resultPart, ok := part.(cif.CIFToolResultPart)
+		if !ok {
+			t.Fatalf("part %d: expected CIFToolResultPart, got %T", i, part)
+		}
+		want, known := expected[resultPart.ToolCallID]
+		if !known {
+			t.Fatalf("part %d: unexpected tool call id %q", i, resultPart.ToolCallID)
+		}
+		if resultPart.ToolName != want {
+			t.Errorf("tool call %q: expected tool name %q, got %q",
+				resultPart.ToolCallID, want, resultPart.ToolName)
+		}
+	}
+}
+
 func TestParseAnthropic_ImageBlock(t *testing.T) {
 	payload := map[string]interface{}{
 		"model": "claude-3-5-sonnet-20241022",
