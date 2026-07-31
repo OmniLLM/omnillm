@@ -18,6 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 
 	"omnillm/internal/database"
 	"omnillm/internal/lib/ratelimit"
@@ -312,6 +313,39 @@ func generateRequestID() string {
 	return hex.EncodeToString(b)
 }
 
+// resolveLogFilePath returns the persistent log file location.
+// Overridable with OMNILLM_LOG_FILE; defaults to ~/.omnillm/omnillm.log.
+func resolveLogFilePath() string {
+	if p := os.Getenv("OMNILLM_LOG_FILE"); p != "" {
+		return p
+	}
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(homeDir, ".omnillm", "omnillm.log")
+}
+
+// newFileLogWriter opens the rotating log file writer. Returns nil if the
+// destination cannot be prepared -- logging must never block server startup.
+func newFileLogWriter() io.Writer {
+	path := resolveLogFilePath()
+	if path == "" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: cannot create log directory %s: %v\n", filepath.Dir(path), err)
+		return nil
+	}
+	return &lumberjack.Logger{
+		Filename:   path,
+		MaxSize:    50, // megabytes
+		MaxBackups: 3,
+		MaxAge:     28, // days
+		Compress:   true,
+	}
+}
+
 func setupLogging(verbose bool) {
 	var consoleWriter io.Writer = os.Stderr
 	if verbose {
@@ -324,12 +358,18 @@ func setupLogging(verbose bool) {
 		consoleWriter = zerolog.ConsoleWriter{Out: os.Stderr}
 	}
 
-	log.Logger = log.Output(zerolog.MultiLevelWriter(
-		consoleWriter,
-		sseLogWriter{source: "backend"},
-	))
+	writers := []io.Writer{consoleWriter, sseLogWriter{source: "backend"}}
+	logPath := resolveLogFilePath()
+	if fileWriter := newFileLogWriter(); fileWriter != nil {
+		// The file always gets structured JSON, regardless of console format.
+		writers = append(writers, fileWriter)
+	} else {
+		logPath = ""
+	}
 
-	log.Info().Bool("verbose", verbose).Msg("Logging configured")
+	log.Logger = log.Output(zerolog.MultiLevelWriter(writers...))
+
+	log.Info().Bool("verbose", verbose).Str("log_file", logPath).Msg("Logging configured")
 }
 
 func registerDefaultProviders(reg *registry.ProviderRegistry, options StartOptions) error {
