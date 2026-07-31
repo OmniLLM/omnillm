@@ -19,6 +19,10 @@ const (
 	ProviderKimi             ProviderID = "kimi"
 	ProviderOpenAICompatible ProviderID = "openai-compatible"
 	ProviderModelScope      ProviderID = "alibaba-modelscope"
+	// ProviderCodex authenticates with an OpenAI platform API key.
+	ProviderCodex ProviderID = "codex"
+	// ProviderOpenAI authenticates with a ChatGPT account via OAuth.
+	ProviderOpenAI ProviderID = "openai"
 )
 
 // AuthOptions is decoded from JSON request bodies.  Fields accept both

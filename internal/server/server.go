@@ -23,6 +23,7 @@ import (
 	"omnillm/internal/lib/ratelimit"
 	alibabapkg "omnillm/internal/providers/alibaba"
 	antigravitypkg "omnillm/internal/providers/antigravity"
+	openaipkg "omnillm/internal/providers/openai"
 	azurepkg "omnillm/internal/providers/azure"
 	codexpkg "omnillm/internal/providers/codex"
 	"omnillm/internal/providers/copilot"
@@ -285,6 +286,7 @@ func buildRouter(port int, apiKey string, chatOptions routes.ChatCompletionOptio
 	// and the status polling happens before the user has completed the flow.
 	adminPublic.GET("/providers/antigravity/oauth-callback", routes.HandleAntigravityOAuthCallbackPublic)
 	adminPublic.GET("/providers/antigravity/oauth-status", routes.HandleAntigravityOAuthStatusPublic)
+	adminPublic.GET("/providers/openai/oauth-status", routes.HandleOpenAIOAuthStatusPublic)
 
 	adminAPI := r.Group("/api/admin", auth.middleware())
 	routes.SetupAdminRoutes(adminAPI, port)
@@ -392,6 +394,12 @@ func registerDefaultProviders(reg *registry.ProviderRegistry, options StartOptio
 			case "codex":
 				p := codexpkg.NewCodexProvider(inst.InstanceID)
 				p.SetName(inst.Name)
+				if err := p.LoadFromDB(); err != nil {
+					log.Warn().Err(err).Str("instance", inst.InstanceID).Msg("Failed to load provider token")
+				}
+				provider = p
+			case "openai":
+				p := openaipkg.NewProvider(inst.InstanceID, inst.Name)
 				if err := p.LoadFromDB(); err != nil {
 					log.Warn().Err(err).Str("instance", inst.InstanceID).Msg("Failed to load provider token")
 				}

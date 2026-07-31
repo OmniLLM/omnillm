@@ -2,12 +2,12 @@ package commands
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -17,100 +17,230 @@ import (
 var LogsCmd = &cobra.Command{
 	Use:   "logs",
 	Short: "Stream or view server logs",
+	Long: `Stream live server logs.
+
+Running "omnillm logs" with no subcommand is equivalent to "omnillm logs tail".`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runLogsTail(cmd)
+	},
 }
 
 func init() {
-	logsTailCmd.Flags().String("level", "", "Filter: only show messages at this level or above (error|warn|info|debug|trace)")
-	_ = logsTailCmd.RegisterFlagCompletionFunc("level", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	addLogsTailFlags(LogsCmd)
+	addLogsTailFlags(logsTailCmd)
+	LogsCmd.AddCommand(logsTailCmd)
+}
+
+// addLogsTailFlags registers the tail flag set on cmd so that both
+// "omnillm logs" and "omnillm logs tail" accept the same options.
+func addLogsTailFlags(cmd *cobra.Command) {
+	cmd.Flags().String("level", "", "Only show messages at this level or above (fatal|error|warn|info|debug|trace)")
+	cmd.Flags().String("source", "", "Only show messages from this source (e.g. backend, frontend)")
+	cmd.Flags().String("grep", "", "Only show lines matching this regular expression")
+	cmd.Flags().Bool("json", false, "Emit one JSON object per log line instead of human-readable text")
+	cmd.Flags().Bool("no-fields", false, "Hide structured fields (request=, latency=, ...) and show only the message")
+	_ = cmd.RegisterFlagCompletionFunc("level", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return []string{"fatal", "error", "warn", "info", "debug", "trace"}, cobra.ShellCompDirectiveNoFileComp
 	})
-	LogsCmd.AddCommand(logsTailCmd)
 }
 
 var logsTailCmd = &cobra.Command{
 	Use:   "tail",
 	Short: "Stream live server logs (SSE)",
+	Args:  cobra.NoArgs,
 	Example: `  # Stream all logs
   omnillm logs tail
 
   # Stream only errors and above
   omnillm logs tail --level error
 
-  # Stream warnings and above
-  omnillm logs tail --level warn`,
+  # Only backend warnings, without structured fields
+  omnillm logs tail --level warn --source backend --no-fields
+
+  # Follow a single request and pipe into jq
+  omnillm logs tail --grep 'request=abc123' --json | jq .`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		levelFilter, _ := cmd.Flags().GetString("level")
-
-		c := NewClient(cmd)
-		resp, err := c.GetStream("/api/admin/logs/stream")
-		if err != nil {
-			return fmt.Errorf("connect to log stream: %w", err)
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			return fmt.Errorf("server returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
-		}
-
-		fmt.Fprintf(cmd.ErrOrStderr(), "Connected to log stream (Ctrl+C to stop)\n\n")
-
-		out := cmd.OutOrStdout()
-		useColor := IsTerminalWriter(out) && os.Getenv("NO_COLOR") == ""
-		scanner := bufio.NewScanner(resp.Body)
-		for scanner.Scan() {
-			line := scanner.Text()
-
-			// SSE format: lines starting with "data: " contain the payload
-			if !strings.HasPrefix(line, "data: ") {
-				continue
-			}
-			payload := line[6:] // strip "data: "
-
-			// Try to parse as JSON for filtering and pretty display
-			var entry map[string]interface{}
-			if err := json.Unmarshal([]byte(payload), &entry); err != nil {
-				// Not JSON — print raw
-				fmt.Fprintln(out, payload)
-				continue
-			}
-
-			// Level filtering
-			if levelFilter != "" {
-				level, _ := entry["level"].(string)
-				if !isLevelAtOrAbove(level, levelFilter) {
-					continue
-				}
-			}
-
-			// Formatted output
-			ts, _ := entry["time"].(string)
-			level, _ := entry["level"].(string)
-			message, _ := entry["message"].(string)
-
-			if ts == "" {
-				ts = time.Now().Format("15:04:05")
-			} else if t, err := time.Parse(time.RFC3339, ts); err == nil {
-				ts = t.Format("15:04:05")
-			}
-
-			levelStr := padRight(strings.ToUpper(level), 5)
-			if useColor {
-				c := levelColor(level)
-				fmt.Fprintf(out, "%s%s%s  %s%s%s  %s%s%s\n",
-					colorDim, ts, colorReset,
-					c, levelStr, colorReset,
-					c, message, colorReset)
-			} else {
-				fmt.Fprintf(out, "%s  %s  %s\n", ts, levelStr, message)
-			}
-		}
-
-		if err := scanner.Err(); err != nil {
-			return fmt.Errorf("log stream error: %w", err)
-		}
-		return nil
+		return runLogsTail(cmd)
 	},
+}
+
+func runLogsTail(cmd *cobra.Command) error {
+	levelFilter, _ := cmd.Flags().GetString("level")
+	sourceFilter, _ := cmd.Flags().GetString("source")
+	grepPattern, _ := cmd.Flags().GetString("grep")
+	asJSON, _ := cmd.Flags().GetBool("json")
+	hideFields, _ := cmd.Flags().GetBool("no-fields")
+
+	if levelFilter != "" {
+		if _, ok := levelOrder[strings.ToLower(levelFilter)]; !ok {
+			return fmt.Errorf("invalid --level %q: want one of fatal, error, warn, info, debug, trace", levelFilter)
+		}
+	}
+
+	var grep *regexp.Regexp
+	if grepPattern != "" {
+		var err error
+		grep, err = regexp.Compile(grepPattern)
+		if err != nil {
+			return fmt.Errorf("invalid --grep pattern: %w", err)
+		}
+	}
+
+	c := NewClient(cmd)
+	resp, err := c.GetStream("/api/admin/logs/stream")
+	if err != nil {
+		return fmt.Errorf("connect to log stream: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("server returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	out := cmd.OutOrStdout()
+	if !asJSON {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Connected to log stream (Ctrl+C to stop)\n\n")
+	}
+
+	useColor := !asJSON && IsTerminalWriter(out) && os.Getenv("NO_COLOR") == ""
+
+	scanner := bufio.NewScanner(resp.Body)
+	// Log lines carrying request/response payloads can exceed the 64KiB default
+	// scanner buffer; without this the stream aborts with ErrTooLong.
+	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		// SSE framing: ":" lines are comments (heartbeats); only "data: " carries a payload.
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		entry := parseLogPayload(strings.TrimPrefix(line, "data: "))
+
+		if levelFilter != "" && !isLevelAtOrAbove(entry.Level, levelFilter) {
+			continue
+		}
+		if sourceFilter != "" && !strings.EqualFold(entry.Source, sourceFilter) {
+			continue
+		}
+		if grep != nil && !grep.MatchString(entry.Raw) {
+			continue
+		}
+
+		if asJSON {
+			encoded, err := json.Marshal(entry)
+			if err != nil {
+				continue
+			}
+			fmt.Fprintln(out, string(encoded))
+			continue
+		}
+
+		fmt.Fprintln(out, entry.Render(useColor, hideFields))
+	}
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("log stream error: %w", err)
+	}
+	return nil
+}
+
+// LogEntry is a single parsed log line from the admin log stream.
+type LogEntry struct {
+	Time    string   `json:"time"`
+	Level   string   `json:"level"`
+	Source  string   `json:"source,omitempty"`
+	Message string   `json:"message"`
+	Fields  []string `json:"fields,omitempty"`
+	Raw     string   `json:"-"`
+}
+
+// parseLogPayload parses one SSE payload. The server emits pipe-delimited lines
+// of the form "[timestamp] | source | LEVEL | message | key=value | ...", but it
+// also forwards raw JSON and plain text, so all three shapes are handled.
+func parseLogPayload(payload string) LogEntry {
+	payload = strings.TrimSpace(payload)
+	entry := LogEntry{Raw: payload, Level: "info", Message: payload}
+
+	if strings.HasPrefix(payload, "{") {
+		var obj map[string]any
+		if err := json.Unmarshal([]byte(payload), &obj); err == nil {
+			if v, ok := obj["time"].(string); ok {
+				entry.Time = v
+			}
+			if v, ok := obj["level"].(string); ok && v != "" {
+				entry.Level = v
+			}
+			if v, ok := obj["source"].(string); ok {
+				entry.Source = v
+			}
+			if v, ok := obj["message"].(string); ok && v != "" {
+				entry.Message = v
+			}
+			return entry
+		}
+	}
+
+	segments := strings.Split(payload, " | ")
+	for i := range segments {
+		segments[i] = strings.TrimSpace(segments[i])
+	}
+	// Minimum well-formed shape: [timestamp] | source | LEVEL | message
+	if len(segments) < 4 || !strings.HasPrefix(segments[0], "[") || !strings.HasSuffix(segments[0], "]") {
+		return entry
+	}
+
+	entry.Time = strings.TrimSuffix(strings.TrimPrefix(segments[0], "["), "]")
+	entry.Source = segments[1]
+	entry.Level = strings.ToLower(segments[2])
+	entry.Message = segments[3]
+	for _, field := range segments[4:] {
+		if field != "" {
+			entry.Fields = append(entry.Fields, field)
+		}
+	}
+	return entry
+}
+
+// Render formats the entry for human consumption.
+func (e LogEntry) Render(useColor, hideFields bool) string {
+	ts := e.Time
+	if ts == "" {
+		ts = time.Now().Format("15:04:05")
+	} else if t, err := time.Parse(time.RFC3339, ts); err == nil {
+		ts = t.Format("15:04:05")
+	}
+
+	levelStr := padRight(strings.ToUpper(e.Level), 5)
+
+	var b strings.Builder
+	if useColor {
+		lc := levelColor(e.Level)
+		fmt.Fprintf(&b, "%s%s%s  %s%s%s", colorDim, ts, colorReset, lc, levelStr, colorReset)
+		if e.Source != "" {
+			fmt.Fprintf(&b, "  %s%s%s", colorDim, e.Source, colorReset)
+		}
+		fmt.Fprintf(&b, "  %s%s%s", lc, e.Message, colorReset)
+	} else {
+		fmt.Fprintf(&b, "%s  %s", ts, levelStr)
+		if e.Source != "" {
+			fmt.Fprintf(&b, "  %s", e.Source)
+		}
+		fmt.Fprintf(&b, "  %s", e.Message)
+	}
+
+	if !hideFields && len(e.Fields) > 0 {
+		joined := strings.Join(e.Fields, " ")
+		if useColor {
+			fmt.Fprintf(&b, "  %s%s%s", colorDim, joined, colorReset)
+		} else {
+			fmt.Fprintf(&b, "  %s", joined)
+		}
+	}
+	return b.String()
 }
 
 // ANSI colors for log level rendering.
@@ -147,12 +277,14 @@ func levelColor(level string) string {
 
 // levelOrder maps log level names to severity (lower = more severe).
 var levelOrder = map[string]int{
-	"fatal": 0,
-	"error": 1,
-	"warn":  2,
-	"info":  3,
-	"debug": 4,
-	"trace": 5,
+	"fatal":   0,
+	"panic":   0,
+	"error":   1,
+	"warn":    2,
+	"warning": 2,
+	"info":    3,
+	"debug":   4,
+	"trace":   5,
 }
 
 // isLevelAtOrAbove returns true if msgLevel is at least as severe as filterLevel.
@@ -164,7 +296,3 @@ func isLevelAtOrAbove(msgLevel, filterLevel string) bool {
 	}
 	return m <= f
 }
-
-// ─── placeholder so bytes/io are not unused if stream is empty ───────────────
-var _ = bytes.NewBuffer
-var _ = io.Discard

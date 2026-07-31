@@ -33,7 +33,7 @@ func TestAuthCmdIsGenericProviderAuth(t *testing.T) {
 }
 
 func TestSupportedAuthProviderTypes(t *testing.T) {
-	expected := []string{"github-copilot", "openai-compatible", "alibaba", "azure-openai", "google", "antigravity", "kimi", "codex"}
+	expected := []string{"github-copilot", "openai-compatible", "alibaba", "azure-openai", "google", "antigravity", "openai", "kimi", "codex"}
 	if len(supportedAuthProviderTypes) != len(expected) {
 		t.Fatalf("supportedAuthProviderTypes length = %d, want %d", len(supportedAuthProviderTypes), len(expected))
 	}
@@ -280,21 +280,25 @@ func TestProviderAddFlagDefaults(t *testing.T) {
 func TestAuthAndCreateProviderPostsToMatchingProviderRoute(t *testing.T) {
 	for _, providerType := range supportedAuthProviderTypes {
 		t.Run(providerType, func(t *testing.T) {
+			// antigravity and openai use the browser-OAuth flow (start-oauth
+			// then poll oauth-status) rather than auth-and-create.
+			isOAuth := providerType == "antigravity" || providerType == "openai"
+
 			var gotPath string
 			statusPolls := 0
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				gotPath = r.URL.Path
 				w.Header().Set("Content-Type", "application/json")
-				if providerType == "antigravity" {
+				if isOAuth {
 					switch r.URL.Path {
-					case "/api/admin/providers/antigravity/start-oauth":
-						_, _ = w.Write([]byte(`{"auth_url":"https://example.test/auth","provider_id":"antigravity-1"}`))
-					case "/api/admin/providers/antigravity/oauth-status":
+					case "/api/admin/providers/" + providerType + "/start-oauth":
+						_, _ = w.Write([]byte(`{"auth_url":"https://example.test/auth","provider_id":"` + providerType + `-1"}`))
+					case "/api/admin/providers/" + providerType + "/oauth-status":
 						statusPolls += 1
 						if statusPolls == 1 {
 							_, _ = w.Write([]byte(`{"done":false}`))
 						} else {
-							_, _ = w.Write([]byte(`{"done":true,"provider_id":"antigravity-1","is_new":true}`))
+							_, _ = w.Write([]byte(`{"done":true,"provider_id":"` + providerType + `-1","is_new":true}`))
 						}
 					default:
 						http.NotFound(w, r)
@@ -324,15 +328,17 @@ func TestAuthAndCreateProviderPostsToMatchingProviderRoute(t *testing.T) {
 			if err := cmd.Flags().Set("endpoint", "https://example.test/v1"); err != nil {
 				t.Fatalf("set endpoint flag: %v", err)
 			}
+			if isOAuth {
+				if err := cmd.Flags().Set("device", "true"); err != nil {
+					t.Fatalf("set device flag: %v", err)
+				}
+			}
 			if providerType == "antigravity" {
 				if err := cmd.Flags().Set("client-id", "test-client"); err != nil {
 					t.Fatalf("set client-id flag: %v", err)
 				}
 				if err := cmd.Flags().Set("client-secret", "test-secret"); err != nil {
 					t.Fatalf("set client-secret flag: %v", err)
-				}
-				if err := cmd.Flags().Set("device", "true"); err != nil {
-					t.Fatalf("set device flag: %v", err)
 				}
 			}
 
@@ -341,8 +347,8 @@ func TestAuthAndCreateProviderPostsToMatchingProviderRoute(t *testing.T) {
 			}
 
 			wantPath := "/api/admin/providers/auth-and-create/" + providerType
-			if providerType == "antigravity" {
-				wantPath = "/api/admin/providers/antigravity/oauth-status"
+			if isOAuth {
+				wantPath = "/api/admin/providers/" + providerType + "/oauth-status"
 			}
 			if gotPath != wantPath {
 				t.Fatalf("posted to %q, want %q", gotPath, wantPath)
@@ -908,4 +914,73 @@ func TestVirtualModelUpdateEnabledDisabledMutuallyExclusive(t *testing.T) {
 		}
 	}
 	t.Error("virtualmodel update subcommand not found")
+}
+
+// ─── parseLogPayload ──────────────────────────────────────────────────────────
+
+func TestParseLogPayloadPipeFormat(t *testing.T) {
+	entry := parseLogPayload("[2026-07-31T10:00:00Z] | backend | ERROR | upstream failed | request=abc | latency=42ms")
+	if entry.Time != "2026-07-31T10:00:00Z" {
+		t.Errorf("time = %q", entry.Time)
+	}
+	if entry.Source != "backend" {
+		t.Errorf("source = %q", entry.Source)
+	}
+	if entry.Level != "error" {
+		t.Errorf("level = %q", entry.Level)
+	}
+	if entry.Message != "upstream failed" {
+		t.Errorf("message = %q", entry.Message)
+	}
+	if len(entry.Fields) != 2 || entry.Fields[0] != "request=abc" || entry.Fields[1] != "latency=42ms" {
+		t.Errorf("fields = %v", entry.Fields)
+	}
+}
+
+func TestParseLogPayloadJSONFormat(t *testing.T) {
+	entry := parseLogPayload(`{"time":"2026-07-31T10:00:00Z","level":"warn","message":"slow"}`)
+	if entry.Level != "warn" || entry.Message != "slow" {
+		t.Errorf("got level=%q message=%q", entry.Level, entry.Message)
+	}
+}
+
+func TestParseLogPayloadPlainTextDefaultsToInfo(t *testing.T) {
+	entry := parseLogPayload("just some text")
+	if entry.Level != "info" {
+		t.Errorf("level = %q, want info", entry.Level)
+	}
+	if entry.Message != "just some text" {
+		t.Errorf("message = %q", entry.Message)
+	}
+}
+
+func TestParseLogPayloadPipeLevelFilteringWorks(t *testing.T) {
+	entry := parseLogPayload("[2026-07-31T10:00:00Z] | backend | INFO | hello")
+	if isLevelAtOrAbove(entry.Level, "error") {
+		t.Error("info should be filtered out by --level error")
+	}
+}
+
+func TestLogsCmdRunnableWithoutSubcommand(t *testing.T) {
+	if LogsCmd.RunE == nil {
+		t.Error("logs: expected bare command to be runnable")
+	}
+	if LogsCmd.Flags().Lookup("level") == nil {
+		t.Error("logs: missing --level flag on bare command")
+	}
+}
+
+func TestLogsTailHasRefinedFlags(t *testing.T) {
+	for _, sub := range LogsCmd.Commands() {
+		if sub.Name() != "tail" {
+			continue
+		}
+		for _, name := range []string{"level", "source", "grep", "json", "no-fields"} {
+			if sub.Flags().Lookup(name) == nil {
+				t.Errorf("logs tail: missing --%s flag", name)
+			}
+		}
+		return
+	}
+	t.Error("logs tail: subcommand not found")
 }

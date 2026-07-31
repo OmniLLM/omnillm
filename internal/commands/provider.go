@@ -32,6 +32,7 @@ var supportedAuthProviders = []authProviderOption{
 	{Type: "azure-openai", Label: "Azure OpenAI"},
 	{Type: "google", Label: "Google AI"},
 	{Type: "antigravity", Label: "Antigravity (Google OAuth)"},
+	{Type: "openai", Label: "OpenAI (ChatGPT OAuth)"},
 	{Type: "kimi", Label: "Kimi"},
 	{Type: "codex", Label: "OpenAI Codex"},
 }
@@ -43,11 +44,12 @@ var supportedAuthProviderTypes = []string{
 	"azure-openai",
 	"google",
 	"antigravity",
+	"openai",
 	"kimi",
 	"codex",
 }
 
-const supportedAuthProviderTypesSummary = "github-copilot, openai-compatible, alibaba, azure-openai, google, antigravity, kimi, and codex"
+const supportedAuthProviderTypesSummary = "github-copilot, openai-compatible, alibaba, azure-openai, google, antigravity, openai, kimi, and codex"
 
 var ProviderCmd = &cobra.Command{
 	Use:   "provider",
@@ -198,6 +200,7 @@ var providerAddCmd = &cobra.Command{
   azure-openai      Azure OpenAI (requires --api-key)
   google            Google AI (requires --api-key)
   antigravity       Antigravity via Google OAuth (requires --client-id and --client-secret)
+  openai            OpenAI via ChatGPT account sign-in (browser OAuth, no key needed)
   kimi              Kimi AI (requires --api-key)
   codex             OpenAI Codex (requires --api-key)`,
 	Args: cobra.ExactArgs(1),
@@ -360,12 +363,21 @@ func authAndCreateProvider(cmd *cobra.Command, providerType string) error {
 	region, _ := cmd.Flags().GetString("region")
 	plan, _ := cmd.Flags().GetString("plan")
 
-	if providerType == "antigravity" {
+	// Browser-OAuth providers share one flow: POST start-oauth, open the URL,
+	// then poll oauth-status until the redirect is processed.
+	if providerType == "antigravity" || providerType == "openai" {
+		oauthLabel := "Antigravity"
 		startBody := map[string]interface{}{
 			"client_id":     clientID,
 			"client_secret": clientSecret,
 		}
-		data, err := c.Post("/api/admin/providers/antigravity/start-oauth", startBody)
+		if providerType == "openai" {
+			oauthLabel = "OpenAI (ChatGPT)"
+			// ChatGPT uses a fixed public client with PKCE — no credentials.
+			startBody = map[string]interface{}{}
+		}
+
+		data, err := c.Post("/api/admin/providers/"+providerType+"/start-oauth", startBody)
 		if err != nil {
 			return err
 		}
@@ -385,7 +397,7 @@ func authAndCreateProvider(cmd *cobra.Command, providerType string) error {
 		if !deviceOnly {
 			opened := tryOpenBrowser(authURL)
 			if opened {
-				fmt.Fprint(cmd.OutOrStdout(), "\n  Browser opened for Google authorization.\n\nWaiting for authorization")
+				fmt.Fprintf(cmd.OutOrStdout(), "\n  Browser opened for %s authorization.\n\nWaiting for authorization", oauthLabel)
 			} else {
 				fmt.Fprintf(cmd.OutOrStdout(), "\n  Could not open browser automatically.\n  Visit: %s\n\nWaiting for authorization", authURL)
 			}
@@ -397,7 +409,7 @@ func authAndCreateProvider(cmd *cobra.Command, providerType string) error {
 			time.Sleep(3 * time.Second)
 			fmt.Fprint(cmd.OutOrStdout(), ".")
 
-			statusPath := "/api/admin/providers/antigravity/oauth-status?provider_id=" + url.QueryEscape(providerID)
+			statusPath := "/api/admin/providers/" + providerType + "/oauth-status?provider_id=" + url.QueryEscape(providerID)
 			statusData, err := c.Get(statusPath)
 			if err != nil {
 				if attempts == 39 {
@@ -427,12 +439,12 @@ func authAndCreateProvider(cmd *cobra.Command, providerType string) error {
 			if resolvedID == "" {
 				resolvedID = providerID
 			}
-			SuccessMsg(cmd, "Provider '%s' (Antigravity) added successfully.", resolvedID)
+			SuccessMsg(cmd, "Provider '%s' (%s) added successfully.", resolvedID, oauthLabel)
 			return nil
 		}
 
 		fmt.Fprintln(cmd.OutOrStdout())
-		return fmt.Errorf("authentication timed out waiting for antigravity oauth completion")
+		return fmt.Errorf("authentication timed out waiting for %s oauth completion", providerType)
 	}
 
 	body := map[string]interface{}{

@@ -500,6 +500,27 @@ export const pollAntigravityOAuthStatus = (providerId: string) =>
     `/api/admin/providers/antigravity/oauth-status?provider_id=${encodeURIComponent(providerId)}`,
   )
 
+// ─── OpenAI ChatGPT OAuth ─────────────────────────────────────────────────────
+
+export const startOpenAIOAuth = (providerId?: string) =>
+  apiFetch<{ auth_url: string; state: string; provider_id: string }>(
+    "/api/admin/providers/openai/start-oauth",
+    {
+      method: "POST",
+      body: JSON.stringify({ provider_id: providerId ?? "" }),
+    },
+  )
+
+export const pollOpenAIOAuthStatus = (providerId: string) =>
+  apiFetch<{
+    done: boolean
+    error?: string
+    provider_id?: string
+    is_new?: boolean
+  }>(
+    `/api/admin/providers/openai/oauth-status?provider_id=${encodeURIComponent(providerId)}`,
+  )
+
 // ─── Status / Auth flow ───────────────────────────────────────────────────────
 
 export const getStatus = () => apiFetch<Status>("/api/admin/status")
