@@ -213,7 +213,7 @@ func ParseOpenAISSE(ctx context.Context, body io.ReadCloser, eventCh chan cif.CI
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
+	if err := scanner.Err(); err != nil && !IsBenignStreamEndError(ctx, err) {
 		log.Error().Err(err).Str("provider", "openai-compat").Msg("SSE scanner error")
 		eventCh <- cif.CIFStreamError{
 			Type:  "stream_error",

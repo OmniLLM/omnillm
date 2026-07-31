@@ -440,7 +440,7 @@ func ParseResponsesSSE(ctx context.Context, body io.ReadCloser, eventCh chan cif
 
 	flushEvent()
 
-	if err := scanner.Err(); err != nil {
+	if err := scanner.Err(); err != nil && !shared.IsBenignStreamEndError(ctx, err) {
 		log.Error().Err(err).Str("provider", "openaicompat").Msg("Responses SSE scanner error")
 		eventCh <- cif.CIFStreamError{
 			Type:  "stream_error",

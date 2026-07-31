@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/net/http2"
 )
 
 // Default upstream timeouts.
@@ -46,7 +48,7 @@ func TimeoutFromEnv(key string, def time.Duration) time.Duration {
 // Callers that need a streaming client should omit Timeout (set it to 0) so
 // long-lived SSE connections are not cut off by an idle timeout.
 func DefaultHTTPTransport() *http.Transport {
-	return &http.Transport{
+	t := &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
 		ForceAttemptHTTP2:     true,
 		MaxIdleConns:          100,
@@ -56,6 +58,20 @@ func DefaultHTTPTransport() *http.Transport {
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 	}
+
+	// Reasoning models can think for minutes before emitting their first SSE
+	// token. Without HTTP/2 keepalive pings, an idle-but-healthy stream is
+	// indistinguishable from a dead one to intermediaries, which eventually
+	// reset it — surfacing as "stream error: ...; INTERNAL_ERROR; received
+	// from peer" after a long silence. Pinging keeps the connection provably
+	// alive and, just as importantly, fails fast when it genuinely is dead
+	// instead of hanging until the client gives up.
+	if h2, err := http2.ConfigureTransports(t); err == nil {
+		h2.ReadIdleTimeout = 30 * time.Second
+		h2.PingTimeout = 15 * time.Second
+	}
+
+	return t
 }
 
 // DefaultHTTPClient returns an *http.Client suitable for non-streaming

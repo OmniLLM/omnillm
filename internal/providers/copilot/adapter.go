@@ -246,7 +246,7 @@ func (a *CopilotAdapter) executeOpenAIStreamWithRetry(ctx context.Context, reque
 	}
 
 	eventCh := make(chan cif.CIFStreamEvent, 64)
-	go a.parseOpenAISSE(resp.Body, eventCh, toolNameMapper)
+	go a.parseOpenAISSE(ctx, resp.Body, eventCh, toolNameMapper)
 	return eventCh, nil
 }
 

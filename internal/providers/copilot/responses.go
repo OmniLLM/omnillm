@@ -555,7 +555,7 @@ func parseResponsesSSE(ctx context.Context, body io.ReadCloser, eventCh chan cif
 	}
 	flush()
 
-	if err := scanner.Err(); err != nil {
+	if err := scanner.Err(); err != nil && !shared.IsBenignStreamEndError(ctx, err) {
 		log.Error().Err(err).Str("provider", "copilot").Msg("responses SSE scanner error")
 		eventCh <- cif.CIFStreamError{
 			Type:  "stream_error",
