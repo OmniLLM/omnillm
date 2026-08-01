@@ -2,10 +2,12 @@ package commands
 
 import (
 	"bufio"
+	"crypto/rand"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"hash/fnv"
 	"io"
+	mathrand "math/rand"
 	"net/http"
 	"os"
 	"regexp"
@@ -106,6 +108,13 @@ func runLogsTail(cmd *cobra.Command) error {
 	}
 
 	useColor := !asJSON && IsTerminalWriter(out) && os.Getenv("NO_COLOR") == ""
+	var colorAllocator *correlationColorAllocator
+	if useColor && !hideFields {
+		colorAllocator, err = newCorrelationColorAllocator()
+		if err != nil {
+			return fmt.Errorf("initialize log colors: %w", err)
+		}
+	}
 
 	scanner := bufio.NewScanner(resp.Body)
 	// Log lines carrying request/response payloads can exceed the 64KiB default
@@ -140,7 +149,7 @@ func runLogsTail(cmd *cobra.Command) error {
 			continue
 		}
 
-		fmt.Fprintln(out, entry.Render(useColor, hideFields))
+		fmt.Fprintln(out, entry.Render(useColor, hideFields, colorAllocator))
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -207,7 +216,7 @@ func parseLogPayload(payload string) LogEntry {
 }
 
 // Render formats the entry for human consumption.
-func (e LogEntry) Render(useColor, hideFields bool) string {
+func (e LogEntry) Render(useColor, hideFields bool, colorAllocator *correlationColorAllocator) string {
 	ts := e.Time
 	if ts == "" {
 		ts = time.Now().Format("15:04:05")
@@ -235,13 +244,13 @@ func (e LogEntry) Render(useColor, hideFields bool) string {
 
 	if !hideFields && len(e.Fields) > 0 {
 		b.WriteString("  ")
-		writeLogFields(&b, e.Fields, useColor)
+		writeLogFields(&b, e.Fields, useColor, colorAllocator)
 	}
 	return b.String()
 }
 
 // writeLogFields highlights correlation fields while leaving other metadata dim.
-func writeLogFields(b *strings.Builder, fields []string, useColor bool) {
+func writeLogFields(b *strings.Builder, fields []string, useColor bool, allocator *correlationColorAllocator) {
 	for i, field := range fields {
 		if i > 0 {
 			b.WriteByte(' ')
@@ -252,8 +261,8 @@ func writeLogFields(b *strings.Builder, fields []string, useColor bool) {
 		}
 
 		color := colorDim
-		if value, ok := correlationFieldValue(field); ok {
-			color = correlationColor(value)
+		if value, ok := correlationFieldValue(field); ok && allocator != nil {
+			color = allocator.color(value)
 		}
 		b.WriteString(color)
 		b.WriteString(field)
@@ -275,38 +284,64 @@ func correlationFieldValue(field string) (string, bool) {
 	}
 }
 
-// correlationColor deterministically maps an identifier to a terminal color.
-func correlationColor(value string) string {
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(value))
+const correlationColorFloor = 80
 
-	// Walk the RGB color wheel with a raised floor so every generated color
-	// remains readable on dark terminal backgrounds.
-	const (
-		colorFloor = 80
-		colorRange = 256 - colorFloor
-	)
-	position := int(h.Sum32() % (6 * colorRange))
-	sector, offset := position/colorRange, position%colorRange
-	ascending, descending := colorFloor+offset, 255-offset
+type correlationColorAllocator struct {
+	colors []uint32
+	byID   map[string]string
+	next   int
+}
 
-	var red, green, blue int
-	switch sector {
-	case 0:
-		red, green, blue = 255, ascending, colorFloor
-	case 1:
-		red, green, blue = descending, 255, colorFloor
-	case 2:
-		red, green, blue = colorFloor, 255, ascending
-	case 3:
-		red, green, blue = colorFloor, descending, 255
-	case 4:
-		red, green, blue = ascending, colorFloor, 255
-	default:
-		red, green, blue = 255, colorFloor, descending
+func newCorrelationColorAllocator() (*correlationColorAllocator, error) {
+	var seedBytes [8]byte
+	if _, err := rand.Read(seedBytes[:]); err != nil {
+		return nil, err
+	}
+	seed := int64(binary.LittleEndian.Uint64(seedBytes[:]))
+	return newCorrelationColorAllocatorWithColors(correlationColorPalette(), mathrand.New(mathrand.NewSource(seed))), nil
+}
+
+func newCorrelationColorAllocatorWithColors(colors []uint32, rng *mathrand.Rand) *correlationColorAllocator {
+	shuffled := append([]uint32(nil), colors...)
+	rng.Shuffle(len(shuffled), func(i, j int) {
+		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+	})
+	return &correlationColorAllocator{
+		colors: shuffled,
+		byID:   make(map[string]string),
+	}
+}
+
+func correlationColorPalette() []uint32 {
+	const channelCount = 256 - correlationColorFloor
+	colors := make([]uint32, 0, channelCount*channelCount*channelCount-(channelCount-1)*(channelCount-1)*(channelCount-1))
+	for red := correlationColorFloor; red <= 255; red++ {
+		for green := correlationColorFloor; green <= 255; green++ {
+			for blue := correlationColorFloor; blue <= 255; blue++ {
+				if red != 255 && green != 255 && blue != 255 {
+					continue
+				}
+				colors = append(colors, uint32(red<<16|green<<8|blue))
+			}
+		}
+	}
+	return colors
+}
+
+func (a *correlationColorAllocator) color(value string) string {
+	if color, ok := a.byID[value]; ok {
+		return color
+	}
+	if a.next >= len(a.colors) {
+		a.byID[value] = colorDim
+		return colorDim
 	}
 
-	return fmt.Sprintf("\x1b[38;2;%d;%d;%dm", red, green, blue)
+	rgb := a.colors[a.next]
+	a.next++
+	color := fmt.Sprintf("\x1b[38;2;%d;%d;%dm", rgb>>16, rgb>>8&0xff, rgb&0xff)
+	a.byID[value] = color
+	return color
 }
 
 // ANSI colors for log level rendering.
