@@ -961,6 +961,86 @@ func TestParseLogPayloadPipeLevelFilteringWorks(t *testing.T) {
 	}
 }
 
+func TestCorrelationFieldValue(t *testing.T) {
+	tests := []struct {
+		field string
+		value string
+		ok    bool
+	}{
+		{"request=abc", "abc", true},
+		{"request_id=abc", "abc", true},
+		{"session=abc", "abc", true},
+		{"SESSION_ID=abc", "abc", true},
+		{"request=abc=def", "abc=def", true},
+		{"request_count=abc", "", false},
+		{"user_session=abc", "", false},
+		{"request=", "", false},
+		{"malformed", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.field, func(t *testing.T) {
+			value, ok := correlationFieldValue(tt.field)
+			if value != tt.value || ok != tt.ok {
+				t.Fatalf("correlationFieldValue(%q) = (%q, %v), want (%q, %v)", tt.field, value, ok, tt.value, tt.ok)
+			}
+		})
+	}
+}
+
+func TestCorrelationColorIsDeterministic(t *testing.T) {
+	const id = "ca7eadfcd0e5b491"
+	if got, want := correlationColor(id), correlationColor(id); got != want {
+		t.Fatalf("same ID colors differ: %q != %q", got, want)
+	}
+
+	first := correlationColor("request-a")
+	foundDifferent := false
+	for _, id := range []string{"request-b", "request-c", "request-d"} {
+		if correlationColor(id) != first {
+			foundDifferent = true
+			break
+		}
+	}
+	if !foundDifferent {
+		t.Fatal("representative IDs all mapped to the same color")
+	}
+}
+
+func TestLogEntryRenderCorrelationFields(t *testing.T) {
+	entry := LogEntry{
+		Time:    "2026-07-31T10:00:00Z",
+		Level:   "info",
+		Source:  "backend",
+		Message: "completed",
+		Fields:  []string{"request=abc", "latency=42ms", "session_id=abc"},
+	}
+
+	colored := entry.Render(true, false)
+	correlation := correlationColor("abc")
+	for _, field := range []string{"request=abc", "session_id=abc"} {
+		if !strings.Contains(colored, correlation+field+colorReset) {
+			t.Errorf("colored output does not correlate %q: %q", field, colored)
+		}
+	}
+	if !strings.Contains(colored, colorDim+"latency=42ms"+colorReset) {
+		t.Errorf("ordinary field is not dim: %q", colored)
+	}
+
+	plain := entry.Render(false, false)
+	if strings.Contains(plain, "\x1b[") {
+		t.Errorf("plain output contains ANSI escapes: %q", plain)
+	}
+	if !strings.Contains(plain, "request=abc latency=42ms session_id=abc") {
+		t.Errorf("plain field order changed: %q", plain)
+	}
+
+	hidden := entry.Render(true, true)
+	if strings.Contains(hidden, "request=abc") || strings.Contains(hidden, "session_id=abc") {
+		t.Errorf("hidden fields leaked: %q", hidden)
+	}
+}
+
 func TestLogsCmdRunnableWithoutSubcommand(t *testing.T) {
 	if LogsCmd.RunE == nil {
 		t.Error("logs: expected bare command to be runnable")

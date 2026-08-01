@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"net/http"
 	"os"
@@ -233,27 +234,79 @@ func (e LogEntry) Render(useColor, hideFields bool) string {
 	}
 
 	if !hideFields && len(e.Fields) > 0 {
-		joined := strings.Join(e.Fields, " ")
-		if useColor {
-			fmt.Fprintf(&b, "  %s%s%s", colorDim, joined, colorReset)
-		} else {
-			fmt.Fprintf(&b, "  %s", joined)
-		}
+		b.WriteString("  ")
+		writeLogFields(&b, e.Fields, useColor)
 	}
 	return b.String()
 }
 
+// writeLogFields highlights correlation fields while leaving other metadata dim.
+func writeLogFields(b *strings.Builder, fields []string, useColor bool) {
+	for i, field := range fields {
+		if i > 0 {
+			b.WriteByte(' ')
+		}
+		if !useColor {
+			b.WriteString(field)
+			continue
+		}
+
+		color := colorDim
+		if value, ok := correlationFieldValue(field); ok {
+			color = correlationColor(value)
+		}
+		b.WriteString(color)
+		b.WriteString(field)
+		b.WriteString(colorReset)
+	}
+}
+
+func correlationFieldValue(field string) (string, bool) {
+	key, value, ok := strings.Cut(field, "=")
+	if !ok || value == "" {
+		return "", false
+	}
+
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "request", "request_id", "session", "session_id":
+		return value, true
+	default:
+		return "", false
+	}
+}
+
+// correlationColor deterministically maps an identifier to a terminal color.
+// The finite palette permits occasional collisions between unrelated identifiers.
+func correlationColor(value string) string {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(value))
+	return correlationColors[int(h.Sum32()%uint32(len(correlationColors)))]
+}
+
 // ANSI colors for log level rendering.
 const (
-	colorReset   = "\x1b[0m"
-	colorDim     = "\x1b[90m"
-	colorRed     = "\x1b[31m"
-	colorBoldRed = "\x1b[1;31m"
-	colorYellow  = "\x1b[33m"
-	colorGreen   = "\x1b[32m"
-	colorCyan    = "\x1b[36m"
-	colorMagenta = "\x1b[35m"
+	colorReset      = "\x1b[0m"
+	colorDim        = "\x1b[90m"
+	colorRed        = "\x1b[31m"
+	colorBoldRed    = "\x1b[1;31m"
+	colorYellow     = "\x1b[33m"
+	colorGreen      = "\x1b[32m"
+	colorCyan       = "\x1b[36m"
+	colorMagenta    = "\x1b[35m"
+	colorBlue       = "\x1b[34m"
+	colorBrightBlue = "\x1b[94m"
+	colorBrightCyan = "\x1b[96m"
 )
+
+var correlationColors = [...]string{
+	colorYellow,
+	colorGreen,
+	colorCyan,
+	colorMagenta,
+	colorBlue,
+	colorBrightBlue,
+	colorBrightCyan,
+}
 
 // levelColor returns the ANSI color for a log level.
 func levelColor(level string) string {
