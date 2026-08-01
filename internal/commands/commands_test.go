@@ -3,6 +3,7 @@ package commands
 import (
 	"bytes"
 	"fmt"
+	mathrand "math/rand"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -989,36 +990,60 @@ func TestCorrelationFieldValue(t *testing.T) {
 	}
 }
 
-func TestCorrelationColorIsDeterministic(t *testing.T) {
-	const id = "ca7eadfcd0e5b491"
-	if got, want := correlationColor(id), correlationColor(id); got != want {
-		t.Fatalf("same ID colors differ: %q != %q", got, want)
+func TestCorrelationColorAllocator(t *testing.T) {
+	allocator := newCorrelationColorAllocatorWithColors(correlationColorPalette(), mathrand.New(mathrand.NewSource(1)))
+
+	first := allocator.color("request-a")
+	if got := allocator.color("request-a"); got != first {
+		t.Fatalf("same ID colors differ: %q != %q", got, first)
 	}
-	for _, id := range []string{"ca7eadfcd0e5b491", "request-a", "request-b", "request-c", "request-d"} {
+
+	seen := map[string]struct{}{first: {}}
+	for _, id := range []string{"request-b", "request-c", "request-d"} {
+		color := allocator.color(id)
+		if _, ok := seen[color]; ok {
+			t.Fatalf("distinct ID %q reused color %q", id, color)
+		}
+		seen[color] = struct{}{}
+
 		var red, green, blue int
-		if got, scanned := fmt.Sscanf(correlationColor(id), "\x1b[38;2;%d;%d;%dm", &red, &green, &blue); got != 3 || scanned != nil {
-			t.Fatalf("correlationColor(%q) = %q, want ANSI true-color sequence", id, correlationColor(id))
+		if got, scanned := fmt.Sscanf(color, "\x1b[38;2;%d;%d;%dm", &red, &green, &blue); got != 3 || scanned != nil {
+			t.Fatalf("allocator.color(%q) = %q, want ANSI true-color sequence", id, color)
 		}
 		for _, channel := range []int{red, green, blue} {
-			if channel < 80 || channel > 255 {
-				t.Fatalf("correlationColor(%q) channel = %d, want 80..255", id, channel)
+			if channel < correlationColorFloor || channel > 255 {
+				t.Fatalf("allocator.color(%q) channel = %d, want %d..255", id, channel, correlationColorFloor)
 			}
 		}
 		if red != 255 && green != 255 && blue != 255 {
-			t.Fatalf("correlationColor(%q) = rgb(%d, %d, %d), want a saturated channel", id, red, green, blue)
+			t.Fatalf("allocator.color(%q) = rgb(%d, %d, %d), want a saturated channel", id, red, green, blue)
 		}
 	}
+}
 
-	first := correlationColor("request-a")
-	foundDifferent := false
-	for _, id := range []string{"request-b", "request-c", "request-d"} {
-		if correlationColor(id) != first {
-			foundDifferent = true
-			break
-		}
+func TestCorrelationColorAllocatorExhaustion(t *testing.T) {
+	allocator := newCorrelationColorAllocatorWithColors([]uint32{0xff5050, 0x50ff50}, mathrand.New(mathrand.NewSource(1)))
+	first := allocator.color("first")
+	second := allocator.color("second")
+	if first == second {
+		t.Fatalf("distinct IDs reused color %q", first)
 	}
-	if !foundDifferent {
-		t.Fatal("representative IDs all mapped to the same color")
+	if got := allocator.color("third"); got != colorDim {
+		t.Fatalf("exhausted allocator color = %q, want %q", got, colorDim)
+	}
+	if got := allocator.color("third"); got != colorDim {
+		t.Fatalf("exhausted ID color changed to %q", got)
+	}
+}
+
+func TestCorrelationColorPaletteIsUnique(t *testing.T) {
+	palette := correlationColorPalette()
+	seen := make(map[uint32]struct{}, len(palette))
+	for _, color := range palette {
+		if _, ok := seen[color]; ok {
+			t.Fatalf("duplicate palette color %#06x", color)
+		}
+		seen[color] = struct{}{}
 	}
 }
 
@@ -1031,8 +1056,9 @@ func TestLogEntryRenderCorrelationFields(t *testing.T) {
 		Fields:  []string{"request=abc", "latency=42ms", "session_id=abc"},
 	}
 
-	colored := entry.Render(true, false)
-	correlation := correlationColor("abc")
+	allocator := newCorrelationColorAllocatorWithColors(correlationColorPalette(), mathrand.New(mathrand.NewSource(1)))
+	colored := entry.Render(true, false, allocator)
+	correlation := allocator.color("abc")
 	for _, field := range []string{"request=abc", "session_id=abc"} {
 		if !strings.Contains(colored, correlation+field+colorReset) {
 			t.Errorf("colored output does not correlate %q: %q", field, colored)
@@ -1042,7 +1068,7 @@ func TestLogEntryRenderCorrelationFields(t *testing.T) {
 		t.Errorf("ordinary field is not dim: %q", colored)
 	}
 
-	plain := entry.Render(false, false)
+	plain := entry.Render(false, false, nil)
 	if strings.Contains(plain, "\x1b[") {
 		t.Errorf("plain output contains ANSI escapes: %q", plain)
 	}
@@ -1050,7 +1076,7 @@ func TestLogEntryRenderCorrelationFields(t *testing.T) {
 		t.Errorf("plain field order changed: %q", plain)
 	}
 
-	hidden := entry.Render(true, true)
+	hidden := entry.Render(true, true, allocator)
 	if strings.Contains(hidden, "request=abc") || strings.Contains(hidden, "session_id=abc") {
 		t.Errorf("hidden fields leaked: %q", hidden)
 	}
