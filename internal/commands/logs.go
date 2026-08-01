@@ -276,37 +276,50 @@ func correlationFieldValue(field string) (string, bool) {
 }
 
 // correlationColor deterministically maps an identifier to a terminal color.
-// The finite palette permits occasional collisions between unrelated identifiers.
 func correlationColor(value string) string {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(value))
-	return correlationColors[int(h.Sum32()%uint32(len(correlationColors)))]
+
+	// Walk the RGB color wheel with a raised floor so every generated color
+	// remains readable on dark terminal backgrounds.
+	const (
+		colorFloor = 80
+		colorRange = 256 - colorFloor
+	)
+	position := int(h.Sum32() % (6 * colorRange))
+	sector, offset := position/colorRange, position%colorRange
+	ascending, descending := colorFloor+offset, 255-offset
+
+	var red, green, blue int
+	switch sector {
+	case 0:
+		red, green, blue = 255, ascending, colorFloor
+	case 1:
+		red, green, blue = descending, 255, colorFloor
+	case 2:
+		red, green, blue = colorFloor, 255, ascending
+	case 3:
+		red, green, blue = colorFloor, descending, 255
+	case 4:
+		red, green, blue = ascending, colorFloor, 255
+	default:
+		red, green, blue = 255, colorFloor, descending
+	}
+
+	return fmt.Sprintf("\x1b[38;2;%d;%d;%dm", red, green, blue)
 }
 
 // ANSI colors for log level rendering.
 const (
-	colorReset      = "\x1b[0m"
-	colorDim        = "\x1b[90m"
-	colorRed        = "\x1b[31m"
-	colorBoldRed    = "\x1b[1;31m"
-	colorYellow     = "\x1b[33m"
-	colorGreen      = "\x1b[32m"
-	colorCyan       = "\x1b[36m"
-	colorMagenta    = "\x1b[35m"
-	colorBlue       = "\x1b[34m"
-	colorBrightBlue = "\x1b[94m"
-	colorBrightCyan = "\x1b[96m"
+	colorReset   = "\x1b[0m"
+	colorDim     = "\x1b[90m"
+	colorRed     = "\x1b[31m"
+	colorBoldRed = "\x1b[1;31m"
+	colorYellow  = "\x1b[33m"
+	colorGreen   = "\x1b[32m"
+	colorCyan    = "\x1b[36m"
+	colorMagenta = "\x1b[35m"
 )
-
-var correlationColors = [...]string{
-	colorYellow,
-	colorGreen,
-	colorCyan,
-	colorMagenta,
-	colorBlue,
-	colorBrightBlue,
-	colorBrightCyan,
-}
 
 // levelColor returns the ANSI color for a log level.
 func levelColor(level string) string {
