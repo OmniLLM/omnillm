@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog"
 )
 
 func TestMain(m *testing.M) {
@@ -50,6 +51,37 @@ func newAuthenticatedRequest(t *testing.T, method, url string, body io.Reader) *
 	}
 	req.Header.Set("Authorization", "Bearer test-api-key")
 	return req
+}
+
+func TestRequestLoggingContextIncludesRequestID(t *testing.T) {
+	chatOptions := routes.ChatCompletionOptions{
+		RateLimiter:    ratelimit.NewRateLimiter(0, false),
+		ManualApproval: false,
+	}
+	r := buildRouter(0, "", chatOptions, 0)
+	r.GET("/test/request-logger", func(c *gin.Context) {
+		var output strings.Builder
+		contextLogger := zerolog.Ctx(c.Request.Context()).Output(&output)
+		contextLogger.Info().Msg("context log")
+		c.String(http.StatusOK, output.String())
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/test/request-logger", nil)
+	r.ServeHTTP(rec, req)
+
+	requestID := rec.Header().Get("X-Request-Id")
+	if requestID == "" {
+		t.Fatal("expected X-Request-Id response header")
+	}
+
+	var event map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &event); err != nil {
+		t.Fatalf("decode context log: %v", err)
+	}
+	if got := event["request_id"]; got != requestID {
+		t.Fatalf("context request_id = %v, want %q", got, requestID)
+	}
 }
 
 // ─── Health endpoints ───

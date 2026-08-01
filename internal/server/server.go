@@ -24,13 +24,13 @@ import (
 	"omnillm/internal/lib/ratelimit"
 	alibabapkg "omnillm/internal/providers/alibaba"
 	antigravitypkg "omnillm/internal/providers/antigravity"
-	openaipkg "omnillm/internal/providers/openai"
 	azurepkg "omnillm/internal/providers/azure"
 	codexpkg "omnillm/internal/providers/codex"
 	"omnillm/internal/providers/copilot"
 	googlepkg "omnillm/internal/providers/google"
 	kimipkg "omnillm/internal/providers/kimi"
 	modelscopepkg "omnillm/internal/providers/modelscope"
+	openaipkg "omnillm/internal/providers/openai"
 	openaicompatprovider "omnillm/internal/providers/openaicompatprovider"
 	"omnillm/internal/providers/types"
 	"omnillm/internal/registry"
@@ -202,6 +202,8 @@ func buildRouter(port int, apiKey string, chatOptions routes.ChatCompletionOptio
 		requestID := generateRequestID()
 		c.Set("request_id", requestID)
 		c.Header("X-Request-Id", requestID)
+		requestLogger := log.With().Str("request_id", requestID).Logger()
+		c.Request = c.Request.WithContext(requestLogger.WithContext(c.Request.Context()))
 
 		start := time.Now()
 		c.Next()
@@ -210,8 +212,7 @@ func buildRouter(port int, apiKey string, chatOptions routes.ChatCompletionOptio
 		latencyMs := duration.Milliseconds()
 		status := c.Writer.Status()
 
-		log.Info().
-			Str("request_id", requestID).
+		requestLogger.Info().
 			Str("method", c.Request.Method).
 			Str("path", c.Request.RequestURI).
 			Int("status", status).
