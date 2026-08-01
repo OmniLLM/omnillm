@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -992,6 +993,20 @@ func TestCorrelationColorIsDeterministic(t *testing.T) {
 	const id = "ca7eadfcd0e5b491"
 	if got, want := correlationColor(id), correlationColor(id); got != want {
 		t.Fatalf("same ID colors differ: %q != %q", got, want)
+	}
+	for _, id := range []string{"ca7eadfcd0e5b491", "request-a", "request-b", "request-c", "request-d"} {
+		var red, green, blue int
+		if got, scanned := fmt.Sscanf(correlationColor(id), "\x1b[38;2;%d;%d;%dm", &red, &green, &blue); got != 3 || scanned != nil {
+			t.Fatalf("correlationColor(%q) = %q, want ANSI true-color sequence", id, correlationColor(id))
+		}
+		for _, channel := range []int{red, green, blue} {
+			if channel < 80 || channel > 255 {
+				t.Fatalf("correlationColor(%q) channel = %d, want 80..255", id, channel)
+			}
+		}
+		if red != 255 && green != 255 && blue != 255 {
+			t.Fatalf("correlationColor(%q) = rgb(%d, %d, %d), want a saturated channel", id, red, green, blue)
+		}
 	}
 
 	first := correlationColor("request-a")
