@@ -22,42 +22,46 @@ type StreamAccumulator struct {
 	errored    bool
 	ended      bool
 
-	// Per content-block accumulation, keyed by block index.
-	textByBlock     map[int]*string
-	thinkingByBlock map[int]*string
-	sigByBlock      map[int]*string
-	toolByBlock     map[int]*toolAccum
-	order           []int // block indices in first-seen order
+	blocks      []*blockAccum
+	openByIndex map[int]*blockAccum
+}
+
+type blockKind uint8
+
+const (
+	blockText blockKind = iota + 1
+	blockThinking
+	blockTool
+)
+
+type blockAccum struct {
+	kind      blockKind
+	text      string
+	signature *string
+	tool      toolAccum
 }
 
 type toolAccum struct {
-	id     string
-	name   string
+	id   string
+	name string
+	args map[string]interface{}
+
 	rawArgs string
-	args   map[string]interface{}
 }
 
 // NewStreamAccumulator returns a ready accumulator.
 func NewStreamAccumulator() *StreamAccumulator {
-	return &StreamAccumulator{
-		textByBlock:     map[int]*string{},
-		thinkingByBlock: map[int]*string{},
-		sigByBlock:      map[int]*string{},
-		toolByBlock:     map[int]*toolAccum{},
-	}
+	return &StreamAccumulator{openByIndex: make(map[int]*blockAccum)}
 }
 
-func (a *StreamAccumulator) seen(idx int) {
-	if _, ok := a.textByBlock[idx]; ok {
-		return
+func (a *StreamAccumulator) openBlock(idx int, kind blockKind) *blockAccum {
+	if block := a.openByIndex[idx]; block != nil && block.kind == kind {
+		return block
 	}
-	if _, ok := a.thinkingByBlock[idx]; ok {
-		return
-	}
-	if _, ok := a.toolByBlock[idx]; ok {
-		return
-	}
-	a.order = append(a.order, idx)
+	block := &blockAccum{kind: kind}
+	a.blocks = append(a.blocks, block)
+	a.openByIndex[idx] = block
+	return block
 }
 
 // Observe consumes one CIF stream event.
@@ -83,56 +87,42 @@ func (a *StreamAccumulator) Observe(event cif.CIFStreamEvent) {
 
 func (a *StreamAccumulator) observeDelta(e cif.CIFContentDelta) {
 	idx := e.Index
-	// A new block announces its concrete type via ContentBlock. NOTE: some
-	// upstreams (e.g. Copilot) attach the ContentBlock on EVERY delta, not just
-	// the first, so we must only initialize a block the first time we see its
-	// index — never re-seed, or we'd wipe already-accumulated text.
+	// Some upstreams re-attach ContentBlock on every delta. Reuse an open block
+	// of the same kind so repeated announcements do not reset accumulated data.
 	if e.ContentBlock != nil {
 		switch cb := e.ContentBlock.(type) {
 		case cif.CIFToolCallPart:
-			if _, exists := a.toolByBlock[idx]; !exists {
-				a.seen(idx)
-				a.toolByBlock[idx] = &toolAccum{id: cb.ToolCallID, name: cb.ToolName, args: cb.ToolArguments}
+			block := a.openBlock(idx, blockTool)
+			block.tool.id = cb.ToolCallID
+			block.tool.name = cb.ToolName
+			// Providers announce a tool call with an empty-but-non-nil
+			// ToolArguments map and stream the real arguments as deltas.
+			if len(cb.ToolArguments) > 0 {
+				block.tool.args = cb.ToolArguments
 			}
 		case cif.CIFTextPart:
-			if _, exists := a.textByBlock[idx]; !exists {
-				a.seen(idx)
-				s := cb.Text
-				a.textByBlock[idx] = &s
+			block := a.openBlock(idx, blockText)
+			if block.text == "" {
+				block.text = cb.Text
 			}
 		case cif.CIFThinkingPart:
-			if _, exists := a.thinkingByBlock[idx]; !exists {
-				a.seen(idx)
-				s := cb.Thinking
-				a.thinkingByBlock[idx] = &s
-				if cb.Signature != nil {
-					a.sigByBlock[idx] = cb.Signature
-				}
+			block := a.openBlock(idx, blockThinking)
+			if block.text == "" {
+				block.text = cb.Thinking
+			}
+			if cb.Signature != nil {
+				block.signature = cb.Signature
 			}
 		}
 	}
 
 	switch d := e.Delta.(type) {
 	case cif.TextDelta:
-		if a.textByBlock[idx] == nil {
-			a.seen(idx)
-			s := ""
-			a.textByBlock[idx] = &s
-		}
-		*a.textByBlock[idx] += d.Text
+		a.openBlock(idx, blockText).text += d.Text
 	case cif.ThinkingDelta:
-		if a.thinkingByBlock[idx] == nil {
-			a.seen(idx)
-			s := ""
-			a.thinkingByBlock[idx] = &s
-		}
-		*a.thinkingByBlock[idx] += d.Thinking
+		a.openBlock(idx, blockThinking).text += d.Thinking
 	case cif.ToolArgumentsDelta:
-		if a.toolByBlock[idx] == nil {
-			a.seen(idx)
-			a.toolByBlock[idx] = &toolAccum{}
-		}
-		a.toolByBlock[idx].rawArgs += d.PartialJSON
+		a.openBlock(idx, blockTool).tool.rawArgs += d.PartialJSON
 	}
 }
 
@@ -149,22 +139,24 @@ func (a *StreamAccumulator) Response() *cif.CanonicalResponse {
 		StopSequence: a.stopSeq,
 		Usage:        a.usage,
 	}
-	for _, idx := range a.order {
-		switch {
-		case a.textByBlock[idx] != nil:
-			resp.Content = append(resp.Content, cif.CIFTextPart{Type: "text", Text: *a.textByBlock[idx]})
-		case a.thinkingByBlock[idx] != nil:
+	for _, block := range a.blocks {
+		switch block.kind {
+		case blockText:
+			resp.Content = append(resp.Content, cif.CIFTextPart{Type: "text", Text: block.text})
+		case blockThinking:
 			resp.Content = append(resp.Content, cif.CIFThinkingPart{
-				Type: "thinking", Thinking: *a.thinkingByBlock[idx], Signature: a.sigByBlock[idx],
+				Type: "thinking", Thinking: block.text, Signature: block.signature,
 			})
-		case a.toolByBlock[idx] != nil:
-			ta := a.toolByBlock[idx]
-			args := ta.args
-			if args == nil {
-				args = decodeToolArgs(ta.rawArgs)
+		case blockTool:
+			args := block.tool.args
+			if block.tool.rawArgs != "" {
+				args = decodeToolArgs(block.tool.rawArgs)
 			}
 			resp.Content = append(resp.Content, cif.CIFToolCallPart{
-				Type: "tool_call", ToolCallID: ta.id, ToolName: ta.name, ToolArguments: args,
+				Type:          "tool_call",
+				ToolCallID:    block.tool.id,
+				ToolName:      block.tool.name,
+				ToolArguments: args,
 			})
 		}
 	}

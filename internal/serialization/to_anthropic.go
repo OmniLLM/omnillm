@@ -100,6 +100,13 @@ func SerializeToAnthropicWithSuppression(response *cif.CanonicalResponse, suppre
 	return anthropicResp, nil
 }
 
+// anthropicOpenBlock is one content block that has been announced to the client
+// with content_block_start but not yet closed with content_block_stop.
+type anthropicOpenBlock struct {
+	AnthropicIdx int
+	BlockType    string
+}
+
 type AnthropicStreamState struct {
 	MessageStartSent         bool
 	NextContentBlockIndex    int
@@ -109,6 +116,18 @@ type AnthropicStreamState struct {
 	CurrentBlockType         string
 	SuppressThinkingBlocks   bool
 	SuppressedProviderIdx    int
+	suppressionActive        bool
+
+	// openBlocks maps a provider-side block index to the Anthropic block it was
+	// assigned. Providers interleave deltas for concurrent tool calls (two
+	// parallel tool_use blocks stream their arguments in alternating chunks), so
+	// a single "currently open block" cursor would route each delta to whichever
+	// block happened to be open last — corrupting both. Keeping every open block
+	// addressable by its provider index is what makes interleaving safe.
+	openBlocks map[int]*anthropicOpenBlock
+	// openOrder preserves first-seen provider order so terminal events close
+	// blocks deterministically.
+	openOrder []int
 }
 
 func CreateAnthropicStreamState() *AnthropicStreamState {
@@ -116,7 +135,73 @@ func CreateAnthropicStreamState() *AnthropicStreamState {
 		CurrentBlockProviderIdx:  -1,
 		CurrentBlockAnthropicIdx: -1,
 		SuppressedProviderIdx:    -1,
+		openBlocks:               make(map[int]*anthropicOpenBlock),
 	}
+}
+
+// block returns the open block for a provider index, if any.
+func (s *AnthropicStreamState) block(providerIdx int) *anthropicOpenBlock {
+	if s.openBlocks == nil {
+		return nil
+	}
+	return s.openBlocks[providerIdx]
+}
+
+// openBlock registers a newly announced block against its provider index.
+func (s *AnthropicStreamState) openBlock(providerIdx, anthropicIdx int, blockType string) {
+	if s.openBlocks == nil {
+		s.openBlocks = make(map[int]*anthropicOpenBlock)
+	}
+	if _, exists := s.openBlocks[providerIdx]; !exists {
+		s.openOrder = append(s.openOrder, providerIdx)
+	}
+	s.openBlocks[providerIdx] = &anthropicOpenBlock{AnthropicIdx: anthropicIdx, BlockType: blockType}
+	s.syncCurrent(providerIdx, anthropicIdx, blockType)
+}
+
+// closeBlock removes a block from the open set.
+func (s *AnthropicStreamState) closeBlock(providerIdx int) {
+	delete(s.openBlocks, providerIdx)
+	for i, idx := range s.openOrder {
+		if idx == providerIdx {
+			s.openOrder = append(s.openOrder[:i], s.openOrder[i+1:]...)
+			break
+		}
+	}
+	s.syncCurrent(-1, -1, "")
+}
+
+// closeAll drains every open block in first-seen order.
+func (s *AnthropicStreamState) closeAll() []map[string]interface{} {
+	var events []map[string]interface{}
+	for _, providerIdx := range append([]int(nil), s.openOrder...) {
+		if blk := s.openBlocks[providerIdx]; blk != nil {
+			events = append(events, map[string]interface{}{
+				"type":  "content_block_stop",
+				"index": blk.AnthropicIdx,
+			})
+		}
+		delete(s.openBlocks, providerIdx)
+	}
+	s.openOrder = nil
+	s.syncCurrent(-1, -1, "")
+	return events
+}
+
+// syncCurrent maintains the legacy single-cursor fields. They no longer drive
+// delta routing, but ContentBlockOpen remains meaningful ("is anything open?")
+// and is relied on by callers and tests.
+func (s *AnthropicStreamState) syncCurrent(providerIdx, anthropicIdx int, blockType string) {
+	if providerIdx >= 0 {
+		s.CurrentBlockProviderIdx = providerIdx
+		s.CurrentBlockAnthropicIdx = anthropicIdx
+		s.CurrentBlockType = blockType
+	} else if len(s.openOrder) == 0 {
+		s.CurrentBlockProviderIdx = -1
+		s.CurrentBlockAnthropicIdx = -1
+		s.CurrentBlockType = ""
+	}
+	s.ContentBlockOpen = len(s.openBlocks) > 0
 }
 
 func ConvertCIFEventToAnthropicSSE(event cif.CIFStreamEvent, state *AnthropicStreamState) ([]map[string]interface{}, error) {
@@ -131,6 +216,9 @@ func ConvertCIFEventToAnthropicSSE(event cif.CIFStreamEvent, state *AnthropicStr
 		state.CurrentBlockAnthropicIdx = -1
 		state.CurrentBlockType = ""
 		state.SuppressedProviderIdx = -1
+		state.suppressionActive = false
+		state.openBlocks = make(map[int]*anthropicOpenBlock)
+		state.openOrder = nil
 
 		messageStart := map[string]interface{}{
 			"type": "message_start",
@@ -155,14 +243,16 @@ func ConvertCIFEventToAnthropicSSE(event cif.CIFStreamEvent, state *AnthropicStr
 			if e.ContentBlock != nil {
 				if _, isThinking := e.ContentBlock.(cif.CIFThinkingPart); isThinking {
 					state.SuppressedProviderIdx = e.Index
+					state.suppressionActive = true
 					return events, nil
 				}
 			}
-			if state.SuppressedProviderIdx == e.Index {
+			if state.suppressionActive && state.SuppressedProviderIdx == e.Index {
 				if _, isThinkingDelta := e.Delta.(cif.ThinkingDelta); isThinkingDelta {
 					return events, nil
 				}
 				state.SuppressedProviderIdx = -1
+				state.suppressionActive = false
 			}
 		}
 
@@ -172,16 +262,18 @@ func ConvertCIFEventToAnthropicSSE(event cif.CIFStreamEvent, state *AnthropicStr
 				return events, nil
 			}
 
-			needsNewBlock := !state.ContentBlockOpen ||
-				state.CurrentBlockProviderIdx != e.Index ||
-				state.CurrentBlockType != blockType
-
-			if needsNewBlock {
-				if state.ContentBlockOpen {
+			// Only announce a block the first time this provider index is seen.
+			// Some providers (notably Copilot) re-attach the ContentBlock to
+			// EVERY delta; re-announcing on each one would shred a single tool
+			// call into N blocks, each holding an unparseable JSON fragment.
+			existing := state.block(e.Index)
+			if existing == nil || existing.BlockType != blockType {
+				if existing != nil {
 					events = append(events, map[string]interface{}{
 						"type":  "content_block_stop",
-						"index": state.CurrentBlockAnthropicIdx,
+						"index": existing.AnthropicIdx,
 					})
+					state.closeBlock(e.Index)
 				}
 
 				anthropicIdx := state.NextContentBlockIndex
@@ -192,14 +284,16 @@ func ConvertCIFEventToAnthropicSSE(event cif.CIFStreamEvent, state *AnthropicStr
 					events = append(events, startEvent)
 				}
 
-				state.ContentBlockOpen = true
-				state.CurrentBlockProviderIdx = e.Index
-				state.CurrentBlockAnthropicIdx = anthropicIdx
-				state.CurrentBlockType = blockType
+				state.openBlock(e.Index, anthropicIdx, blockType)
 			}
 		}
 
-		if !state.ContentBlockOpen {
+		// Route this delta to the block that owns e.Index — never to whichever
+		// block merely happens to be open. Concurrent tool calls interleave
+		// their argument deltas, so index-based routing is what keeps each
+		// tool's arguments intact.
+		target := state.block(e.Index)
+		if target == nil {
 			return events, nil
 		}
 
@@ -207,7 +301,7 @@ func ConvertCIFEventToAnthropicSSE(event cif.CIFStreamEvent, state *AnthropicStr
 		case cif.TextDelta:
 			events = append(events, map[string]interface{}{
 				"type":  "content_block_delta",
-				"index": state.CurrentBlockAnthropicIdx,
+				"index": target.AnthropicIdx,
 				"delta": map[string]interface{}{
 					"type": "text_delta",
 					"text": d.Text,
@@ -216,7 +310,7 @@ func ConvertCIFEventToAnthropicSSE(event cif.CIFStreamEvent, state *AnthropicStr
 		case cif.ThinkingDelta:
 			events = append(events, map[string]interface{}{
 				"type":  "content_block_delta",
-				"index": state.CurrentBlockAnthropicIdx,
+				"index": target.AnthropicIdx,
 				"delta": map[string]interface{}{
 					"type":     "thinking_delta",
 					"thinking": d.Thinking,
@@ -225,7 +319,7 @@ func ConvertCIFEventToAnthropicSSE(event cif.CIFStreamEvent, state *AnthropicStr
 		case cif.ToolArgumentsDelta:
 			events = append(events, map[string]interface{}{
 				"type":  "content_block_delta",
-				"index": state.CurrentBlockAnthropicIdx,
+				"index": target.AnthropicIdx,
 				"delta": map[string]interface{}{
 					"type":         "input_json_delta",
 					"partial_json": d.PartialJSON,
@@ -234,25 +328,16 @@ func ConvertCIFEventToAnthropicSSE(event cif.CIFStreamEvent, state *AnthropicStr
 		}
 
 	case cif.CIFContentBlockStop:
-		if state.ContentBlockOpen {
+		if blk := state.block(e.Index); blk != nil {
 			events = append(events, map[string]interface{}{
 				"type":  "content_block_stop",
-				"index": state.CurrentBlockAnthropicIdx,
+				"index": blk.AnthropicIdx,
 			})
-			state.ContentBlockOpen = false
-			state.CurrentBlockProviderIdx = -1
-			state.CurrentBlockAnthropicIdx = -1
-			state.CurrentBlockType = ""
+			state.closeBlock(e.Index)
 		}
 
 	case cif.CIFStreamEnd:
-		if state.ContentBlockOpen {
-			events = append(events, map[string]interface{}{
-				"type":  "content_block_stop",
-				"index": state.CurrentBlockAnthropicIdx,
-			})
-			state.ContentBlockOpen = false
-		}
+		events = append(events, state.closeAll()...)
 
 		messageDelta := map[string]interface{}{
 			"type": "message_delta",
@@ -379,13 +464,7 @@ func FinalizeAnthropicStream(state *AnthropicStreamState, stopReason cif.CIFStop
 	}
 
 	var events []map[string]interface{}
-	if state.ContentBlockOpen {
-		events = append(events, map[string]interface{}{
-			"type":  "content_block_stop",
-			"index": state.CurrentBlockAnthropicIdx,
-		})
-		state.ContentBlockOpen = false
-	}
+	events = append(events, state.closeAll()...)
 
 	events = append(events, map[string]interface{}{
 		"type": "message_delta",
