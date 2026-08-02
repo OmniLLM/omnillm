@@ -10,10 +10,42 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  spec:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Fetch pull request base
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: git fetch --no-tags origin "$BASE_REF"
+
+      - name: Validate specifications
+        run: bun run spec:validate
+
+      - name: Enforce specification changes
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+          SPEC_GATE_BEFORE: ${{ github.event.before }}
+        run: bun run spec:gate
+
+  test:
+    needs: spec
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -35,9 +67,12 @@ jobs:
         run: bun run build
 
   go:
+    needs: spec
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-go@v5
         with:

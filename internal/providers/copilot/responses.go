@@ -5,10 +5,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -375,6 +373,7 @@ func (a *CopilotAdapter) executeResponsesWithRetry(ctx context.Context, request 
 		logCopilotElapsed(a.provider.GetInstanceID(), "responses", request.Model, started, "Copilot upstream request completed")
 	}
 	if err != nil {
+		a.logUpstreamTimeout(ctx, request, "responses", copilotResponsesBudget(), elapsed, err)
 		// Retry once on timeout — but only for *early* timeouts (TLS/connect/
 		// transient transport failures). If we burned the full client budget
 		// the upstream is simply slow or stalled; retrying just doubles the
@@ -483,14 +482,7 @@ func worthRetryingAfter(elapsed, budget time.Duration) bool {
 // shouldRetryCopilotResponsesTimeout returns true when a /responses request
 // timed out and a single retry is warranted.
 func shouldRetryCopilotResponsesTimeout(err error) bool {
-	if errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-	var netErr net.Error
-	if errors.As(err, &netErr) && netErr.Timeout() {
-		return true
-	}
-	return strings.Contains(strings.ToLower(err.Error()), "client.timeout exceeded")
+	return isTimeoutError(err)
 }
 
 // ---------------------------------------------------------------------------

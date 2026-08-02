@@ -15,13 +15,16 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
-// Shared HTTP clients. Chat completions and /responses get separate budgets:
-// /responses fronts reasoning models that can think for minutes before
-// emitting headers, so a chat-sized cap would make them structurally
-// impossible to satisfy. The stream client has no timeout at all.
+// Shared HTTP clients. Ordinary calls keep a short total budget. Claude chat
+// completions and /responses get reasoning-sized response-header budgets, and
+// streaming bodies remain unbounded after headers arrive.
 var (
 	copilotHTTPClient = shared.DefaultHTTPClient(
 		shared.TimeoutFromEnv("COPILOT_HTTP_TIMEOUT", shared.DefaultRequestTimeout))
+	copilotClaudeHeaderTimeout = shared.TimeoutFromEnv("COPILOT_CLAUDE_TIMEOUT", shared.DefaultResponsesTimeout)
+	copilotClaudeClient        = shared.DefaultResponseHeaderClient(copilotClaudeHeaderTimeout)
+	copilotClaudeBoundedClient = shared.DefaultBoundedResponseHeaderClient(copilotClaudeHeaderTimeout, copilotClaudeHeaderTimeout)
+	copilotChatStreamClient    = shared.DefaultResponseHeaderClient(copilotHTTPClient.Timeout)
 	// copilotResponsesClient is used for POST /responses only.
 	copilotResponsesClient = shared.DefaultHTTPClient(
 		shared.TimeoutFromEnv("COPILOT_RESPONSES_TIMEOUT", shared.DefaultResponsesTimeout))

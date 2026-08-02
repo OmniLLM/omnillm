@@ -83,6 +83,27 @@ func DefaultHTTPClient(timeout time.Duration) *http.Client {
 	}
 }
 
+// DefaultResponseHeaderClient returns an *http.Client whose timeout applies
+// only while waiting for upstream response headers. Response bodies remain
+// governed by caller cancellation and transport health, which is required for
+// long-lived SSE streams.
+func DefaultResponseHeaderClient(timeout time.Duration) *http.Client {
+	return responseHeaderClient(timeout, 0)
+}
+
+// DefaultBoundedResponseHeaderClient also bounds the complete response. It is
+// suitable for non-streaming reasoning calls that need a larger header budget
+// but must not hang indefinitely after headers arrive.
+func DefaultBoundedResponseHeaderClient(headerTimeout, totalTimeout time.Duration) *http.Client {
+	return responseHeaderClient(headerTimeout, totalTimeout)
+}
+
+func responseHeaderClient(headerTimeout, totalTimeout time.Duration) *http.Client {
+	transport := DefaultHTTPTransport()
+	transport.ResponseHeaderTimeout = headerTimeout
+	return &http.Client{Timeout: totalTimeout, Transport: transport}
+}
+
 // DefaultStreamClient returns an *http.Client suitable for streaming (SSE)
 // provider calls — no Timeout so long-lived connections are not cut off.
 func DefaultStreamClient() *http.Client {
