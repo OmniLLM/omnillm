@@ -1,0 +1,50 @@
+schema: spec-driven
+
+context: |
+  OmniLLM is a Go 1.25 LLM gateway with a Bun/React administration console,
+  a Tauri desktop shell, and SQLite persistence. Canonical Intermediate Format
+  (CIF) is the internal request/response boundary between API ingestion,
+  provider dispatch, and output serialization.
+
+  Current-state capability specs under openspec/specs are normative. Existing
+  README and docs content is supporting, non-normative context. Requirements
+  must describe verified observable behavior rather than desired behavior.
+
+  Standard verification commands:
+  - bun run spec:check
+  - bun run lint:all
+  - bun run typecheck
+  - bun test
+  - bun run build
+  - go vet ./...
+  - go build ./...
+  - go test -race ./...
+
+  Mandatory lifecycle: proposal -> delta specs -> design when required -> tasks
+  -> strict validation -> human approval -> implementation -> verification ->
+  archive. Never begin implementation before approval. Never directly edit
+  openspec/specs requirement content; archive validated deltas instead.
+
+rules:
+  proposal:
+    - Identify every capability whose observable requirements are added, modified, removed, or renamed.
+    - State explicitly when a change has no runtime behavior impact.
+  specs:
+    - Every requirement must use SHALL or MUST and include at least one testable Scenario.
+    - Base brownfield requirements on current code and tests; record unsupported intentions as known gaps.
+  design:
+    - Create design.md for cross-capability changes, provider additions, and changes to CIF, routing, persistence, security, or public APIs.
+    - Explain compatibility, rollout, and failure handling for cross-cutting contracts.
+  tasks:
+    - Put spec and test work before implementation work.
+    - Include strict OpenSpec validation and the complete relevant Bun and Go checks.
+
+operations:
+  apply:
+    guidance:
+      - Do not apply a change until strict validation passes and a human has approved its artifacts.
+      - Check each task only after implementation and verification for that task are complete.
+  archive:
+    guidance:
+      - Do not archive while any task is unchecked or any required verification is failing.
+      - Confirm archive is the only operation updating current-state requirement content.

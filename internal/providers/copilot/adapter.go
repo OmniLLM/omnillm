@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -127,6 +129,45 @@ func (a *CopilotAdapter) RemapModel(canonicalModel string) string {
 	return modelrouting.NormalizeModelName(canonicalModel)
 }
 
+func (a *CopilotAdapter) chatCompletionsClient(model string, stream bool) (*http.Client, time.Duration) {
+	if strings.Contains(strings.ToLower(a.RemapModel(model)), "claude") {
+		if stream {
+			return copilotClaudeClient, copilotClaudeHeaderTimeout
+		}
+		return copilotClaudeBoundedClient, copilotClaudeHeaderTimeout
+	}
+	if stream {
+		return copilotChatStreamClient, copilotHTTPClient.Timeout
+	}
+	return copilotHTTPClient, copilotHTTPClient.Timeout
+}
+
+func (a *CopilotAdapter) logUpstreamTimeout(ctx context.Context, request *cif.CanonicalRequest, endpoint string, budget, elapsed time.Duration, err error) {
+	if err == nil || !isTimeoutError(err) {
+		return
+	}
+
+	event := zerolog.Ctx(ctx).Warn().
+		Err(err).
+		Str("provider", a.provider.GetInstanceID()).
+		Str("endpoint", endpoint).
+		Int64("timeout_budget_ms", budget.Milliseconds()).
+		Int64("elapsed_ms", elapsed.Milliseconds())
+	if request != nil {
+		event = event.Str("model", request.Model)
+	}
+	event.Msg("Copilot upstream timed out awaiting response headers")
+}
+
+func isTimeoutError(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	return (errors.As(err, &netErr) && netErr.Timeout()) ||
+		strings.Contains(strings.ToLower(err.Error()), "client.timeout exceeded")
+}
+
 func (a *CopilotAdapter) executeOpenAI(ctx context.Context, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
 	return a.executeOpenAIWithRetry(ctx, request, true)
 }
@@ -152,15 +193,15 @@ func (a *CopilotAdapter) executeOpenAIWithRetry(ctx context.Context, request *ci
 		req.Header.Set(k, v)
 	}
 
-	var started time.Time
-	if debugEnabled() {
-		started = time.Now()
-	}
-	resp, err := copilotHTTPClient.Do(req)
+	started := time.Now()
+	client, budget := a.chatCompletionsClient(request.Model, false)
+	resp, err := client.Do(req)
+	elapsed := time.Since(started)
 	if debugEnabled() {
 		logCopilotElapsed(a.provider.GetInstanceID(), "chat.completions", request.Model, started, "Copilot upstream request completed")
 	}
 	if err != nil {
+		a.logUpstreamTimeout(ctx, request, "chat.completions", budget, elapsed, err)
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
@@ -215,16 +256,15 @@ func (a *CopilotAdapter) executeOpenAIStreamWithRetry(ctx context.Context, reque
 	}
 	req.Header.Set("Accept", "text/event-stream")
 
-	var started time.Time
-	if debugEnabled() {
-		started = time.Now()
-	}
-	// Streaming requests must not use a fixed client timeout; stream length is model dependent.
-	resp, err := copilotStreamClient.Do(req)
+	started := time.Now()
+	client, budget := a.chatCompletionsClient(request.Model, true)
+	resp, err := client.Do(req)
+	elapsed := time.Since(started)
 	if debugEnabled() {
 		logCopilotElapsed(a.provider.GetInstanceID(), "chat.completions-stream", request.Model, started, "Copilot upstream request completed")
 	}
 	if err != nil {
+		a.logUpstreamTimeout(ctx, request, "chat.completions-stream", budget, elapsed, err)
 		return nil, fmt.Errorf("streaming request failed: %w", err)
 	}
 

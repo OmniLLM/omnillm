@@ -364,14 +364,19 @@ bun run test:frontend
 
 `scripts/` 目录里还包含依赖环境的 live 测试脚本，例如模型矩阵和特定提供商验证。
 
+## 规范驱动开发
+
+OpenSpec 是 OmniLLM 行为的权威来源。修改代码前，请阅读[当前状态规范](openspec/specs/)、强制性的[代理工作流](CLAUDE.md)和[贡献指南](CONTRIBUTING.md)。所有代码、测试、依赖项或构建/运行时配置变更都必须包含经过严格验证和人工批准的 OpenSpec 变更；CI 会通过 `bun run spec:check` 强制执行此要求。
+
+[`docs/`](docs/README.md) 中的现有资料仅作为辅助或历史背景，不能覆盖当前状态规范。
+
 ## 进一步阅读
 
 推荐先看：
 
+- [docs/README.md](docs/README.md)
 - [docs/ADDING_A_PROVIDER.md](docs/ADDING_A_PROVIDER.md)
 - [docs/CIF_MIGRATION.md](docs/CIF_MIGRATION.md)
 - [docs/CONFIG_TEMPLATES.md](docs/CONFIG_TEMPLATES.md)
-- [docs/TOOLCONFIG_FIXES.md](docs/TOOLCONFIG_FIXES.md)
-- [docs/FRONTEND_TESTS_SUMMARY.md](docs/FRONTEND_TESTS_SUMMARY.md)
 
 `docs/` 目录还保留了大量关于提供商兼容、流式处理、路由、前端和协议迁移的关键变更记录。

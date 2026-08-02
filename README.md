@@ -390,14 +390,19 @@ bun run test:frontend
 
 There are also live or environment-dependent scripts in `scripts/`, including model-matrix and provider integration checks.
 
+## Spec-Driven Development
+
+OpenSpec is the source of truth for OmniLLM behavior. Read the [current-state specifications](openspec/specs/), the mandatory [agent workflow](CLAUDE.md), and the [contributor guide](CONTRIBUTING.md) before changing code. Every code, test, dependency, or build/runtime configuration change must include a validated and approved OpenSpec change; CI enforces this with `bun run spec:check`.
+
+Existing material under [`docs/`](docs/README.md) is supporting or historical context and does not override the current-state specifications.
+
 ## Documentation
 
 Useful docs in this repo:
 
+- [docs/README.md](docs/README.md)
 - [docs/ADDING_A_PROVIDER.md](docs/ADDING_A_PROVIDER.md)
 - [docs/CIF_MIGRATION.md](docs/CIF_MIGRATION.md)
 - [docs/CONFIG_TEMPLATES.md](docs/CONFIG_TEMPLATES.md)
-- [docs/TOOLCONFIG_FIXES.md](docs/TOOLCONFIG_FIXES.md)
-- [docs/FRONTEND_TESTS_SUMMARY.md](docs/FRONTEND_TESTS_SUMMARY.md)
 
 The `docs/` directory also contains a detailed history of critical provider, routing, streaming, and compatibility changes.
