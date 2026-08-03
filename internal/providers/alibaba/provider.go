@@ -23,12 +23,13 @@ const AlibabaAPIModeOpenAICompatible = "openai-compatible"
 
 // Provider implements types.Provider for Alibaba DashScope.
 type Provider struct {
-	instanceID string
-	name       string
-	token      string
-	baseURL    string
-	config     map[string]interface{}
-	client     openai.Client
+	instanceID     string
+	name           string
+	token          string
+	baseURL        string
+	config         map[string]interface{}
+	client         openai.Client
+	metadataLookup modelMetadataLookup
 	// configOnce ensures config is loaded from the database exactly once,
 	// even under concurrent requests.  Replaces the racy configLoaded bool.
 	configOnce sync.Once
@@ -37,9 +38,10 @@ type Provider struct {
 // NewProvider creates a new Alibaba Provider.
 func NewProvider(instanceID, name string) *Provider {
 	return &Provider{
-		instanceID: instanceID,
-		name:       name,
-		baseURL:    BaseURLGlobal,
+		instanceID:     instanceID,
+		name:           name,
+		baseURL:        BaseURLGlobal,
+		metadataLookup: defaultModelMetadataLookup,
 	}
 }
 
@@ -147,9 +149,17 @@ func (p *Provider) applyConfig(cfg map[string]interface{}) {
 	p.baseURL = NormalizeBaseURL(p.config)
 }
 
+func (p *Provider) isReasoningModel(ctx context.Context, modelID string) bool {
+	lookup := p.metadataLookup
+	if lookup == nil {
+		lookup = defaultModelMetadataLookup
+	}
+	return isReasoningModelWith(ctx, lookup, modelID)
+}
+
 func (p *Provider) GetModels() (*types.ModelsResponse, error) {
 	p.ensureConfig()
-	return GetModels(p.instanceID, p.token, p.baseURL, p.config)
+	return getModels(p.instanceID, p.token, p.baseURL, p.metadataLookup)
 }
 
 func (p *Provider) CreateChatCompletions(payload map[string]interface{}) (map[string]interface{}, error) {

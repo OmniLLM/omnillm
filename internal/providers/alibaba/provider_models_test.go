@@ -1,9 +1,11 @@
 package alibaba
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"omnillm/internal/database"
+	"omnillm/internal/services/modelsmeta"
 	"testing"
 )
 
@@ -38,6 +40,17 @@ func TestProviderGetModelsFetchesLiveModels(t *testing.T) {
 	}
 
 	provider := NewProvider("alibaba-live", "Alibaba")
+	outputLimit := 16384
+	provider.metadataLookup = func(_ context.Context, modelID string) *modelsmeta.ModelMetadata {
+		if modelID != "qwen3-max" {
+			return nil
+		}
+		return &modelsmeta.ModelMetadata{
+			ID:                modelID,
+			Name:              "Qwen3 Max",
+			OutputLimitTokens: &outputLimit,
+		}
+	}
 	if err := provider.LoadFromDB(); err != nil {
 		t.Fatalf("failed to load provider from database: %v", err)
 	}

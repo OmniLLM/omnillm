@@ -20,15 +20,28 @@ import (
 // retry the live API.
 var ErrHardcodedFallback = fmt.Errorf("alibaba: models fetch failed, using hardcoded fallback")
 
+type modelMetadataLookup func(context.Context, string) *modelsmeta.ModelMetadata
+
+func defaultModelMetadataLookup(ctx context.Context, modelID string) *modelsmeta.ModelMetadata {
+	return modelsmeta.DefaultService.LookupModel(ctx, modelID)
+}
+
 // GetModels returns the available models for this Alibaba instance.
 // If the live API is unreachable it returns the Qwen-only catalog from
 // models.dev together with ErrHardcodedFallback so callers can decide whether
 // to cache.
-func GetModels(instanceID, token, baseURL string, config map[string]any) (*types.ModelsResponse, error) {
+func GetModels(instanceID, token, baseURL string, _ map[string]any) (*types.ModelsResponse, error) {
+	return getModels(instanceID, token, baseURL, defaultModelMetadataLookup)
+}
+
+func getModels(instanceID, token, baseURL string, lookup modelMetadataLookup) (*types.ModelsResponse, error) {
+	if lookup == nil {
+		lookup = defaultModelMetadataLookup
+	}
 	if token == "" {
 		return nil, fmt.Errorf("alibaba: not authenticated")
 	}
-	resp, err := FetchModelsFromAPI(instanceID, token, baseURL, config)
+	resp, err := fetchModelsFromAPI(instanceID, token, baseURL, lookup)
 	if err == nil && len(resp.Data) > 0 {
 		return resp, nil
 	}
@@ -42,7 +55,14 @@ func GetModels(instanceID, token, baseURL string, config map[string]any) (*types
 // succeeds, because DashScope account plans vary.
 func GetModelsHardcoded(instanceID string) *types.ModelsResponse {
 	result, err := modelsmeta.DefaultService.Get(context.Background(), false)
-	if err != nil || len(result.Models) == 0 {
+	if err != nil {
+		return &types.ModelsResponse{Data: nil, Object: "list"}
+	}
+	return modelsFromMetadata(instanceID, result)
+}
+
+func modelsFromMetadata(instanceID string, result modelsmeta.Result) *types.ModelsResponse {
+	if len(result.Models) == 0 {
 		return &types.ModelsResponse{Data: nil, Object: "list"}
 	}
 	var models []types.Model
@@ -70,6 +90,10 @@ func GetModelsHardcoded(instanceID string) *types.ModelsResponse {
 
 // FetchModelsFromAPI fetches available models from the DashScope API.
 func FetchModelsFromAPI(instanceID, token, baseURL string, _ map[string]any) (*types.ModelsResponse, error) {
+	return fetchModelsFromAPI(instanceID, token, baseURL, defaultModelMetadataLookup)
+}
+
+func fetchModelsFromAPI(instanceID, token, baseURL string, lookup modelMetadataLookup) (*types.ModelsResponse, error) {
 	url := strings.TrimRight(baseURL, "/") + "/models"
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
@@ -109,7 +133,7 @@ func FetchModelsFromAPI(instanceID, token, baseURL string, _ map[string]any) (*t
 			continue
 		}
 		m := types.Model{ID: item.ID, Name: item.ID, Provider: instanceID}
-		if meta := modelsmeta.DefaultService.LookupModel(context.Background(), item.ID); meta != nil {
+		if meta := lookup(context.Background(), item.ID); meta != nil {
 			if meta.Name != "" {
 				m.Name = meta.Name
 			}

@@ -1,6 +1,7 @@
 package alibaba
 
 import (
+	"context"
 	"omnillm/internal/services/modelsmeta"
 	"testing"
 )
@@ -35,6 +36,9 @@ func TestIsReasoningModelWith(t *testing.T) {
 	}{
 		{"reasoning=true from models.dev", &modelsmeta.ModelMetadata{SupportsReasoning: boolPtr(true)}, "qwen3-max", true},
 		{"reasoning=false from models.dev", &modelsmeta.ModelMetadata{SupportsReasoning: boolPtr(false)}, "glm-5.1", false},
+		{"qwen3.6-plus falls back when metadata is missing", nil, "qwen3.6-plus", true},
+		{"qwen3.6-plus fallback overrides stale negative metadata", &modelsmeta.ModelMetadata{SupportsReasoning: boolPtr(false)}, "QWEN3.6-PLUS", true},
+		{"prefixed qwen3.6-plus falls back", nil, "alibaba-sk/qwen3.6-plus", true},
 		{"no models.dev entry (nil)", nil, "unknown-model", false},
 		{"models.dev entry but SupportsReasoning nil", &modelsmeta.ModelMetadata{}, "some-model", false},
 		{"model ID case folded", &modelsmeta.ModelMetadata{SupportsReasoning: boolPtr(true)}, "QWEN3-MAX", true},
@@ -42,7 +46,7 @@ func TestIsReasoningModelWith(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := isReasoningModelWith(func(_ string) *modelsmeta.ModelMetadata {
+			got := isReasoningModelWith(context.Background(), func(_ context.Context, _ string) *modelsmeta.ModelMetadata {
 				return tc.meta
 			}, tc.modelID)
 			if got != tc.want {

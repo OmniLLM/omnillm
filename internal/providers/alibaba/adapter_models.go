@@ -91,7 +91,7 @@ func (a *Adapter) buildRequest(ctx context.Context, request *cif.CanonicalReques
 	// Consult models.dev once; all reasoning-related branches share the result.
 	// dashScopeNoThinking overrides: DashScope rejects enable_thinking for these
 	// models regardless of models.dev classification.
-	isReasoning := IsReasoningModel(ctx, model) && !dashScopeNoThinking(model)
+	isReasoning := !dashScopeNoThinking(model) && a.provider.isReasoningModel(ctx, model)
 
 	extras := map[string]any{}
 	// DashScope compatible-mode requests need enable_thinking=true on reasoning

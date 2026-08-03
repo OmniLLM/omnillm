@@ -7,8 +7,15 @@ import (
 	"net/http/httptest"
 	"omnillm/internal/cif"
 	"omnillm/internal/providers/openaicompat"
+	"omnillm/internal/services/modelsmeta"
 	"testing"
 )
+
+func newTestProvider() *Provider {
+	provider := NewProvider("alibaba-test", "Alibaba")
+	provider.metadataLookup = func(context.Context, string) *modelsmeta.ModelMetadata { return nil }
+	return provider
+}
 
 func TestBuildRequestAlibabaToolHistoryIncludesAssistantContent(t *testing.T) {
 	tests := []struct {
@@ -24,7 +31,7 @@ func TestBuildRequestAlibabaToolHistoryIncludesAssistantContent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			adapter := &Adapter{provider: NewProvider("alibaba-test", "Alibaba")}
+			adapter := &Adapter{provider: newTestProvider()}
 			request := &cif.CanonicalRequest{
 				Model: tt.model,
 				Tools: []cif.CIFTool{{
@@ -92,7 +99,7 @@ func TestBuildRequestToolResultTurnToolRetentionByModel(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			adapter := &Adapter{provider: NewProvider("alibaba-test", "Alibaba")}
+			adapter := &Adapter{provider: newTestProvider()}
 			request := &cif.CanonicalRequest{
 				Model:      tt.model,
 				ToolChoice: "auto",
@@ -122,7 +129,7 @@ func TestBuildRequestToolResultTurnToolRetentionByModel(t *testing.T) {
 }
 
 func TestBuildRequestNonGLMRetainsSystemRole(t *testing.T) {
-	adapter := &Adapter{provider: NewProvider("alibaba-test", "Alibaba")}
+	adapter := &Adapter{provider: newTestProvider()}
 	request := &cif.CanonicalRequest{
 		Model:        "qwen3.5-plus",
 		SystemPrompt: stringPtr("Stay as system."),
@@ -144,7 +151,7 @@ func TestBuildRequestNonGLMRetainsSystemRole(t *testing.T) {
 }
 
 func TestBuildRequestDeepSeekV4FlashNoEnableThinking(t *testing.T) {
-	adapter := &Adapter{provider: NewProvider("alibaba-test", "Alibaba")}
+	adapter := &Adapter{provider: newTestProvider()}
 	request := &cif.CanonicalRequest{
 		Model: "deepseek-v4-flash",
 		Messages: []cif.CIFMessage{
@@ -170,6 +177,60 @@ func TestBuildRequestDeepSeekV4FlashNoEnableThinking(t *testing.T) {
 	// DeepSeek models on DashScope strip tool_choice (like Qwen/GLM).
 	if chatReq.ToolChoice != nil {
 		t.Fatalf("expected deepseek-v4-flash tool_choice to be nil, got %#v", chatReq.ToolChoice)
+	}
+}
+
+func TestBuildRequestThinkingFlagByModelAndShape(t *testing.T) {
+	tool := cif.CIFTool{
+		Name:             "read_file",
+		ParametersSchema: map[string]any{"type": "object"},
+	}
+	plainMessages := []cif.CIFMessage{
+		cif.CIFUserMessage{Role: "user", Content: []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: "Hi"}}},
+	}
+	toolResultMessages := []cif.CIFMessage{
+		cif.CIFUserMessage{Role: "user", Content: []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: "Read go.mod"}}},
+		cif.CIFAssistantMessage{Role: "assistant", Content: []cif.CIFContentPart{cif.CIFToolCallPart{Type: "tool_call", ToolCallID: "call_read", ToolName: "read_file", ToolArguments: map[string]interface{}{}}}},
+		cif.CIFUserMessage{Role: "user", Content: []cif.CIFContentPart{cif.CIFToolResultPart{Type: "tool_result", ToolCallID: "call_read", Content: "module omnillm"}}},
+	}
+
+	tests := []struct {
+		name         string
+		model        string
+		messages     []cif.CIFMessage
+		tools        []cif.CIFTool
+		stream       bool
+		wantThinking bool
+	}{
+		{name: "qwen3.6 plus plain", model: "qwen3.6-plus", messages: plainMessages, wantThinking: true},
+		{name: "qwen3.6 plus tools", model: "qwen3.6-plus", messages: plainMessages, tools: []cif.CIFTool{tool}, wantThinking: true},
+		{name: "qwen3.6 plus tool result", model: "qwen3.6-plus", messages: toolResultMessages, tools: []cif.CIFTool{tool}, wantThinking: true},
+		{name: "qwen3.6 plus local restream", model: "qwen3.6-plus", messages: plainMessages, stream: true, wantThinking: true},
+		{name: "prefixed qwen3.6 plus", model: "alibaba-test/qwen3.6-plus", messages: plainMessages, wantThinking: true},
+		{name: "deepseek v4 flash exclusion", model: "deepseek-v4-flash", messages: plainMessages},
+		{name: "qwen3.5 plus exclusion", model: "qwen3.5-plus", messages: plainMessages},
+		{name: "glm 5.1 exclusion", model: "glm-5.1", messages: plainMessages},
+	}
+
+	adapter := &Adapter{provider: newTestProvider()}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			chatReq, err := adapter.buildRequest(context.Background(), &cif.CanonicalRequest{
+				Model:    tt.model,
+				Messages: tt.messages,
+				Tools:    tt.tools,
+			}, tt.stream)
+			if err != nil {
+				t.Fatalf("buildRequest() error = %v", err)
+			}
+			enabled, present := chatReq.Extras["enable_thinking"].(bool)
+			if present != tt.wantThinking || enabled != tt.wantThinking {
+				t.Fatalf("enable_thinking = %#v, want present and true = %v", chatReq.Extras["enable_thinking"], tt.wantThinking)
+			}
+			if tt.stream != chatReq.Stream {
+				t.Fatalf("stream = %v, want %v", chatReq.Stream, tt.stream)
+			}
+		})
 	}
 }
 
@@ -205,7 +266,7 @@ func TestAdapterExecuteUsesOpenAIClientWithRawJSONPayload(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider := NewProvider("alibaba-test", "Alibaba")
+	provider := newTestProvider()
 	provider.token = "test-token"
 	provider.baseURL = server.URL + "/v1"
 	provider.refreshClient()
@@ -240,5 +301,3 @@ func TestAdapterExecuteUsesOpenAIClientWithRawJSONPayload(t *testing.T) {
 		t.Fatalf("stream = %#v, want false", gotPayload["stream"])
 	}
 }
-
-
