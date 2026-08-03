@@ -12,6 +12,7 @@ import (
 	"omnillm/internal/providerdispatch"
 	"omnillm/internal/providers/types"
 	"omnillm/internal/serialization"
+	"omnillm/internal/translation/toolarguments"
 	"strings"
 	"time"
 
@@ -180,6 +181,8 @@ func handleResponsesNonStreamingResponse(c *gin.Context, adapter types.ProviderA
 		return fmt.Errorf("adapter execute failed: %w", err)
 	}
 
+	response = toolarguments.NormalizeResponse(response, canonicalRequest.Tools)
+
 	responsesResp, err := serialization.SerializeToResponses(response)
 	if err != nil {
 		return fmt.Errorf("serialization failed: %w", err)
@@ -204,11 +207,12 @@ func handleResponsesStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 	}
 
 	setSSEHeaders(c, false)
+	ctx := c.Request.Context()
+	eventCh = toolarguments.NormalizeStream(ctx, eventCh, canonicalRequest.Tools)
 
 	state := serialization.CreateResponsesStreamState()
 	flusher, _ := c.Writer.(http.Flusher)
 	modelUsed := canonicalRequest.Model
-	ctx := c.Request.Context()
 
 	c.Stream(func(w io.Writer) bool {
 		select {

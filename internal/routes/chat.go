@@ -14,6 +14,7 @@ import (
 	"omnillm/internal/providerdispatch"
 	"omnillm/internal/providers/types"
 	"omnillm/internal/serialization"
+	"omnillm/internal/translation/toolarguments"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -117,6 +118,7 @@ func (h *chatCompletionHandler) handleChatCompletions(c *gin.Context) {
 		cacheKey = responsecache.Key(canonicalRequest)
 		if bypass != responsecache.BypassRead {
 			if hit := responsecache.Get(cacheCfg, canonicalRequest, cacheKey); hit != nil {
+				hit = normalizeCachedToolArguments(hit, canonicalRequest)
 				if canonicalRequest.Stream {
 					replayOpenAIStreamFromCache(c, hit)
 					logCompletedResponse("openai", requestIDStr, originalModel, hit.Model, "cache", true, hit.StopReason, hit.Usage, startTime)
@@ -210,6 +212,8 @@ func handleNonStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, c
 		return fmt.Errorf("adapter execute failed: %w", err)
 	}
 
+	response = toolarguments.NormalizeResponse(response, canonicalRequest.Tools)
+
 	// Serialize CIF response to OpenAI format
 	openaiResp, err := serialization.SerializeToOpenAI(response)
 	if err != nil {
@@ -243,6 +247,8 @@ func handleStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, cano
 	}
 
 	setSSEHeaders(c, true)
+	ctx := c.Request.Context()
+	eventCh = toolarguments.NormalizeStream(ctx, eventCh, canonicalRequest.Tools)
 
 	// If this request is cache-eligible, accumulate the stream into a
 	// CanonicalResponse so it can be stored and replayed on a future hit.
@@ -259,7 +265,6 @@ func handleStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, cano
 	state := serialization.CreateOpenAIStreamState()
 	flusher, _ := c.Writer.(http.Flusher)
 	modelUsed := canonicalRequest.Model
-	ctx := c.Request.Context()
 
 	c.Stream(func(w io.Writer) bool {
 		select {
@@ -328,6 +333,13 @@ func handleStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, cano
 // replayOpenAIStreamFromCache re-emits a cached CanonicalResponse as an OpenAI
 // SSE stream, so a streaming client gets a cache hit as a normal (if instant)
 // stream. It reuses the production event serializer via synthesized CIF events.
+func normalizeCachedToolArguments(response *cif.CanonicalResponse, request *cif.CanonicalRequest) *cif.CanonicalResponse {
+	if request == nil {
+		return response
+	}
+	return toolarguments.NormalizeResponse(response, request.Tools)
+}
+
 func replayOpenAIStreamFromCache(c *gin.Context, resp *cif.CanonicalResponse) {
 	c.Header("X-OmniLLM-Cache", "hit")
 	setSSEHeaders(c, true)

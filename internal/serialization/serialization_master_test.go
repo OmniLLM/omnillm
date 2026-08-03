@@ -144,6 +144,10 @@ func TestConvertCIFEventToResponsesSSE_EmitsMessageLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected stop error: %v", err)
 	}
+	endEvents, err := ConvertCIFEventToResponsesSSE(cif.CIFStreamEnd{Type: "stream_end", StopReason: cif.StopReasonEndTurn}, state)
+	if err != nil {
+		t.Fatalf("unexpected end error: %v", err)
+	}
 
 	if len(startEvents) != 1 {
 		t.Fatalf("expected 1 start event, got %d", len(startEvents))
@@ -160,8 +164,8 @@ func TestConvertCIFEventToResponsesSSE_EmitsMessageLifecycle(t *testing.T) {
 	if deltaEvents[2]["type"] != "response.output_text.delta" {
 		t.Fatalf("unexpected third delta event: %#v", deltaEvents[2])
 	}
-	if len(stopEvents) != 3 {
-		t.Fatalf("expected 3 stop events, got %d", len(stopEvents))
+	if len(stopEvents) != 2 {
+		t.Fatalf("expected 2 stop events, got %d", len(stopEvents))
 	}
 	if stopEvents[0]["type"] != "response.content_block.done" {
 		t.Fatalf("unexpected first stop event: %#v", stopEvents[0])
@@ -169,8 +173,8 @@ func TestConvertCIFEventToResponsesSSE_EmitsMessageLifecycle(t *testing.T) {
 	if stopEvents[1]["type"] != "response.output_text.done" {
 		t.Fatalf("unexpected stop event: %#v", stopEvents[1])
 	}
-	if stopEvents[2]["type"] != "response.output_item.done" {
-		t.Fatalf("unexpected final stop event: %#v", stopEvents[2])
+	if len(endEvents) == 0 || endEvents[0]["type"] != "response.output_item.done" {
+		t.Fatalf("missing message output-item completion: %#v", endEvents)
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"omnillm/internal/providerdispatch"
 	"omnillm/internal/providers/types"
 	"omnillm/internal/serialization"
+	"omnillm/internal/translation/toolarguments"
 	"strings"
 	"time"
 
@@ -98,6 +99,7 @@ func handleMessages(c *gin.Context) {
 		cacheKey := responsecache.Key(canonicalRequest)
 		if bypass != responsecache.BypassRead {
 			if hit := responsecache.Get(cacheCfg, canonicalRequest, cacheKey); hit != nil {
+				hit = normalizeCachedToolArguments(hit, canonicalRequest)
 				suppressThinking := !strings.Contains(c.GetHeader("anthropic-beta"), "interleaved-thinking")
 				if canonicalRequest.Stream {
 					replayAnthropicStreamFromCache(c, hit, suppressThinking)
@@ -196,6 +198,8 @@ func handleAnthropicNonStreamingResponse(c *gin.Context, adapter types.ProviderA
 		return fmt.Errorf("adapter execute failed: %w", err)
 	}
 
+	response = toolarguments.NormalizeResponse(response, canonicalRequest.Tools)
+
 	if response.StopReason == cif.StopReasonToolUse {
 		logAnthropicToolLoopResponse(requestID, originalModel, response.Model, providerID, false, extractToolCallLogEntriesFromResponse(response))
 	}
@@ -255,6 +259,7 @@ func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 	c.Header("Connection", "keep-alive")
 
 	ctx := c.Request.Context()
+	eventCh = toolarguments.NormalizeStream(ctx, eventCh, canonicalRequest.Tools)
 
 	state := serialization.CreateAnthropicStreamState()
 	// Suppress thinking blocks unless the client explicitly opted in to the

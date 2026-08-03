@@ -11,14 +11,14 @@ import (
 // ResponsesResponse is the non-streaming Responses API response object.
 // Spec: https://platform.openai.com/docs/api-reference/responses/object
 type ResponsesResponse struct {
-	ID        string                `json:"id"`
-	Object    string                `json:"object"`    // always "response"
-	CreatedAt int64                 `json:"created_at"`
-	Status    string                `json:"status"`    // "completed" | "incomplete" | "failed"
-	Model     string                `json:"model"`
-	Output    []ResponsesOutputItem `json:"output"`
-	OutputText string               `json:"output_text,omitempty"` // convenience helper: concatenated text
-	Usage     *ResponsesUsage       `json:"usage,omitempty"`
+	ID         string                `json:"id"`
+	Object     string                `json:"object"` // always "response"
+	CreatedAt  int64                 `json:"created_at"`
+	Status     string                `json:"status"` // "completed" | "incomplete" | "failed"
+	Model      string                `json:"model"`
+	Output     []ResponsesOutputItem `json:"output"`
+	OutputText string                `json:"output_text,omitempty"` // convenience helper: concatenated text
+	Usage      *ResponsesUsage       `json:"usage,omitempty"`
 }
 
 type ResponsesOutputItem struct {
@@ -151,17 +151,25 @@ type ResponsesStreamState struct {
 	ResponseID         string
 	Model              string
 	CurrentItemID      string
-	CurrentToolItemID  string
-	CurrentContentText string
 	MessageItemAdded   bool
+	MessageOutputIndex int
+	ContentIndexByCIF  map[int]int
+	ContentTextByIndex map[int]string
+	ContentDoneByIndex map[int]bool
+	ToolItemsByIndex   map[int]map[string]interface{}
+	OutputItemIndexes  map[string]int
 	outputItems        []map[string]interface{}
-	// textBlockDone guards against double-emission of output_text.done when
-	// both CIFContentBlockStop and CIFStreamEnd fire for the same block.
-	textBlockDone bool
 }
 
 func CreateResponsesStreamState() *ResponsesStreamState {
-	return &ResponsesStreamState{}
+	return &ResponsesStreamState{
+		MessageOutputIndex: -1,
+		ContentIndexByCIF:  make(map[int]int),
+		ContentTextByIndex: make(map[int]string),
+		ContentDoneByIndex: make(map[int]bool),
+		ToolItemsByIndex:   make(map[int]map[string]interface{}),
+		OutputItemIndexes:  make(map[string]int),
+	}
 }
 
 func ConvertCIFEventToResponsesSSE(event cif.CIFStreamEvent, state *ResponsesStreamState) ([]map[string]interface{}, error) {
@@ -172,10 +180,14 @@ func ConvertCIFEventToResponsesSSE(event cif.CIFStreamEvent, state *ResponsesStr
 		state.ResponseID = e.ID
 		state.Model = e.Model
 		state.CurrentItemID = fmt.Sprintf("%s-message", e.ID)
-		state.CurrentContentText = ""
 		state.MessageItemAdded = false
-		state.textBlockDone = false
+		state.MessageOutputIndex = -1
 		state.outputItems = nil
+		state.ContentIndexByCIF = make(map[int]int)
+		state.ContentTextByIndex = make(map[int]string)
+		state.ContentDoneByIndex = make(map[int]bool)
+		state.ToolItemsByIndex = make(map[int]map[string]interface{})
+		state.OutputItemIndexes = make(map[string]int)
 
 		events = append(events, map[string]interface{}{
 			"type": "response.created",
@@ -195,9 +207,11 @@ func ConvertCIFEventToResponsesSSE(event cif.CIFStreamEvent, state *ResponsesStr
 			case cif.CIFTextPart, cif.CIFThinkingPart:
 				_ = cb
 				if !state.MessageItemAdded {
+					state.MessageOutputIndex = len(state.outputItems)
+					state.outputItems = append(state.outputItems, nil) // reserve the message's stable output position
 					events = append(events, map[string]interface{}{
 						"type":         "response.output_item.added",
-						"output_index": e.Index,
+						"output_index": state.MessageOutputIndex,
 						"item": map[string]interface{}{
 							"type":    "message",
 							"id":      state.CurrentItemID,
@@ -206,19 +220,27 @@ func ConvertCIFEventToResponsesSSE(event cif.CIFStreamEvent, state *ResponsesStr
 							"content": []interface{}{},
 						},
 					})
+					state.MessageItemAdded = true
+				}
+				if _, exists := state.ContentIndexByCIF[e.Index]; !exists {
+					contentIndex := len(state.ContentIndexByCIF)
+					state.ContentIndexByCIF[e.Index] = contentIndex
 					events = append(events, map[string]interface{}{
 						"type":          "response.content_block.added",
-						"output_index":  e.Index,
-						"content_index": 0,
+						"output_index":  state.MessageOutputIndex,
+						"content_index": contentIndex,
 						"content_block": map[string]interface{}{
 							"type":        "output_text",
 							"text":        "",
 							"annotations": []interface{}{},
 						},
 					})
-					state.MessageItemAdded = true
 				}
 			case cif.CIFToolCallPart:
+				if existing := state.ToolItemsByIndex[e.Index]; existing != nil && existing["call_id"] == cb.ToolCallID {
+					break
+				}
+				outputIndex := len(state.outputItems)
 				toolItem := map[string]interface{}{
 					"type":      "function_call",
 					"id":        cb.ToolCallID,
@@ -230,142 +252,121 @@ func ConvertCIFEventToResponsesSSE(event cif.CIFStreamEvent, state *ResponsesStr
 				}
 				events = append(events, map[string]interface{}{
 					"type":         "response.output_item.added",
-					"output_index": e.Index,
+					"output_index": outputIndex,
 					"item":         toolItem,
 				})
-				state.CurrentToolItemID = cb.ToolCallID
+				state.ToolItemsByIndex[e.Index] = toolItem
+				state.OutputItemIndexes[cb.ToolCallID] = outputIndex
 				state.outputItems = append(state.outputItems, toolItem)
 			}
 		}
 
 		switch d := e.Delta.(type) {
 		case cif.TextDelta:
-			state.CurrentContentText += d.Text
+			contentIndex := state.ContentIndexByCIF[e.Index]
+			state.ContentTextByIndex[contentIndex] += d.Text
 			events = append(events, map[string]interface{}{
 				"type":          "response.output_text.delta",
-				"output_index":  e.Index,
-				"content_index": 0,
+				"output_index":  state.MessageOutputIndex,
+				"content_index": contentIndex,
 				"delta":         d.Text,
 			})
 		case cif.ThinkingDelta:
-			state.CurrentContentText += d.Thinking
+			contentIndex := state.ContentIndexByCIF[e.Index]
+			state.ContentTextByIndex[contentIndex] += d.Thinking
 			events = append(events, map[string]interface{}{
 				"type":          "response.output_text.delta",
-				"output_index":  e.Index,
-				"content_index": 0,
+				"output_index":  state.MessageOutputIndex,
+				"content_index": contentIndex,
 				"delta":         d.Thinking,
 			})
 		case cif.ToolArgumentsDelta:
-			if state.CurrentToolItemID != "" {
-				for _, item := range state.outputItems {
-					if item["call_id"] == state.CurrentToolItemID {
-						item["arguments"] = item["arguments"].(string) + d.PartialJSON
-						break
-					}
-				}
+			if item := state.ToolItemsByIndex[e.Index]; item != nil {
+				item["arguments"] = item["arguments"].(string) + d.PartialJSON
 				events = append(events, map[string]interface{}{
 					"type":         "response.function_call_arguments.delta",
-					"output_index": e.Index,
+					"output_index": state.OutputItemIndexes[item["call_id"].(string)],
 					"delta":        d.PartialJSON,
 				})
 			}
 		}
 
 	case cif.CIFContentBlockStop:
-		if state.MessageItemAdded && !state.textBlockDone {
-			// Emit content_block.done before output_item.done per spec.
-			events = append(events, map[string]interface{}{
-				"type":          "response.content_block.done",
-				"output_index":  e.Index,
-				"content_index": 0,
-				"content_block": map[string]interface{}{
-					"type":        "output_text",
-					"text":        state.CurrentContentText,
-					"annotations": []interface{}{},
+		contentIndex, isText := state.ContentIndexByCIF[e.Index]
+		if isText && !state.ContentDoneByIndex[contentIndex] {
+			text := state.ContentTextByIndex[contentIndex]
+			events = append(events,
+				map[string]interface{}{
+					"type":          "response.content_block.done",
+					"output_index":  state.MessageOutputIndex,
+					"content_index": contentIndex,
+					"content_block": map[string]interface{}{"type": "output_text", "text": text, "annotations": []interface{}{}},
 				},
-			})
-			events = append(events, map[string]interface{}{
-				"type":          "response.output_text.done",
-				"output_index":  e.Index,
-				"content_index": 0,
-				"text":          state.CurrentContentText,
-			})
-			messageItem := map[string]interface{}{
-				"type":   "message",
-				"id":     state.CurrentItemID,
-				"role":   "assistant",
-				"status": "completed",
-				"content": []map[string]interface{}{
-					{
-						"type":        "output_text",
-						"text":        state.CurrentContentText,
-						"annotations": []interface{}{},
-					},
+				map[string]interface{}{
+					"type":          "response.output_text.done",
+					"output_index":  state.MessageOutputIndex,
+					"content_index": contentIndex,
+					"text":          text,
 				},
-			}
-			events = append(events, map[string]interface{}{
-				"type":         "response.output_item.done",
-				"output_index": e.Index,
-				"item":         messageItem,
-			})
-			state.outputItems = append([]map[string]interface{}{messageItem}, state.outputItems...)
-			state.textBlockDone = true
+			)
+			state.ContentDoneByIndex[contentIndex] = true
 		}
 
 	case cif.CIFStreamEnd:
-		// Only emit text done events if CIFContentBlockStop hasn't already done so.
-		if state.MessageItemAdded && !state.textBlockDone {
-			events = append(events, map[string]interface{}{
-				"type":          "response.content_block.done",
-				"output_index":  0,
-				"content_index": 0,
-				"content_block": map[string]interface{}{
+		// Close any text/thinking blocks whose providers omitted block stops.
+		for contentIndex := 0; contentIndex < len(state.ContentIndexByCIF); contentIndex++ {
+			if state.ContentDoneByIndex[contentIndex] {
+				continue
+			}
+			text := state.ContentTextByIndex[contentIndex]
+			events = append(events,
+				map[string]interface{}{
+					"type":          "response.content_block.done",
+					"output_index":  state.MessageOutputIndex,
+					"content_index": contentIndex,
+					"content_block": map[string]interface{}{"type": "output_text", "text": text, "annotations": []interface{}{}},
+				},
+				map[string]interface{}{
+					"type":          "response.output_text.done",
+					"output_index":  state.MessageOutputIndex,
+					"content_index": contentIndex,
+					"text":          text,
+				},
+			)
+			state.ContentDoneByIndex[contentIndex] = true
+		}
+		if state.MessageItemAdded {
+			content := make([]map[string]interface{}, len(state.ContentIndexByCIF))
+			for contentIndex := range content {
+				content[contentIndex] = map[string]interface{}{
 					"type":        "output_text",
-					"text":        state.CurrentContentText,
+					"text":        state.ContentTextByIndex[contentIndex],
 					"annotations": []interface{}{},
-				},
-			})
-			events = append(events, map[string]interface{}{
-				"type":          "response.output_text.done",
-				"output_index":  0,
-				"content_index": 0,
-				"text":          state.CurrentContentText,
-			})
+				}
+			}
 			messageItem := map[string]interface{}{
-				"type":   "message",
-				"id":     state.CurrentItemID,
-				"role":   "assistant",
-				"status": "completed",
-				"content": []map[string]interface{}{
-					{
-						"type":        "output_text",
-						"text":        state.CurrentContentText,
-						"annotations": []interface{}{},
-					},
-				},
+				"type": "message", "id": state.CurrentItemID, "role": "assistant", "status": "completed", "content": content,
 			}
 			events = append(events, map[string]interface{}{
-				"type":         "response.output_item.done",
-				"output_index": 0,
-				"item":         messageItem,
+				"type": "response.output_item.done", "output_index": state.MessageOutputIndex, "item": messageItem,
 			})
-			state.outputItems = append([]map[string]interface{}{messageItem}, state.outputItems...)
-			state.textBlockDone = true
+			state.outputItems[state.MessageOutputIndex] = messageItem
 		}
 
 		// Emit function_call_arguments.done for any pending tool calls.
 		for _, item := range state.outputItems {
 			if item["type"] == "function_call" {
 				events = append(events, map[string]interface{}{
-					"type":      "response.function_call_arguments.done",
-					"call_id":   item["call_id"],
-					"arguments": item["arguments"],
+					"type":         "response.function_call_arguments.done",
+					"output_index": state.OutputItemIndexes[item["call_id"].(string)],
+					"call_id":      item["call_id"],
+					"arguments":    item["arguments"],
 				})
 				// Mark tool item as completed.
 				item["status"] = "completed"
 				events = append(events, map[string]interface{}{
 					"type":         "response.output_item.done",
-					"output_index": 0,
+					"output_index": state.OutputItemIndexes[item["call_id"].(string)],
 					"item":         item,
 				})
 			}
