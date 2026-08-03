@@ -2,7 +2,6 @@ package alibaba
 
 import (
 	"context"
-	"omnillm/internal/services/modelsmeta"
 	"strings"
 )
 
@@ -19,21 +18,20 @@ func IsChatCompletionsModel(modelID string) bool {
 }
 
 // IsReasoningModel reports whether the model supports extended reasoning output.
-// It consults models.dev (via the shared DefaultService cache); returns false if
-// the model is not found or the service is unavailable.
+// Qwen 3.6 Plus has a provider-owned fallback because its DashScope contract
+// must not depend on availability of the optional models.dev metadata service.
 func IsReasoningModel(ctx context.Context, modelID string) bool {
-	return isReasoningModelWith(
-		func(id string) *modelsmeta.ModelMetadata {
-			return modelsmeta.DefaultService.LookupModel(ctx, id)
-		},
-		modelID,
-	)
+	return isReasoningModelWith(ctx, defaultModelMetadataLookup, modelID)
 }
 
 // isReasoningModelWith is the testable core: the caller supplies the lookup so
 // tests can inject a stub without needing a live models.dev connection.
-func isReasoningModelWith(lookup func(string) *modelsmeta.ModelMetadata, modelID string) bool {
-	meta := lookup(strings.ToLower(RemapModel(modelID)))
+func isReasoningModelWith(ctx context.Context, lookup modelMetadataLookup, modelID string) bool {
+	modelID = strings.ToLower(RemapModel(modelID))
+	if modelID == "qwen3.6-plus" {
+		return true
+	}
+	meta := lookup(ctx, modelID)
 	if meta != nil && meta.SupportsReasoning != nil {
 		return *meta.SupportsReasoning
 	}

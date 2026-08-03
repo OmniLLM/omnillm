@@ -1,19 +1,23 @@
 package alibaba
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"omnillm/internal/database"
 	"omnillm/internal/providers/types"
+	"omnillm/internal/services/modelsmeta"
 	"strings"
 	"testing"
 )
 
 func TestGetModelsHardcoded(t *testing.T) {
-	resp := GetModelsHardcoded("alibaba-1")
-	// When models.dev is unavailable (unit test environment), the fallback returns
-	// an empty list gracefully — that's the correct behaviour.
+	outputLimit := 4096
+	resp := modelsFromMetadata("alibaba-1", modelsmeta.Result{Models: []modelsmeta.ModelMetadata{
+		{ID: "qwen-test", Name: "Qwen Test", OutputLimitTokens: &outputLimit},
+		{ID: "deepseek-test", Name: "DeepSeek Test"},
+	}})
 	for _, m := range resp.Data {
 		if m.Provider != "alibaba-1" {
 			t.Errorf("model %q has provider %q, want alibaba-1", m.ID, m.Provider)
@@ -38,7 +42,7 @@ func TestFetchModelsFromAPI(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	resp, err := FetchModelsFromAPI("alibaba-1", "test-token", srv.URL+"/v1", nil)
+	resp, err := fetchModelsFromAPI("alibaba-1", "test-token", srv.URL+"/v1", func(context.Context, string) *modelsmeta.ModelMetadata { return nil })
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
