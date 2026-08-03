@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"omnillm/internal/cif"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/rs/zerolog/log"
 )
@@ -525,6 +526,13 @@ func logAnthropicAgentGuardrailResponse(requestID, originalModel, modelUsed, pro
 	}
 }
 
+// truncateToolLoopValue caps a value for inclusion in a log field.
+//
+// The cut lands on a UTF-8 boundary at or below the byte limit. Slicing at a
+// fixed byte offset severs any multi-byte character straddling it, leaving
+// orphaned continuation bytes and a log field that is not valid UTF-8 --
+// which breaks strict JSON-log consumers. Tool results routinely carry CJK,
+// emoji, and accented text, so this is reached in practice.
 func truncateToolLoopValue(raw string) string {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -533,7 +541,11 @@ func truncateToolLoopValue(raw string) string {
 	if len(trimmed) <= toolLoopLogValueLimit {
 		return trimmed
 	}
-	return trimmed[:toolLoopLogValueLimit] + "...(truncated)"
+	cut := toolLoopLogValueLimit
+	for cut > 0 && !utf8.RuneStart(trimmed[cut]) {
+		cut--
+	}
+	return trimmed[:cut] + "...(truncated)"
 }
 
 func mustMarshalCompactJSON(value interface{}) string {

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"omnillm/internal/cif"
 	"omnillm/internal/providers/shared"
+	"unicode/utf8"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -17,11 +18,44 @@ import (
 
 const traceBodyLimit = 1024
 
+const truncationMarker = "...(truncated)"
+
+// cappedBody returns a log-safe copy of b, truncated to traceBodyLimit.
+//
+// Two properties matter here, and the obvious one-liner gets both wrong.
+//
+// It must not alias b. The previous implementation used
+// append(b[:limit], marker...), which reuses b's backing array whenever
+// cap(b) > limit and therefore overwrote live request bytes in place. Callers
+// log the body and then send that same buffer upstream, so truncating for
+// diagnostics silently corrupted the transmitted payload.
+//
+// It must not split a rune. Payloads are JSON but carry user content, and a
+// severed multi-byte character makes the resulting log field invalid UTF-8.
 func cappedBody(b []byte) []byte {
 	if len(b) <= traceBodyLimit {
 		return b
 	}
-	return append(b[:traceBodyLimit], []byte("...(truncated)")...)
+	cut := utf8SafeCut(b, traceBodyLimit)
+	out := make([]byte, 0, cut+len(truncationMarker))
+	out = append(out, b[:cut]...)
+	out = append(out, truncationMarker...)
+	return out
+}
+
+// utf8SafeCut returns the largest offset <= limit that lands on a UTF-8
+// boundary, so slicing b[:offset] never severs a multi-byte character. The
+// limit is a hard ceiling: the result is never larger than limit.
+func utf8SafeCut(b []byte, limit int) int {
+	if limit >= len(b) {
+		return len(b)
+	}
+	for cut := limit; cut > 0; cut-- {
+		if utf8.RuneStart(b[cut]) {
+			return cut
+		}
+	}
+	return 0
 }
 
 var (
