@@ -141,6 +141,7 @@ func handleMessages(c *gin.Context) {
 				Str("model", candidate.CanonicalModel).
 				Str("provider", providerID).
 				Msg("Trying provider for Anthropic request")
+			recordAttemptedCandidate(c, providerID, candidate.UpstreamModel)
 
 			log.Debug().
 				Str("request_id", requestIDStr).

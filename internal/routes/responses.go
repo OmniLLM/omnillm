@@ -115,6 +115,7 @@ func handleResponses(c *gin.Context) {
 				Str("model", candidate.CanonicalModel).
 				Str("provider", providerID).
 				Msg("Trying provider for Responses API request")
+			recordAttemptedCandidate(c, providerID, candidate.UpstreamModel)
 
 			log.Debug().
 				Str("request_id", requestIDStr).

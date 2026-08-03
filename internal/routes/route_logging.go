@@ -50,6 +50,18 @@ func logRequestReceived(c *gin.Context, requestID, apiShape string, request *cif
 		Msg("\x1b[33m-->\x1b[0m REQUEST")
 }
 
+// recordAttemptedCandidate remembers the most recently attempted candidate so
+// the terminal failure log can name the provider and upstream model that
+// actually failed. Without this the error log carries only an error string and
+// cannot be correlated with the gateway request log.
+func recordAttemptedCandidate(c *gin.Context, providerID, upstreamModel string) {
+	if c == nil {
+		return
+	}
+	c.Set("last_attempt_provider", providerID)
+	c.Set("last_attempt_upstream_model", upstreamModel)
+}
+
 func writeProviderFailure(c *gin.Context, defaultType string, lastErr error) {
 	// A client disconnect is not a provider failure.  Log it at info level and
 	// skip the JSON body entirely -- nobody is listening on the other end, and
@@ -62,7 +74,11 @@ func writeProviderFailure(c *gin.Context, defaultType string, lastErr error) {
 
 	errMsg := "All providers failed"
 	if lastErr != nil {
-		log.Error().Err(lastErr).Msg("Provider failure details")
+		log.Error().Err(lastErr).
+			Str("request_id", c.GetString("request_id")).
+			Str("provider", c.GetString("last_attempt_provider")).
+			Str("upstream_model", c.GetString("last_attempt_upstream_model")).
+			Msg("Provider failure details")
 	}
 	c.JSON(providerFailureStatus(lastErr), gin.H{
 		"error": gin.H{

@@ -160,6 +160,7 @@ func (h *chatCompletionHandler) handleChatCompletions(c *gin.Context) {
 				Str("model", candidate.CanonicalModel).
 				Str("provider", providerID).
 				Msg("Trying provider for request")
+			recordAttemptedCandidate(c, providerID, candidate.UpstreamModel)
 
 			if candidate.UpstreamModel != candidate.CanonicalModel {
 				log.Debug().Str("request_id", requestIDStr).Str("from", candidate.CanonicalModel).Str("to", candidate.UpstreamModel).Msg("Remapped model name")

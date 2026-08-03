@@ -169,10 +169,27 @@ func isTimeoutError(err error) bool {
 }
 
 func (a *CopilotAdapter) executeOpenAI(ctx context.Context, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
-	return a.executeOpenAIWithRetry(ctx, request, true)
+	return a.executeOpenAIWithRetry(ctx, request, true, true)
 }
 
-func (a *CopilotAdapter) executeOpenAIWithRetry(ctx context.Context, request *cif.CanonicalRequest, allowAuthRetry bool) (*cif.CanonicalResponse, error) {
+// logTransportRetry emits the single structured warning that accompanies a
+// transient-transport retry. It carries no credentials or request content.
+func (a *CopilotAdapter) logTransportRetry(request *cif.CanonicalRequest, endpoint, reason string, statusCode int) {
+	event := log.Warn().
+		Str("provider", a.provider.GetInstanceID()).
+		Str("endpoint", endpoint).
+		Str("retry_reason", reason).
+		Int("attempt", 2)
+	if request != nil {
+		event = event.Str("model", request.Model)
+	}
+	if statusCode > 0 {
+		event = event.Int("upstream_status", statusCode)
+	}
+	event.Msg("Copilot upstream transient transport failure, retrying once")
+}
+
+func (a *CopilotAdapter) executeOpenAIWithRetry(ctx context.Context, request *cif.CanonicalRequest, allowAuthRetry, allowTransportRetry bool) (*cif.CanonicalResponse, error) {
 	toolNameMapper := newCopilotToolNameMapper(request)
 	openaiPayload := a.convertCIFToOpenAI(request, toolNameMapper)
 	openaiPayload["stream"] = false
@@ -202,6 +219,14 @@ func (a *CopilotAdapter) executeOpenAIWithRetry(ctx context.Context, request *ci
 	}
 	if err != nil {
 		a.logUpstreamTimeout(ctx, request, "chat.completions", budget, elapsed, err)
+		if allowTransportRetry {
+			if transient, reason := isTransientTransportFailure(err, 0); transient {
+				a.logTransportRetry(request, "chat.completions", reason, 0)
+				if waitBeforeTransportRetry(ctx) {
+					return a.executeOpenAIWithRetry(ctx, request, allowAuthRetry, false)
+				}
+			}
+		}
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
@@ -210,7 +235,15 @@ func (a *CopilotAdapter) executeOpenAIWithRetry(ctx context.Context, request *ci
 		body, _ := io.ReadAll(resp.Body)
 		apiErr := &copilotAPIError{statusCode: resp.StatusCode, body: body}
 		if allowAuthRetry && a.shouldRetryAfterAuthError(request, apiErr) && a.refreshTokenForRetry("chat.completions") {
-			return a.executeOpenAIWithRetry(ctx, request, false)
+			return a.executeOpenAIWithRetry(ctx, request, false, allowTransportRetry)
+		}
+		if allowTransportRetry {
+			if transient, reason := isTransientTransportFailure(nil, resp.StatusCode); transient {
+				a.logTransportRetry(request, "chat.completions", reason, resp.StatusCode)
+				if waitBeforeTransportRetry(ctx) {
+					return a.executeOpenAIWithRetry(ctx, request, allowAuthRetry, false)
+				}
+			}
 		}
 		if !a.forceChatCompletions(request) && a.isUnsupportedChatCompletionsModel(apiErr) {
 			log.Info().
@@ -231,10 +264,10 @@ func (a *CopilotAdapter) executeOpenAIWithRetry(ctx context.Context, request *ci
 }
 
 func (a *CopilotAdapter) executeOpenAIStream(ctx context.Context, request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
-	return a.executeOpenAIStreamWithRetry(ctx, request, true)
+	return a.executeOpenAIStreamWithRetry(ctx, request, true, true)
 }
 
-func (a *CopilotAdapter) executeOpenAIStreamWithRetry(ctx context.Context, request *cif.CanonicalRequest, allowAuthRetry bool) (<-chan cif.CIFStreamEvent, error) {
+func (a *CopilotAdapter) executeOpenAIStreamWithRetry(ctx context.Context, request *cif.CanonicalRequest, allowAuthRetry, allowTransportRetry bool) (<-chan cif.CIFStreamEvent, error) {
 	toolNameMapper := newCopilotToolNameMapper(request)
 	openaiPayload := a.convertCIFToOpenAI(request, toolNameMapper)
 	openaiPayload["stream"] = true
@@ -265,6 +298,16 @@ func (a *CopilotAdapter) executeOpenAIStreamWithRetry(ctx context.Context, reque
 	}
 	if err != nil {
 		a.logUpstreamTimeout(ctx, request, "chat.completions-stream", budget, elapsed, err)
+		// Safe to retry: no response body exists yet, so parseOpenAISSE has
+		// not started and no stream event can have reached the caller.
+		if allowTransportRetry {
+			if transient, reason := isTransientTransportFailure(err, 0); transient {
+				a.logTransportRetry(request, "chat.completions-stream", reason, 0)
+				if waitBeforeTransportRetry(ctx) {
+					return a.executeOpenAIStreamWithRetry(ctx, request, allowAuthRetry, false)
+				}
+			}
+		}
 		return nil, fmt.Errorf("streaming request failed: %w", err)
 	}
 
@@ -273,7 +316,15 @@ func (a *CopilotAdapter) executeOpenAIStreamWithRetry(ctx context.Context, reque
 		resp.Body.Close()
 		apiErr := &copilotAPIError{statusCode: resp.StatusCode, body: body}
 		if allowAuthRetry && a.shouldRetryAfterAuthError(request, apiErr) && a.refreshTokenForRetry("chat.completions-stream") {
-			return a.executeOpenAIStreamWithRetry(ctx, request, false)
+			return a.executeOpenAIStreamWithRetry(ctx, request, false, allowTransportRetry)
+		}
+		if allowTransportRetry {
+			if transient, reason := isTransientTransportFailure(nil, resp.StatusCode); transient {
+				a.logTransportRetry(request, "chat.completions-stream", reason, resp.StatusCode)
+				if waitBeforeTransportRetry(ctx) {
+					return a.executeOpenAIStreamWithRetry(ctx, request, allowAuthRetry, false)
+				}
+			}
 		}
 		if !a.forceChatCompletions(request) && a.isUnsupportedChatCompletionsModel(apiErr) {
 			log.Info().
@@ -285,6 +336,10 @@ func (a *CopilotAdapter) executeOpenAIStreamWithRetry(ctx context.Context, reque
 		return nil, apiErr
 	}
 
+	// Past this point the SSE goroutine owns the body. Any later failure is
+	// reported through the event channel and is deliberately unreachable from
+	// the retry path above, which is what guarantees we never replay output
+	// the caller has already seen.
 	eventCh := make(chan cif.CIFStreamEvent, 64)
 	go a.parseOpenAISSE(ctx, resp.Body, eventCh, toolNameMapper)
 	return eventCh, nil
