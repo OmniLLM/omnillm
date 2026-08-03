@@ -150,12 +150,13 @@ type OpenAIStreamChunk struct {
 }
 
 type OpenAIStreamState struct {
-	ID                    string
-	Model                 string
-	Created               int64
-	Index                 int
-	ToolCallIndex         int
-	ToolCallIndexByBlock  map[int]int
+	ID                   string
+	Model                string
+	Created              int64
+	Index                int
+	ToolCallIndex        int
+	ToolCallIndexByBlock map[int]int
+	ToolCallIDByBlock    map[int]string
 }
 
 func CreateOpenAIStreamState() *OpenAIStreamState {
@@ -166,6 +167,7 @@ func CreateOpenAIStreamState() *OpenAIStreamState {
 		Index:                0,
 		ToolCallIndex:        0,
 		ToolCallIndexByBlock: map[int]int{},
+		ToolCallIDByBlock:    map[int]string{},
 	}
 }
 
@@ -176,6 +178,7 @@ func ConvertCIFEventToOpenAISSE(event cif.CIFStreamEvent, state *OpenAIStreamSta
 		state.ID = e.ID
 		state.ToolCallIndex = 0
 		state.ToolCallIndexByBlock = map[int]int{}
+		state.ToolCallIDByBlock = map[int]string{}
 		chunk := OpenAIStreamChunk{
 			ID:      e.ID,
 			Object:  "chat.completion.chunk",
@@ -192,6 +195,12 @@ func ConvertCIFEventToOpenAISSE(event cif.CIFStreamEvent, state *OpenAIStreamSta
 		if e.ContentBlock != nil {
 			switch cb := e.ContentBlock.(type) {
 			case cif.CIFToolCallPart:
+				if state.ToolCallIDByBlock[e.Index] == cb.ToolCallID {
+					if delta, ok := e.Delta.(cif.ToolArgumentsDelta); ok && delta.PartialJSON == "" {
+						return "", nil
+					}
+					break
+				}
 				toolCallDelta := OpenAIDelta{
 					ToolCalls: []OpenAIToolCallDelta{{
 						Index: state.ToolCallIndex,
@@ -204,6 +213,7 @@ func ConvertCIFEventToOpenAISSE(event cif.CIFStreamEvent, state *OpenAIStreamSta
 					}},
 				}
 				state.ToolCallIndexByBlock[e.Index] = state.ToolCallIndex
+				state.ToolCallIDByBlock[e.Index] = cb.ToolCallID
 				state.ToolCallIndex++
 				chunk := OpenAIStreamChunk{
 					ID:      state.ID,

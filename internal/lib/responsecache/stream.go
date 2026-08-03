@@ -64,6 +64,18 @@ func (a *StreamAccumulator) openBlock(idx int, kind blockKind) *blockAccum {
 	return block
 }
 
+func (a *StreamAccumulator) openToolBlock(idx int, id, name string) *blockAccum {
+	if block := a.openByIndex[idx]; block != nil && block.kind == blockTool {
+		if (block.tool.id == "" || block.tool.id == id) && (block.tool.name == "" || block.tool.name == name) {
+			return block
+		}
+	}
+	block := &blockAccum{kind: blockTool}
+	a.blocks = append(a.blocks, block)
+	a.openByIndex[idx] = block
+	return block
+}
+
 // Observe consumes one CIF stream event.
 func (a *StreamAccumulator) Observe(event cif.CIFStreamEvent) {
 	switch e := event.(type) {
@@ -76,6 +88,9 @@ func (a *StreamAccumulator) Observe(event cif.CIFStreamEvent) {
 
 	case cif.CIFContentDelta:
 		a.observeDelta(e)
+
+	case cif.CIFContentBlockStop:
+		delete(a.openByIndex, e.Index)
 
 	case cif.CIFStreamEnd:
 		a.ended = true
@@ -92,7 +107,7 @@ func (a *StreamAccumulator) observeDelta(e cif.CIFContentDelta) {
 	if e.ContentBlock != nil {
 		switch cb := e.ContentBlock.(type) {
 		case cif.CIFToolCallPart:
-			block := a.openBlock(idx, blockTool)
+			block := a.openToolBlock(idx, cb.ToolCallID, cb.ToolName)
 			block.tool.id = cb.ToolCallID
 			block.tool.name = cb.ToolName
 			// Providers announce a tool call with an empty-but-non-nil

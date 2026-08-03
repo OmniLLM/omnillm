@@ -20,6 +20,7 @@
 package responsecache
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -97,9 +98,9 @@ func Key(req *cif.CanonicalRequest) string {
 	keyed := struct {
 		Model          string                 `json:"model"`
 		System         *string                `json:"system,omitempty"`
-		Messages       []cif.CIFMessage        `json:"messages"`
-		Tools          []cif.CIFTool           `json:"tools,omitempty"`
-		ToolChoice     cif.CIFToolChoice       `json:"toolChoice,omitempty"`
+		Messages       []cif.CIFMessage       `json:"messages"`
+		Tools          []cif.CIFTool          `json:"tools,omitempty"`
+		ToolChoice     cif.CIFToolChoice      `json:"toolChoice,omitempty"`
 		Temperature    *float64               `json:"temperature,omitempty"`
 		TopP           *float64               `json:"topP,omitempty"`
 		MaxTokens      *int                   `json:"maxTokens,omitempty"`
@@ -297,7 +298,9 @@ func decodeToolArgs(raw string) map[string]interface{} {
 		return map[string]interface{}{}
 	}
 	var m map[string]interface{}
-	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+	decoder := json.NewDecoder(bytes.NewBufferString(raw))
+	decoder.UseNumber()
+	if err := decoder.Decode(&m); err != nil {
 		return map[string]interface{}{}
 	}
 	return m
