@@ -316,7 +316,20 @@ func TestModelCatalogExcludesCodexModels(t *testing.T) {
 	}
 }
 
+func saveTestProviderInstance(t *testing.T, instanceID string) {
+	t.Helper()
+	if err := database.NewProviderInstanceStore().Save(&database.ProviderInstanceRecord{
+		InstanceID: instanceID,
+		ProviderID: "openai",
+		Name:       "OpenAI",
+	}); err != nil {
+		t.Fatalf("save provider instance: %v", err)
+	}
+	t.Cleanup(func() { _ = database.NewProviderInstanceStore().Delete(instanceID) })
+}
+
 func TestApplyTokensPopulatesNameFromEmail(t *testing.T) {
+	saveTestProviderInstance(t, "openai-1")
 	p := NewProvider("openai-1", "")
 	idToken := makeJWT(t, map[string]interface{}{
 		"email": "someone@example.com",
@@ -343,6 +356,7 @@ func TestApplyTokensPopulatesNameFromEmail(t *testing.T) {
 func TestApplyTokensKeepsExistingRefreshTokenWhenOmitted(t *testing.T) {
 	// Refresh responses sometimes omit the refresh token; dropping it would
 	// permanently break unattended re-auth.
+	saveTestProviderInstance(t, "openai-preserve-refresh")
 	p := NewProvider("openai-preserve-refresh", "")
 	p.refreshToken = "original"
 	if err := p.ApplyTokens(&TokenResponse{AccessToken: "new-access"}); err != nil {
@@ -364,6 +378,7 @@ func TestApplyTokensRejectsNil(t *testing.T) {
 func TestSaveAndLoadFromDBRoundTrip(t *testing.T) {
 	// This is the path exercised on server restart; if it drops the account ID
 	// or refresh token the provider silently stops working.
+	saveTestProviderInstance(t, "openai-roundtrip")
 	orig := NewProvider("openai-roundtrip", "")
 	orig.accessToken = "access-tok"
 	orig.refreshToken = "refresh-tok"

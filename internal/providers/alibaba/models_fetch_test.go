@@ -71,6 +71,15 @@ func TestSetupAPIKeyAuth(t *testing.T) {
 		}
 	})
 	t.Run("saves token and returns correct values", func(t *testing.T) {
+		if err := database.NewProviderInstanceStore().Save(&database.ProviderInstanceRecord{
+			InstanceID: "alibaba-test-1",
+			ProviderID: "alibaba",
+			Name:       "Alibaba",
+		}); err != nil {
+			t.Fatalf("save provider instance: %v", err)
+		}
+		t.Cleanup(func() { _ = database.NewProviderInstanceStore().Delete("alibaba-test-1") })
+
 		token, baseURL, name, cfg, err := SetupAPIKeyAuth("alibaba-test-1", &types.AuthOptions{
 			APIKey: "sk-test-key",
 			Region: "global",

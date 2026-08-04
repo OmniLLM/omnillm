@@ -59,6 +59,31 @@ func (pis *ProviderInstanceStore) GetAll() ([]ProviderInstanceRecord, error) {
 	return records, nil
 }
 
+func (pis *ProviderInstanceStore) Create(record *ProviderInstanceRecord) (bool, error) {
+	activated := 0
+	if record.Activated {
+		activated = 1
+	}
+
+	result, err := pis.db.db.Exec(`
+		INSERT INTO provider_instances
+		(instance_id, provider_id, name, subtitle, priority, activated, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+		ON CONFLICT(instance_id) DO NOTHING
+	`, record.InstanceID, record.ProviderID, record.Name, record.Subtitle, record.Priority, activated)
+	if err != nil {
+		return false, err
+	}
+	created, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if created > 0 {
+		GetModelResolutionCache().InvalidateInstances()
+	}
+	return created > 0, nil
+}
+
 func (pis *ProviderInstanceStore) Save(record *ProviderInstanceRecord) error {
 	activated := 0
 	if record.Activated {

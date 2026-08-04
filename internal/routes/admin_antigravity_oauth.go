@@ -12,8 +12,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 
-	antigravitypkg "omnillm/internal/providers/antigravity"
 	"omnillm/internal/database"
+	antigravitypkg "omnillm/internal/providers/antigravity"
 	"omnillm/internal/registry"
 )
 
@@ -189,21 +189,27 @@ func handleAntigravityOAuthCallback(c *gin.Context) {
 	if tokenResp.RefreshToken != "" {
 		tokenData["refresh_token"] = tokenResp.RefreshToken
 	}
-	if err := tokenStore.Save(state.ProviderID, tokenData); err != nil {
-		log.Error().Err(err).Str("provider", state.ProviderID).Msg("Antigravity: failed to save tokens")
-		renderOAuthResult(c, false, "Failed to save credentials — please try again")
-		return
-	}
-
 	// Register provider (or update existing).
 	reg := registry.GetProviderRegistry()
 	if state.IsNewProvider {
 		prov := antigravitypkg.NewProvider(state.ProviderID, "")
-		prov.ApplyTokenFromDB()
-		if err := reg.Register(prov, true); err != nil {
-			log.Warn().Err(err).Str("provider", state.ProviderID).Msg("Antigravity: failed to register after OAuth")
+		if err := createProvider(prov, func() error {
+			if err := tokenStore.Save(state.ProviderID, tokenData); err != nil {
+				return fmt.Errorf("save credentials: %w", err)
+			}
+			prov.ApplyTokenFromDB()
+			return reg.Register(prov, true)
+		}); err != nil {
+			log.Error().Err(err).Str("provider", state.ProviderID).Msg("Antigravity: failed to persist provider")
+			renderOAuthResult(c, false, "Failed to save credentials — please try again")
+			return
 		}
 	} else {
+		if err := tokenStore.Save(state.ProviderID, tokenData); err != nil {
+			log.Error().Err(err).Str("provider", state.ProviderID).Msg("Antigravity: failed to save tokens")
+			renderOAuthResult(c, false, "Failed to save credentials — please try again")
+			return
+		}
 		// Update existing — reload token from DB so in-memory state is fresh.
 		if prov, provErr := reg.GetProvider(state.ProviderID); provErr == nil {
 			if ap, ok := prov.(*antigravitypkg.Provider); ok {

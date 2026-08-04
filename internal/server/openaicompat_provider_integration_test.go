@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"omnillm/internal/database"
 	"omnillm/internal/providers/openaicompatprovider"
 	"omnillm/internal/registry"
 	"strings"
@@ -157,6 +158,13 @@ func registerOpenAICompatibleProvider(t *testing.T, upstreamBaseURL, apiKey, mod
 
 	instanceID := fmt.Sprintf("openai-compatible-test-%d", time.Now().UnixNano())
 	provider := openaicompatprovider.NewProvider(instanceID, "OpenAI-Compatible Test")
+	if err := database.NewProviderInstanceStore().Save(&database.ProviderInstanceRecord{
+		InstanceID: instanceID,
+		ProviderID: provider.GetID(),
+		Name:       provider.GetName(),
+	}); err != nil {
+		t.Fatalf("save openai-compatible provider instance: %v", err)
+	}
 	if err := provider.SetupAuth(&providertypes.AuthOptions{
 		Endpoint:            upstreamBaseURL,
 		APIKey:              apiKey,

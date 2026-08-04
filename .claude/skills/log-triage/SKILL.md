@@ -1,50 +1,71 @@
 ---
 name: log-triage
-description: Continuously improve OmniLLM by mining ~/.omnillm/omnillm.log for errors, latency outliers, provider failures, and anomalies, then tracing them to root cause in the Go/TS codebase and proposing or applying fixes. Use when asked to "check the logs", "find bugs from logs", "improve the project", or during periodic health reviews.
+description: Mine OmniLLM and Claude Code logs from the past two days by default, correlate runtime failures, and determine which issues are fixable in the OmniLLM codebase. Use when asked to "check the logs", "find bugs from logs", "improve the project", or during periodic health reviews.
 ---
 
 # OmniLLM Log Triage & Improvement
 
-Goal: turn runtime evidence in `~/.omnillm/omnillm.log` into concrete, verified code improvements.
+Goal: turn correlated runtime evidence from OmniLLM and Claude Code into actionable findings and, when requested, verified code improvements, while separating OmniLLM defects from client, plugin, configuration, and environment issues.
 
 ## 1. Gather evidence
 
-Log is JSON-lines (zerolog). Key fields: `level`, `request_id`, `api_shape`,
-`model_requested`, `model_used`, `provider`, `stop_reason`, `stream`,
-`input_tokens`, `output_tokens`, `latency_ms`, `status`, `path`, `message`.
+Unless the user gives another window, inspect the **past 2 days**. Apply the time filter before counting or sampling so older incidents do not distort the result. Report the requested window and the actual timestamp range present in each log.
 
-Start with these passes (adjust window as needed):
+### OmniLLM logs
 
-```bash
-LOG=~/.omnillm/omnillm.log
+Primary sources:
 
-# 1. Non-info levels — the primary bug signal
-grep -h '"level":"\(warn\|error\|fatal\|panic\)"' $LOG* | tail -200
+- `~/.omnillm/omnillm.log` and rotated `omnillm.log.*`
+- `.omni-dev.log` in the repository root
 
-# 2. HTTP failures grouped by status + path
-jq -r 'select(.message=="HTTP" and .status>=400) | "\(.status) \(.path)"' $LOG | sort | uniq -c | sort -rn
+The OmniLLM log is JSON-lines (zerolog). Key fields: `level`, `request_id`,
+`api_shape`, `model_requested`, `model_used`, `provider`, `stop_reason`,
+`stream`, `input_tokens`, `output_tokens`, `latency_ms`, `status`, `path`,
+`message`, and the timestamp field (`time` or `timestamp`).
 
-# 3. Failures by provider / model
-jq -r 'select(.level=="error") | "\(.provider // "-") \(.model_requested // "-") \(.message)"' $LOG | sort | uniq -c | sort -rn
+Filter JSON entries to the window first, then run these passes over the filtered data:
 
-# 4. Latency outliers
-jq -r 'select(.latency_ms!=null) | [.latency_ms, .provider, .model_used, .path] | @tsv' $LOG | sort -rn | head -30
+1. Non-info levels (`warn`, `error`, `fatal`, `panic`).
+2. HTTP failures grouped by status and path.
+3. Failures grouped by provider, requested model, and message.
+4. Latency and time-to-first-token outliers.
+5. Request IDs with an initial request but no terminal response; exclude completed retries and expected stream cancellations.
+6. Token/context anomalies such as near-limit input or zero output.
+7. Repeated retry, timeout, serialization, upstream-body, or stream errors.
 
-# 5. Requests with no matching RESPONSE (hangs / dropped streams)
-jq -r 'select(.message|test("REQUEST|RESPONSE")) | "\(.request_id) \(.message)"' $LOG \
-  | awk '{c[$1]++} END{for(r in c) if(c[r]<2) print r}'
+Use a small Python script when timestamp filtering or multiline correlation would make a `grep | jq` pipeline misleading. Never assume rotated files are ordered or share the same schema.
 
-# 6. Token/context anomalies (near-limit inputs, zero-output responses)
-jq -r 'select(.output_tokens==0 or .input_tokens>180000) | [.request_id,.model_used,.input_tokens,.output_tokens] | @tsv' $LOG
+### Claude Code log
+
+Also inspect `~/tmp/claude.log` by default. It is timestamped plain text, normally shaped like:
+
+```text
+2026-08-04T10:11:38.129Z [ERROR] API error (attempt 1/11): undefined Request timed out.
 ```
 
-Also check rotated files (`omnillm.log.*`) and `.omni-dev.log` in the repo root.
+Filter by the leading ISO-8601 timestamp to the same 2-day window, then:
 
-## 2. Triage
+1. Count lines by level and normalize repeated messages by replacing volatile request IDs, durations, process IDs, and filesystem paths; preserve HTTP routes and status codes.
+2. Extract API failures, slow-first-byte warnings, retries, stream interruptions, malformed responses, timeouts, and HTTP status codes.
+3. Correlate nearby `[API REQUEST]`, dispatch model, timing, retry, and completion lines into incidents. Do not count every retry line as a separate user-visible failure.
+4. Treat tool execution failures, missing plugin credentials, unauthorized MCP servers, marketplace path errors, and missing executables as Claude Code/plugin/environment issues unless OmniLLM evidence shows the model request caused them.
+5. Use model/provider/request timing and matching timestamps to correlate a Claude Code symptom with `~/.omnillm/omnillm.log`. Prefer a shared request ID; otherwise label timestamp/model correlation as circumstantial.
+6. Redact secrets, bearer tokens, user prompt content, and tool payloads from samples.
 
-For each distinct signal produce: symptom → frequency → affected
-provider/route → hypothesis. Rank by (frequency × severity). Ignore
-one-off client disconnects unless recurring.
+Claude Code may log high-volume DEBUG noise. Prioritize WARN/ERROR plus API lifecycle context rather than dumping all matching lines.
+
+## 2. Triage and ownership
+
+For each distinct signal produce: symptom → incident count (not raw retry-line count) → affected provider/route/model → evidence → hypothesis → ownership verdict. Rank by severity, recurrence, and user impact. Ignore one-off client disconnects unless recurring.
+
+Assign exactly one ownership verdict to each incident:
+
+- **OmniLLM-fixable** — evidence points to provider dispatch, translation, routing, retries, streaming, registry, persistence, security, or observability code in this repository.
+- **Possibly OmniLLM** — correlation exists but lacks a request ID, upstream response, or sufficient diagnostic fields; state what evidence would confirm it. Separately note any OmniLLM observability improvement that would make the incident diagnosable.
+- **Not OmniLLM** — Claude Code, MCP/plugin configuration, credentials, local environment, external upstream outage, or user command failure.
+- **Expected/transient** — successful retry, cancellation, or harmless startup noise with no recurring or material impact.
+
+A Claude Code `[ERROR]` line is not by itself proof of an OmniLLM defect. Check whether retries exhausted, whether the request later succeeded, and whether OmniLLM recorded a matching failure. A recovered retry with recurring or material reliability/latency impact should not be classified as expected/transient.
 
 Prefer a handful of well-understood issues over a long shallow list.
 
@@ -59,10 +80,11 @@ Map the signal to the owning package before reading broadly:
 - `internal/services/`, `internal/database/`, `internal/ingestion/`, `internal/security/`
 - `frontend/`, `desktop/` — UI-side issues
 
-Grep the exact log `message` string to find the emitting site, then read
-outward from there.
+Search for a stable, redacted fragment of the log `message` to find the emitting site, then read outward from there.
 
-## 4. Fix
+## 4. Fix when requested
+
+Only implement after the repository's OpenSpec proposal is validated and approved.
 
 - One issue per change; smallest correct fix.
 - Add a regression test under `tests/` or the package's `_test.go` whenever
@@ -79,10 +101,21 @@ make lint && make typecheck && make test
 
 ## 5. Report
 
-Summarize as a table: issue | evidence (count + sample request_id) | root cause | fix | test.
-List anything found but *not* fixed as follow-ups with rationale.
+Summarize as a table:
 
-Never invent log evidence — if a pass returns nothing, say so.
+| issue | evidence (incident count + redacted sample/request ID) | correlation | ownership | root cause or hypothesis | recommended fix/test |
+|---|---|---|---|---|---|
+
+Separate these outcomes clearly:
+
+1. OmniLLM fixes worth proposing.
+2. Possible OmniLLM issues needing better evidence or logging.
+3. Claude Code/plugin/environment issues that should not change this repository.
+4. Expected or transient events requiring no action.
+
+List unproposed or unapplied findings as follow-ups with rationale. If implementation is requested, follow the repository's OpenSpec workflow first. Pure log analysis and edits limited to this skill are documentation-only.
+
+Never invent log evidence. If a pass returns nothing, say so. State when the log contains less than the requested window.
 
 ## Beyond logs — other improvement angles
 

@@ -30,6 +30,111 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+func TestSQLiteConnectionPolicy(t *testing.T) {
+	db := GetDatabase().db
+
+	var journalMode string
+	if err := db.QueryRow(`PRAGMA journal_mode`).Scan(&journalMode); err != nil {
+		t.Fatalf("query journal mode: %v", err)
+	}
+	if journalMode != "wal" {
+		t.Fatalf("expected WAL journal mode, got %q", journalMode)
+	}
+
+	var busyTimeout int
+	if err := db.QueryRow(`PRAGMA busy_timeout`).Scan(&busyTimeout); err != nil {
+		t.Fatalf("query busy timeout: %v", err)
+	}
+	if busyTimeout != 5000 {
+		t.Fatalf("expected 5000ms busy timeout, got %d", busyTimeout)
+	}
+
+	var foreignKeys int
+	if err := db.QueryRow(`PRAGMA foreign_keys`).Scan(&foreignKeys); err != nil {
+		t.Fatalf("query foreign keys: %v", err)
+	}
+	if foreignKeys != 1 {
+		t.Fatalf("expected foreign keys enabled, got %d", foreignKeys)
+	}
+
+	stats := db.Stats()
+	if stats.MaxOpenConnections != 1 {
+		t.Fatalf("expected one open connection, got %d", stats.MaxOpenConnections)
+	}
+}
+
+func TestMeteringInsertWaitsForTransientWriteLock(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "database.sqlite")
+
+	primarySQL, err := sql.Open("sqlite", sqliteDSN(dbPath))
+	if err != nil {
+		t.Fatalf("open primary database: %v", err)
+	}
+	defer primarySQL.Close()
+	primarySQL.SetMaxOpenConns(1)
+	primarySQL.SetMaxIdleConns(1)
+
+	primary := &Database{db: primarySQL}
+	if err := primary.createTables(); err != nil {
+		t.Fatalf("create tables: %v", err)
+	}
+
+	locker, err := sql.Open("sqlite", sqliteDSN(dbPath))
+	if err != nil {
+		t.Fatalf("open lock database: %v", err)
+	}
+	defer locker.Close()
+	locker.SetMaxOpenConns(1)
+	locker.SetMaxIdleConns(1)
+
+	if _, err := locker.Exec(`BEGIN IMMEDIATE`); err != nil {
+		t.Fatalf("acquire write lock: %v", err)
+	}
+	lockHeld := true
+	defer func() {
+		if lockHeld {
+			_, _ = locker.Exec(`ROLLBACK`)
+		}
+	}()
+
+	result := make(chan error, 1)
+	go func() {
+		result <- primary.InsertMeteringRecord(MeteringRecord{
+			RequestID: "contention-request",
+			CreatedAt: time.Now(),
+		})
+	}()
+
+	select {
+	case err := <-result:
+		t.Fatalf("metering insert completed before lock release: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	if _, err := locker.Exec(`ROLLBACK`); err != nil {
+		t.Fatalf("release write lock: %v", err)
+	}
+	lockHeld = false
+
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatalf("metering insert after lock release: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("metering insert did not complete after lock release")
+	}
+
+	var count int
+	if err := primarySQL.QueryRow(`SELECT COUNT(*) FROM request_logs WHERE request_id = ?`, "contention-request").Scan(&count); err != nil {
+		t.Fatalf("query inserted metering record: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected one metering record, got %d", count)
+	}
+}
+
 func TestParseTimeSupportsKnownFormats(t *testing.T) {
 	tests := []string{
 		"2026-04-12T10:11:12Z",
@@ -99,6 +204,16 @@ func TestProviderInstanceStoreCRUD(t *testing.T) {
 	got, err = store.Get("provider-1")
 	if err != nil || got != nil {
 		t.Fatalf("expected deleted provider to be nil, got %#v err=%v", got, err)
+	}
+}
+
+func TestTokenStoreRejectsMissingProviderInstance(t *testing.T) {
+	instanceID := "missing-token-parent"
+	_ = NewProviderInstanceStore().Delete(instanceID)
+
+	err := NewTokenStore().Save(instanceID, map[string]any{"token": "abc"})
+	if err == nil {
+		t.Fatal("expected token save without provider instance to fail")
 	}
 }
 
