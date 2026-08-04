@@ -1,9 +1,14 @@
 package routes
 
 import (
+	"bytes"
+	"encoding/json"
 	"omnillm/internal/cif"
 	"strings"
 	"testing"
+
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 func TestExtractLatestRawAnthropicToolResultEntriesUsesMostRecentUserToolResults(t *testing.T) {
@@ -67,8 +72,8 @@ func TestExtractLatestRawAnthropicToolResultEntriesUsesMostRecentUserToolResults
 	if entry.IsError == nil || !*entry.IsError {
 		t.Fatalf("expected is_error=true, got %#v", entry.IsError)
 	}
-	if entry.ResultPreview != "[Tool result missing due to internal error]" {
-		t.Fatalf("unexpected raw result preview: %q", entry.ResultPreview)
+	if entry.ResultBytes != len("[Tool result missing due to internal error]") {
+		t.Fatalf("expected raw result byte length %d, got %d", len("[Tool result missing due to internal error]"), entry.ResultBytes)
 	}
 }
 
@@ -167,8 +172,8 @@ func TestExtractLatestToolResultLogEntriesUsesMostRecentUserToolResults(t *testi
 	if entry.IsError == nil || !*entry.IsError {
 		t.Fatalf("expected is_error=true, got %#v", entry.IsError)
 	}
-	if !strings.HasSuffix(entry.ResultPreview, "...(truncated)") {
-		t.Fatalf("expected truncated result preview, got %q", entry.ResultPreview)
+	if entry.ResultBytes != len(longResult) {
+		t.Fatalf("expected result byte length %d, got %d", len(longResult), entry.ResultBytes)
 	}
 }
 
@@ -201,8 +206,8 @@ func TestExtractToolCallLogEntriesFromResponseCapturesArguments(t *testing.T) {
 	if entries[0].ToolName != "list_files" {
 		t.Fatalf("expected tool name list_files, got %q", entries[0].ToolName)
 	}
-	if entries[0].ArgumentsPreview != `{"dir":"/tmp"}` {
-		t.Fatalf("unexpected arguments preview: %q", entries[0].ArgumentsPreview)
+	if entries[0].ArgumentBytes != len(`{"dir":"/tmp"}`) {
+		t.Fatalf("expected argument byte length %d, got %d", len(`{"dir":"/tmp"}`), entries[0].ArgumentBytes)
 	}
 }
 
@@ -245,8 +250,83 @@ func TestToolLoopCallTrackerAccumulatesStreamedArguments(t *testing.T) {
 	if entry.ToolName != "search_files" {
 		t.Fatalf("expected tool name search_files, got %q", entry.ToolName)
 	}
-	if entry.ArgumentsPreview != `{"pattern":"TODO","path":"src"}` {
-		t.Fatalf("unexpected accumulated arguments: %q", entry.ArgumentsPreview)
+	if entry.ArgumentBytes != len(`{"pattern":"TODO","path":"src"}`) {
+		t.Fatalf("expected accumulated argument byte length %d, got %d", len(`{"pattern":"TODO","path":"src"}`), entry.ArgumentBytes)
+	}
+}
+
+func TestToolLoopCallTrackerSeedsArgumentsOnlyBeforeDeltas(t *testing.T) {
+	seedArguments := map[string]interface{}{"seed": "value"}
+	seedBytes := len(`{"seed":"value"}`)
+	deltaJSON := `{"delta":true}`
+
+	tests := []struct {
+		name       string
+		events     []cif.CIFContentDelta
+		wantBytes  int
+		wantCallID string
+	}{
+		{
+			name: "repeated content block does not replace accumulated bytes",
+			events: []cif.CIFContentDelta{
+				{Index: 2, ContentBlock: cif.CIFToolCallPart{ToolCallID: "call_repeat", ToolName: "Search", ToolArguments: seedArguments}},
+				{Index: 2, Delta: cif.ToolArgumentsDelta{PartialJSON: deltaJSON}},
+				{Index: 2, ContentBlock: cif.CIFToolCallPart{ToolCallID: "call_repeat", ToolName: "Search", ToolArguments: seedArguments}},
+			},
+			wantBytes:  seedBytes + len(deltaJSON),
+			wantCallID: "call_repeat",
+		},
+		{
+			name: "content block after delta updates identity without adding seed",
+			events: []cif.CIFContentDelta{
+				{Index: 2, Delta: cif.ToolArgumentsDelta{PartialJSON: deltaJSON}},
+				{Index: 2, ContentBlock: cif.CIFToolCallPart{ToolCallID: "call_late", ToolName: "Search", ToolArguments: seedArguments}},
+			},
+			wantBytes:  len(deltaJSON),
+			wantCallID: "call_late",
+		},
+		{
+			name: "content block and equivalent delta count one representation",
+			events: []cif.CIFContentDelta{
+				{
+					Index:        2,
+					ContentBlock: cif.CIFToolCallPart{ToolCallID: "call_combined", ToolName: "Search", ToolArguments: seedArguments},
+					Delta:        cif.ToolArgumentsDelta{PartialJSON: `{"seed":"value"}`},
+				},
+			},
+			wantBytes:  seedBytes,
+			wantCallID: "call_combined",
+		},
+		{
+			name: "whitespace delta contributes to payload bytes",
+			events: []cif.CIFContentDelta{
+				{Index: 2, ContentBlock: cif.CIFToolCallPart{ToolCallID: "call_space", ToolName: "Search"}},
+				{Index: 2, Delta: cif.ToolArgumentsDelta{PartialJSON: "   "}},
+			},
+			wantBytes:  3,
+			wantCallID: "call_space",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			tracker := newToolLoopCallTracker()
+			for _, event := range test.events {
+				tracker.Observe(event)
+			}
+
+			entries := tracker.Entries()
+			if len(entries) != 1 {
+				t.Fatalf("expected 1 tracked tool call, got %d", len(entries))
+			}
+			entry := entries[0]
+			if entry.ArgumentBytes != test.wantBytes {
+				t.Fatalf("argument byte length = %d, want %d", entry.ArgumentBytes, test.wantBytes)
+			}
+			if entry.ToolCallID != test.wantCallID || entry.ToolName != "Search" || entry.BlockIndex != 2 {
+				t.Fatalf("tracked identity changed: %#v", entry)
+			}
+		})
 	}
 }
 
@@ -347,17 +427,206 @@ func TestFilterErroredToolResultEntriesReturnsOnlyErroredEntries(t *testing.T) {
 	}
 }
 
-func TestFilterToolCallEntriesByNameReturnsOnlyAgentCalls(t *testing.T) {
-	entries := []toolLoopCallLogEntry{
-		{ToolCallID: "call_agent", ToolName: anthropicAgentToolName},
-		{ToolCallID: "call_read", ToolName: "Read"},
+func captureToolLoopLogs(t *testing.T, level zerolog.Level, emit func()) []map[string]interface{} {
+	t.Helper()
+
+	var output bytes.Buffer
+	previousLogger := log.Logger
+	log.Logger = zerolog.New(&output).Level(level)
+	t.Cleanup(func() { log.Logger = previousLogger })
+
+	emit()
+
+	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+	records := make([]map[string]interface{}, 0, len(lines))
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		var record map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Fatalf("decode captured log %q: %v", line, err)
+		}
+		records = append(records, record)
+	}
+	return records
+}
+
+func assertToolLoopLogsExclude(t *testing.T, records []map[string]interface{}, sentinel string) {
+	t.Helper()
+
+	encoded, err := json.Marshal(records)
+	if err != nil {
+		t.Fatalf("marshal captured logs: %v", err)
+	}
+	if bytes.Contains(encoded, []byte(sentinel)) {
+		t.Fatalf("captured logs contain secret sentinel %q", sentinel)
+	}
+	for _, record := range records {
+		for _, field := range []string{"tool_arguments", "tool_result", "raw_inbound_payload"} {
+			if _, ok := record[field]; ok {
+				t.Fatalf("captured log contains payload field %q: %s", field, encoded)
+			}
+		}
+	}
+}
+
+func findToolLoopLog(t *testing.T, records []map[string]interface{}, message string) map[string]interface{} {
+	t.Helper()
+
+	for _, record := range records {
+		if record["message"] == message {
+			return record
+		}
+	}
+	t.Fatalf("missing log message %q in %#v", message, records)
+	return nil
+}
+
+func TestToolLoopLogsExcludePayloadContent(t *testing.T) {
+	const sentinel = "SECRET_SENTINEL_TOOL_PAYLOAD_9f31"
+	isError := true
+	rawPayload := map[string]interface{}{
+		"messages": []interface{}{
+			map[string]interface{}{
+				"role": "user",
+				"content": []interface{}{
+					map[string]interface{}{
+						"type":        "tool_result",
+						"tool_use_id": "call_raw",
+						"name":        "Read",
+						"content": []interface{}{
+							map[string]interface{}{"type": "text", "text": sentinel},
+						},
+						"is_error": true,
+					},
+				},
+			},
+		},
+	}
+	request := &cif.CanonicalRequest{
+		Model: "test-model",
+		Tools: []cif.CIFTool{{Name: anthropicAgentToolName}},
+		Messages: []cif.CIFMessage{
+			cif.CIFUserMessage{
+				Role: "user",
+				Content: []cif.CIFContentPart{
+					cif.CIFToolResultPart{
+						Type:       "tool_result",
+						ToolCallID: "call_agent",
+						ToolName:   anthropicAgentToolName,
+						Content:    sentinel,
+						IsError:    &isError,
+					},
+				},
+			},
+		},
+	}
+	response := &cif.CanonicalResponse{
+		Content: []cif.CIFContentPart{
+			cif.CIFToolCallPart{
+				Type:       "tool_call",
+				ToolCallID: "call_out",
+				ToolName:   "Write",
+				ToolArguments: map[string]interface{}{
+					"nested": map[string]interface{}{"secret": sentinel},
+				},
+			},
+		},
 	}
 
-	filtered := filterToolCallEntriesByName(entries, anthropicAgentToolName)
-	if len(filtered) != 1 {
-		t.Fatalf("expected 1 Agent tool call, got %d", len(filtered))
+	records := captureToolLoopLogs(t, zerolog.DebugLevel, func() {
+		logRawAnthropicToolLoopPayload("request-secret", rawPayload)
+		logAnthropicToolLoopRequest("request-secret", request)
+		logAnthropicToolLoopResponse("request-secret", "test-model", "used-model", "provider-1", false, extractToolCallLogEntriesFromResponse(response))
+	})
+
+	assertToolLoopLogsExclude(t, records, sentinel)
+	rawRecord := findToolLoopLog(t, records, "TOOL LOOP raw inbound tool_result")
+	if rawRecord["request_id"] != "request-secret" || rawRecord["tool_call_id"] != "call_raw" {
+		t.Fatalf("raw metadata missing: %#v", rawRecord)
 	}
-	if filtered[0].ToolCallID != "call_agent" {
-		t.Fatalf("expected Agent call id call_agent, got %q", filtered[0].ToolCallID)
+	if rawRecord["tool_result_bytes"] != float64(len(sentinel)) {
+		t.Fatalf("raw result byte length = %#v, want %d", rawRecord["tool_result_bytes"], len(sentinel))
+	}
+	canonicalRecord := findToolLoopLog(t, records, "TOOL LOOP inbound tool_result")
+	if canonicalRecord["tool_result_bytes"] != float64(len(sentinel)) {
+		t.Fatalf("canonical result byte length = %#v, want %d", canonicalRecord["tool_result_bytes"], len(sentinel))
+	}
+	outboundRecord := findToolLoopLog(t, records, "TOOL LOOP outbound tool_call")
+	if outboundRecord["tool_argument_bytes"] == nil || outboundRecord["tool_name"] != "Write" {
+		t.Fatalf("outbound metadata missing: %#v", outboundRecord)
+	}
+	warningRecord := findToolLoopLog(t, records, "AGENT TOOL inbound tool_result indicates local client execution failure")
+	if warningRecord["level"] != "warn" || warningRecord["tool_result_bytes"] != float64(len(sentinel)) {
+		t.Fatalf("Agent warning metadata missing: %#v", warningRecord)
+	}
+}
+
+func TestAgentWarningExcludesStructuredResultAtDefaultLogLevel(t *testing.T) {
+	const sentinel = "SECRET_SENTINEL_STRUCTURED_RESULT_2c17"
+	isError := true
+	structuredResult := `{"credentials":{"api_key":"` + sentinel + `"}}`
+	request := &cif.CanonicalRequest{
+		Model: "test-model",
+		Tools: []cif.CIFTool{{Name: anthropicAgentToolName}},
+		Messages: []cif.CIFMessage{
+			cif.CIFUserMessage{
+				Role: "user",
+				Content: []cif.CIFContentPart{
+					cif.CIFToolResultPart{
+						Type:       "tool_result",
+						ToolCallID: "call_agent_structured",
+						ToolName:   anthropicAgentToolName,
+						Content:    structuredResult,
+						IsError:    &isError,
+					},
+				},
+			},
+		},
+	}
+
+	records := captureToolLoopLogs(t, zerolog.InfoLevel, func() {
+		logAnthropicToolLoopRequest("request-warning", request)
+	})
+
+	assertToolLoopLogsExclude(t, records, sentinel)
+	if len(records) != 1 {
+		t.Fatalf("expected one warning at info level, got %#v", records)
+	}
+	warning := findToolLoopLog(t, records, "AGENT TOOL inbound tool_result indicates local client execution failure")
+	if warning["level"] != "warn" || warning["tool_result_bytes"] != float64(len(structuredResult)) {
+		t.Fatalf("Agent warning metadata missing: %#v", warning)
+	}
+}
+
+func TestStreamedToolLoopLogsExcludeArgumentContent(t *testing.T) {
+	const sentinel = "SECRET_SENTINEL_STREAMED_ARGUMENT_a83d"
+	tracker := newToolLoopCallTracker()
+	tracker.Observe(cif.CIFContentDelta{
+		Type:  "content_delta",
+		Index: 4,
+		ContentBlock: cif.CIFToolCallPart{
+			Type:       "tool_call",
+			ToolCallID: "call_stream",
+			ToolName:   anthropicAgentToolName,
+		},
+	})
+	first := `{"token":"` + sentinel[:18]
+	second := sentinel[18:] + `"}`
+	tracker.Observe(cif.CIFContentDelta{Type: "content_delta", Index: 4, Delta: cif.ToolArgumentsDelta{Type: "tool_arguments_delta", PartialJSON: first}})
+	tracker.Observe(cif.CIFContentDelta{Type: "content_delta", Index: 4, Delta: cif.ToolArgumentsDelta{Type: "tool_arguments_delta", PartialJSON: second}})
+
+	records := captureToolLoopLogs(t, zerolog.DebugLevel, func() {
+		logAnthropicToolLoopResponse("request-stream", "test-model", "used-model", "provider-1", true, tracker.Entries())
+	})
+
+	assertToolLoopLogsExclude(t, records, sentinel)
+	record := findToolLoopLog(t, records, "TOOL LOOP outbound tool_call")
+	if record["tool_argument_bytes"] != float64(len(first)+len(second)) {
+		t.Fatalf("streamed argument byte length = %#v, want %d", record["tool_argument_bytes"], len(first)+len(second))
+	}
+	if record["loop_block_index"] != float64(4) || record["tool_call_id"] != "call_stream" || record["stream"] != true {
+		t.Fatalf("stream metadata missing: %#v", record)
 	}
 }
