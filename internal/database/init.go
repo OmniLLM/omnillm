@@ -11,6 +11,12 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+const sqlitePragmas = "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)"
+
+func sqliteDSN(dbPath string) string {
+	return dbPath + sqlitePragmas
+}
+
 type Database struct {
 	db *sql.DB
 }
@@ -26,7 +32,7 @@ func InitializeDatabase(configDir string) error {
 	dbPath := filepath.Join(configDir, "database.sqlite")
 	log.Debug().Str("path", dbPath).Msg("Initializing SQLite database")
 
-	db, err := sql.Open("sqlite", dbPath+"?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=ON")
+	db, err := sql.Open("sqlite", sqliteDSN(dbPath))
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}

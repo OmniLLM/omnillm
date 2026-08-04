@@ -221,6 +221,7 @@ func setupAlibabaProviderMatrixHarness(t *testing.T) providerMatrixHarness {
 
 	upstream := newFakeAlibabaQwenUpstream(t)
 	provider := alibabapkg.NewProvider("alibaba-shape-matrix", "Alibaba Matrix Test")
+	saveProviderMatrixInstance(t, provider)
 	if err := provider.SetupAuth(&providertypes.AuthOptions{
 		Method:   "api-key",
 		APIKey:   matrixAlibabaAPIKey,
@@ -263,6 +264,7 @@ func setupAzureProviderMatrixHarness(t *testing.T) providerMatrixHarness {
 
 	upstream := newFakeAzureResponsesUpstream(t, "gpt-5.4")
 	provider := azurepkg.NewProvider("azure-openai-shape-matrix", "Azure Matrix Test")
+	saveProviderMatrixInstance(t, provider)
 	if err := provider.SetupAuth(&providertypes.AuthOptions{
 		APIKey:   matrixAzureAPIKey,
 		Endpoint: upstream.baseURL(),
@@ -355,6 +357,7 @@ func setupKimiProviderMatrixHarness(t *testing.T) providerMatrixHarness {
 
 	upstream := newFakeOpenAICompatUpstream(t, "kimi-k2.5")
 	provider := kimipkg.NewProvider("kimi-shape-matrix", "Kimi Matrix Test")
+	saveProviderMatrixInstance(t, provider)
 	if err := provider.SetupAuth(&providertypes.AuthOptions{
 		Method:   "api-key",
 		APIKey:   matrixKimiAPIKey,
@@ -399,6 +402,7 @@ func setupOpenAICompatibleProviderMatrixHarness(t *testing.T) providerMatrixHarn
 		"openai-compatible-dashscope-aliyuncs-com-101ed4",
 		"OpenAI-Compatible DashScope Matrix Test",
 	)
+	saveProviderMatrixInstance(t, provider)
 	if err := provider.SetupAuth(&providertypes.AuthOptions{
 		APIKey:              matrixOpenAICompatAPIKey,
 		Endpoint:            upstream.baseURL(),
@@ -432,6 +436,17 @@ func setupOpenAICompatibleProviderMatrixHarness(t *testing.T) providerMatrixHarn
 			}
 			assertOpenAIHistoryPayload(t, shape.name, "qwen3.6-max-preview", lastReq.Payload)
 		},
+	}
+}
+
+func saveProviderMatrixInstance(t *testing.T, provider providertypes.Provider) {
+	t.Helper()
+	if err := database.NewProviderInstanceStore().Save(&database.ProviderInstanceRecord{
+		InstanceID: provider.GetInstanceID(),
+		ProviderID: provider.GetID(),
+		Name:       provider.GetName(),
+	}); err != nil {
+		t.Fatalf("save provider instance %s: %v", provider.GetInstanceID(), err)
 	}
 }
 
@@ -785,4 +800,3 @@ func assertCanonicalHistoryMessages(t *testing.T, shapeName string, messages []c
 		t.Fatalf("%s: unexpected final user content: %#v", shapeName, finalUser.Content)
 	}
 }
-

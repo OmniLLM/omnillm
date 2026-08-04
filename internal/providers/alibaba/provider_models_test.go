@@ -31,6 +31,14 @@ func TestProviderGetModelsFetchesLiveModels(t *testing.T) {
 	defer server.Close()
 
 	tokenStore := database.NewTokenStore()
+	if err := database.NewProviderInstanceStore().Save(&database.ProviderInstanceRecord{
+		InstanceID: "alibaba-live",
+		ProviderID: "alibaba",
+		Name:       "Alibaba",
+	}); err != nil {
+		t.Fatalf("failed to save provider instance: %v", err)
+	}
+	t.Cleanup(func() { _ = database.NewProviderInstanceStore().Delete("alibaba-live") })
 	if err := tokenStore.Save("alibaba-live", map[string]interface{}{
 		"access_token": "test-token",
 		"auth_type":    "api-key",

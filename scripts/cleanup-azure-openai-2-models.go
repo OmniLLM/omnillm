@@ -23,7 +23,7 @@ func main() {
 	}
 	dbPath := filepath.Join(home, ".config", "omnillm", "database.sqlite")
 
-	db, err := sql.Open("sqlite", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
+	db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)")
 	if err != nil {
 		log.Fatalf("open db: %v", err)
 	}

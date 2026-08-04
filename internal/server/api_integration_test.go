@@ -1045,6 +1045,18 @@ func TestRenameProviderEndpointPreservesCustomNameAfterReload(t *testing.T) {
 	provider := alibabapkg.NewProvider(instanceID, "Original Name")
 	provider.SetName("Original Name")
 
+	store := database.NewProviderInstanceStore()
+	if err := store.Save(&database.ProviderInstanceRecord{
+		InstanceID: instanceID,
+		ProviderID: "alibaba",
+		Name:       provider.GetName(),
+		Subtitle:   "Original Subtitle",
+		Priority:   3,
+		Activated:  true,
+	}); err != nil {
+		t.Fatalf("failed to seed provider record: %v", err)
+	}
+
 	configStore := database.NewProviderConfigStore()
 	if err := configStore.Save(instanceID, map[string]interface{}{
 		"auth_type": "api-key",
@@ -1058,18 +1070,6 @@ func TestRenameProviderEndpointPreservesCustomNameAfterReload(t *testing.T) {
 		"access_token": "test-token",
 	}); err != nil {
 		t.Fatalf("failed to seed provider token: %v", err)
-	}
-
-	store := database.NewProviderInstanceStore()
-	if err := store.Save(&database.ProviderInstanceRecord{
-		InstanceID: instanceID,
-		ProviderID: "alibaba",
-		Name:       provider.GetName(),
-		Subtitle:   "Original Subtitle",
-		Priority:   3,
-		Activated:  true,
-	}); err != nil {
-		t.Fatalf("failed to seed provider record: %v", err)
 	}
 
 	reg := registry.GetProviderRegistry()

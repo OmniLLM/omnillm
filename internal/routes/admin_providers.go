@@ -15,11 +15,11 @@ import (
 	alibabapkg "omnillm/internal/providers/alibaba"
 	azurepkg "omnillm/internal/providers/azure"
 	codexpkg "omnillm/internal/providers/codex"
-	openaipkg "omnillm/internal/providers/openai"
 	copilot "omnillm/internal/providers/copilot"
 	googlepkg "omnillm/internal/providers/google"
 	kimipkg "omnillm/internal/providers/kimi"
 	modelscopepkg "omnillm/internal/providers/modelscope"
+	openaipkg "omnillm/internal/providers/openai"
 	openaicompatprovider "omnillm/internal/providers/openaicompatprovider"
 	"omnillm/internal/providers/types"
 	"omnillm/internal/registry"
@@ -40,51 +40,51 @@ func handleGetProviders(c *gin.Context) {
 		go func(i int, provider types.Provider) {
 			defer wg.Done()
 			config, configErr := loadProviderConfig(provider.GetInstanceID())
-		if configErr != nil {
-			log.Warn().Err(configErr).Str("provider", provider.GetInstanceID()).Msg("Failed to load provider config")
-		}
-
-		authStatus := "unauthenticated"
-		if provider.GetToken() != "" {
-			authStatus = "authenticated"
-		}
-
-		name := provider.GetName()
-		subtitle := ""
-		if dbRecord, dbErr := instanceStore.Get(provider.GetInstanceID()); dbErr == nil && dbRecord != nil {
-			if dbRecord.Name != "" {
-				name = dbRecord.Name
+			if configErr != nil {
+				log.Warn().Err(configErr).Str("provider", provider.GetInstanceID()).Msg("Failed to load provider config")
 			}
-			subtitle = dbRecord.Subtitle
-		}
 
-		providerInfo := map[string]interface{}{
-			"id":         provider.GetInstanceID(),
-			"type":       provider.GetID(),
-			"name":       name,
-			"subtitle":   subtitle,
-			"isActive":   providerRegistry.IsActiveProvider(provider.GetInstanceID()),
-			"authStatus": authStatus,
-		}
+			authStatus := "unauthenticated"
+			if provider.GetToken() != "" {
+				authStatus = "authenticated"
+			}
 
-		if normalizedConfig := normalizeProviderConfigForFrontend(provider.GetID(), config); normalizedConfig != nil {
-			providerInfo["config"] = normalizedConfig
-		}
+			name := provider.GetName()
+			subtitle := ""
+			if dbRecord, dbErr := instanceStore.Get(provider.GetInstanceID()); dbErr == nil && dbRecord != nil {
+				if dbRecord.Name != "" {
+					name = dbRecord.Name
+				}
+				subtitle = dbRecord.Subtitle
+			}
 
-		if authStatus == "authenticated" {
-			models, err := loadProviderModels(provider, false)
-			if err != nil {
-				log.Warn().Err(err).Str("provider", provider.GetInstanceID()).Msg("Failed to load provider models")
+			providerInfo := map[string]interface{}{
+				"id":         provider.GetInstanceID(),
+				"type":       provider.GetID(),
+				"name":       name,
+				"subtitle":   subtitle,
+				"isActive":   providerRegistry.IsActiveProvider(provider.GetInstanceID()),
+				"authStatus": authStatus,
+			}
+
+			if normalizedConfig := normalizeProviderConfigForFrontend(provider.GetID(), config); normalizedConfig != nil {
+				providerInfo["config"] = normalizedConfig
+			}
+
+			if authStatus == "authenticated" {
+				models, err := loadProviderModels(provider, false)
+				if err != nil {
+					log.Warn().Err(err).Str("provider", provider.GetInstanceID()).Msg("Failed to load provider models")
+					providerInfo["totalModelCount"] = 0
+					providerInfo["enabledModelCount"] = 0
+				} else {
+					providerInfo["totalModelCount"] = len(models)
+					providerInfo["enabledModelCount"] = countEnabledModels(models)
+				}
+			} else {
 				providerInfo["totalModelCount"] = 0
 				providerInfo["enabledModelCount"] = 0
-			} else {
-				providerInfo["totalModelCount"] = len(models)
-				providerInfo["enabledModelCount"] = countEnabledModels(models)
 			}
-		} else {
-			providerInfo["totalModelCount"] = 0
-			providerInfo["enabledModelCount"] = 0
-		}
 
 			providerList[i] = providerInfo
 		}(i, provider)
@@ -124,9 +124,9 @@ func handleSwitchProvider(c *gin.Context) {
 	})
 }
 
-// handleAuthAndCreateProvider authenticates a new provider instance *before*
-// persisting it to the database.  The provider is only saved when auth succeeds,
-// eliminating the temporary placeholder record and the post-auth rename.
+// handleAuthAndCreateProvider creates the provider-instance parent before
+// authentication persists credentials or configuration. Failed creation rolls
+// back the reserved parent and its cascading child records.
 //
 // POST /api/admin/providers/auth-and-create/:type
 // Body: same as handleProviderAuth (method, apiKey, region, token, …)
@@ -189,18 +189,18 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 		canonicalID := "alibaba-" + planSlug + "-" + region + "-" + suffix
 
 		prov := alibabapkg.NewProvider(canonicalID, "")
-		if err := prov.SetupAuth(&req); err != nil {
+		if err := createProvider(prov, func() error {
+			if err := prov.SetupAuth(&req); err != nil {
+				return fmt.Errorf("authentication failed: %w", err)
+			}
+			if err := providerRegistry.Register(prov, true); err != nil {
+				return fmt.Errorf("register provider: %w", err)
+			}
+			return nil
+		}); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"success": false,
-				"message": fmt.Sprintf("Authentication failed: %v", err),
-			})
-			return
-		}
-
-		if err := providerRegistry.Register(prov, true); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"success": false,
-				"message": fmt.Sprintf("Failed to register provider: %v", err),
+				"message": err.Error(),
 			})
 			return
 		}
@@ -235,18 +235,18 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 		canonicalID := "modelscope-" + suffix
 
 		prov := modelscopepkg.NewProvider(canonicalID, "")
-		if err := prov.SetupAuth(&req); err != nil {
+		if err := createProvider(prov, func() error {
+			if err := prov.SetupAuth(&req); err != nil {
+				return fmt.Errorf("authentication failed: %w", err)
+			}
+			if err := providerRegistry.Register(prov, true); err != nil {
+				return fmt.Errorf("register provider: %w", err)
+			}
+			return nil
+		}); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"success": false,
-				"message": fmt.Sprintf("Authentication failed: %v", err),
-			})
-			return
-		}
-
-		if err := providerRegistry.Register(prov, true); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"success": false,
-				"message": fmt.Sprintf("Failed to register provider: %v", err),
+				"message": err.Error(),
 			})
 			return
 		}
@@ -313,19 +313,20 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 				canonicalID := deriveGitHubCopilotID(cop.GetName())
 				cop.SetInstanceID(canonicalID)
 
-				if err := cop.SaveToDB(); err != nil {
-					log.Error().Err(err).Str("provider", canonicalID).Msg("Auth-and-create: failed to save GitHub Copilot token")
+				if err := createProvider(cop, func() error {
+					if err := cop.SaveToDB(); err != nil {
+						return fmt.Errorf("save GitHub Copilot token: %w", err)
+					}
+					return providerRegistry.Register(cop, true)
+				}); err != nil {
+					log.Error().Err(err).Str("provider", canonicalID).Msg("Auth-and-create: failed to persist GitHub Copilot provider")
 					activeAuthFlowMu.Lock()
 					if activeAuthFlow != nil && activeAuthFlow.ProviderID == pendingID {
 						activeAuthFlow.Status = "error"
-						activeAuthFlow.Error = "Failed to save token"
+						activeAuthFlow.Error = err.Error()
 					}
 					activeAuthFlowMu.Unlock()
 					return
-				}
-
-				if err := providerRegistry.Register(cop, true); err != nil {
-					log.Warn().Err(err).Str("provider", canonicalID).Msg("Auth-and-create: failed to register GitHub Copilot provider")
 				}
 
 				// Update status and provider ID atomically.
@@ -369,18 +370,18 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 		canonicalID := deriveGitHubCopilotID(cop.GetName())
 		cop.SetInstanceID(canonicalID)
 
-		if err := cop.SaveToDB(); err != nil {
+		if err := createProvider(cop, func() error {
+			if err := cop.SaveToDB(); err != nil {
+				return fmt.Errorf("save provider credentials: %w", err)
+			}
+			if err := providerRegistry.Register(cop, true); err != nil {
+				return fmt.Errorf("register provider: %w", err)
+			}
+			return nil
+		}); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"success": false,
-				"message": fmt.Sprintf("Failed to save provider credentials: %v", err),
-			})
-			return
-		}
-
-		if err := providerRegistry.Register(cop, true); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"success": false,
-				"message": fmt.Sprintf("Failed to register provider: %v", err),
+				"message": err.Error(),
 			})
 			return
 		}
@@ -408,26 +409,21 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 
 		canonicalID := providerRegistry.NextInstanceID("codex")
 		cdx := codexpkg.NewCodexProvider(canonicalID)
-		if err := cdx.SetupAuth(&req); err != nil {
+		if err := createProvider(cdx, func() error {
+			if err := cdx.SetupAuth(&req); err != nil {
+				return fmt.Errorf("Codex authentication failed: %w", err)
+			}
+			if err := cdx.SaveToDB(); err != nil {
+				return fmt.Errorf("save Codex credentials: %w", err)
+			}
+			if err := providerRegistry.Register(cdx, true); err != nil {
+				return fmt.Errorf("register Codex provider: %w", err)
+			}
+			return nil
+		}); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"success": false,
-				"message": fmt.Sprintf("Codex authentication failed: %v", err),
-			})
-			return
-		}
-
-		if err := cdx.SaveToDB(); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"success": false,
-				"message": fmt.Sprintf("Failed to save Codex credentials: %v", err),
-			})
-			return
-		}
-
-		if err := providerRegistry.Register(cdx, true); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"success": false,
-				"message": fmt.Sprintf("Failed to register Codex provider: %v", err),
+				"message": err.Error(),
 			})
 			return
 		}
@@ -467,25 +463,28 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 		instanceID := providerRegistry.NextInstanceID(providerType)
 		prov := azurepkg.NewProvider(instanceID, "")
 
-		if err := prov.SetupAuth(&req); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"success": false,
-				"message": fmt.Sprintf("Authentication failed: %v", err),
-			})
-			return
-		}
-
-		if rawCfg, cfgErr := loadProviderConfig(prov.GetInstanceID()); cfgErr == nil && rawCfg != nil {
-			normCfg := normalizeProviderConfigForStorage(providerType, rawCfg)
-			if len(normCfg) > 0 {
-				_ = database.NewProviderConfigStore().Save(prov.GetInstanceID(), normCfg)
+		if err := createProvider(prov, func() error {
+			if err := prov.SetupAuth(&req); err != nil {
+				return fmt.Errorf("authentication failed: %w", err)
 			}
-		}
 
-		if err := providerRegistry.Register(prov, true); err != nil {
+			if rawCfg, cfgErr := loadProviderConfig(prov.GetInstanceID()); cfgErr == nil && rawCfg != nil {
+				normCfg := normalizeProviderConfigForStorage(providerType, rawCfg)
+				if len(normCfg) > 0 {
+					if err := database.NewProviderConfigStore().Save(prov.GetInstanceID(), normCfg); err != nil {
+						return fmt.Errorf("save provider config: %w", err)
+					}
+				}
+			}
+
+			if err := providerRegistry.Register(prov, true); err != nil {
+				return fmt.Errorf("register provider: %w", err)
+			}
+			return nil
+		}); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"success": false,
-				"message": fmt.Sprintf("Failed to register provider: %v", err),
+				"message": err.Error(),
 			})
 			return
 		}
@@ -539,18 +538,18 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 		instanceID := providerRegistry.NextInstanceID(providerType)
 		prov := googlepkg.NewProvider(instanceID, "")
 
-		if err := prov.SetupAuth(&req); err != nil {
+		if err := createProvider(prov, func() error {
+			if err := prov.SetupAuth(&req); err != nil {
+				return fmt.Errorf("authentication failed: %w", err)
+			}
+			if err := providerRegistry.Register(prov, true); err != nil {
+				return fmt.Errorf("register provider: %w", err)
+			}
+			return nil
+		}); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"success": false,
-				"message": fmt.Sprintf("Authentication failed: %v", err),
-			})
-			return
-		}
-
-		if err := providerRegistry.Register(prov, true); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"success": false,
-				"message": fmt.Sprintf("Failed to register provider: %v", err),
+				"message": err.Error(),
 			})
 			return
 		}
@@ -573,18 +572,18 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 		instanceID := providerRegistry.NextInstanceID(providerType)
 		prov := kimipkg.NewProvider(instanceID, "")
 
-		if err := prov.SetupAuth(&req); err != nil {
+		if err := createProvider(prov, func() error {
+			if err := prov.SetupAuth(&req); err != nil {
+				return fmt.Errorf("authentication failed: %w", err)
+			}
+			if err := providerRegistry.Register(prov, true); err != nil {
+				return fmt.Errorf("register provider: %w", err)
+			}
+			return nil
+		}); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"success": false,
-				"message": fmt.Sprintf("Authentication failed: %v", err),
-			})
-			return
-		}
-
-		if err := providerRegistry.Register(prov, true); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"success": false,
-				"message": fmt.Sprintf("Failed to register provider: %v", err),
+				"message": err.Error(),
 			})
 			return
 		}
@@ -607,18 +606,18 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 		instanceID := openaicompatprovider.CanonicalInstanceID(req.Endpoint, req.APIKey)
 		prov := openaicompatprovider.NewProvider(instanceID, "")
 
-		if err := prov.SetupAuth(&req); err != nil {
+		if err := createProvider(prov, func() error {
+			if err := prov.SetupAuth(&req); err != nil {
+				return fmt.Errorf("authentication failed: %w", err)
+			}
+			if err := providerRegistry.Register(prov, true); err != nil {
+				return fmt.Errorf("register provider: %w", err)
+			}
+			return nil
+		}); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"success": false,
-				"message": fmt.Sprintf("Authentication failed: %v", err),
-			})
-			return
-		}
-
-		if err := providerRegistry.Register(prov, true); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"success": false,
-				"message": fmt.Sprintf("Failed to register provider: %v", err),
+				"message": err.Error(),
 			})
 			return
 		}

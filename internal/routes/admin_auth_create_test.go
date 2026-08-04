@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"omnillm/internal/database"
+	alibabapkg "omnillm/internal/providers/alibaba"
 	"omnillm/internal/registry"
 	"os"
 	"strings"
@@ -87,10 +89,12 @@ func resetAdminTestState(t *testing.T) {
 
 	reg := registry.GetProviderRegistry()
 	configStore := database.NewProviderConfigStore()
+	instanceStore := database.NewProviderInstanceStore()
 
 	for instanceID := range reg.GetProviderMap() {
 		_ = reg.Remove(instanceID)
 		_ = configStore.Delete(instanceID)
+		_ = instanceStore.Delete(instanceID)
 	}
 
 	activeAuthFlowMu.Lock()
@@ -99,6 +103,37 @@ func resetAdminTestState(t *testing.T) {
 	}
 	activeAuthFlow = nil
 	activeAuthFlowMu.Unlock()
+}
+
+func TestCreateProviderFailureRemovesReservedParent(t *testing.T) {
+	resetAdminTestState(t)
+	t.Cleanup(func() { resetAdminTestState(t) })
+
+	provider := alibabapkg.NewProvider("alibaba-failed-create", "Alibaba")
+	err := createProvider(provider, func() error {
+		if err := database.NewTokenStore().Save(provider.GetInstanceID(), map[string]any{"access_token": "partial"}); err != nil {
+			return err
+		}
+		return fmt.Errorf("authentication failed")
+	})
+	if err == nil {
+		t.Fatal("expected provider creation to fail")
+	}
+
+	instance, getErr := database.NewProviderInstanceStore().Get(provider.GetInstanceID())
+	if getErr != nil {
+		t.Fatalf("get provider instance: %v", getErr)
+	}
+	if instance != nil {
+		t.Fatalf("expected reserved parent to be removed, got %#v", instance)
+	}
+	token, tokenErr := database.NewTokenStore().Get(provider.GetInstanceID())
+	if tokenErr != nil {
+		t.Fatalf("get provider token: %v", tokenErr)
+	}
+	if token != nil {
+		t.Fatalf("expected partial token to cascade-delete, got %#v", token)
+	}
 }
 
 func TestHandleAddProviderInstanceRouteIsRemoved(t *testing.T) {

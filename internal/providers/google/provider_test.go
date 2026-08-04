@@ -38,6 +38,15 @@ func TestSetupAuthRequiresAPIKey(t *testing.T) {
 }
 
 func TestSetupAuthSetsCorrectValues(t *testing.T) {
+	if err := database.NewProviderInstanceStore().Save(&database.ProviderInstanceRecord{
+		InstanceID: "google-test-1",
+		ProviderID: "google",
+		Name:       "Google",
+	}); err != nil {
+		t.Fatalf("save provider instance: %v", err)
+	}
+	t.Cleanup(func() { _ = database.NewProviderInstanceStore().Delete("google-test-1") })
+
 	token, baseURL, name, err := SetupAuth("google-test-1", &types.AuthOptions{
 		APIKey: "AIza-test-key",
 	})

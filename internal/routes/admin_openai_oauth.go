@@ -122,11 +122,12 @@ func completeOpenAIOAuth(providerID string, isNew bool, verifier, state string) 
 
 	if isNew {
 		prov := openaipkg.NewProvider(providerID, "")
-		if err := prov.ApplyTokens(tokens); err != nil {
-			fail(err)
-			return
-		}
-		if err := reg.Register(prov, true); err != nil {
+		if err := createProvider(prov, func() error {
+			if err := prov.ApplyTokens(tokens); err != nil {
+				return err
+			}
+			return reg.Register(prov, true)
+		}); err != nil {
 			fail(err)
 			return
 		}

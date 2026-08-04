@@ -104,6 +104,15 @@ func TestSetupAuthRequiresAPIKey(t *testing.T) {
 }
 
 func TestSetupAuthSavesToken(t *testing.T) {
+	if err := database.NewProviderInstanceStore().Save(&database.ProviderInstanceRecord{
+		InstanceID: "azure-test-1",
+		ProviderID: "azure-openai",
+		Name:       "Azure OpenAI",
+	}); err != nil {
+		t.Fatalf("save provider instance: %v", err)
+	}
+	t.Cleanup(func() { _ = database.NewProviderInstanceStore().Delete("azure-test-1") })
+
 	token, endpoint, cfg, err := SetupAuth("azure-test-1", &types.AuthOptions{
 		APIKey:   "test-azure-key",
 		Endpoint: "https://my-resource.openai.azure.com",
