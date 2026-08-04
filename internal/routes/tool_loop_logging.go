@@ -3,40 +3,28 @@ package routes
 import (
 	"encoding/json"
 	"omnillm/internal/cif"
-	"strings"
-	"unicode/utf8"
 
 	"github.com/rs/zerolog/log"
 )
 
-const (
-	toolLoopLogValueLimit  = 400
-	anthropicAgentToolName = "Agent"
-)
+const anthropicAgentToolName = "Agent"
 
 type toolLoopResultLogEntry struct {
-	MessageIndex  int
-	ItemIndex     int
-	ToolCallID    string
-	ToolName      string
-	ResultPreview string
-	IsError       *bool
+	MessageIndex int
+	ItemIndex    int
+	ToolCallID   string
+	ToolName     string
+	ResultBytes  int
+	IsError      *bool
 }
 
-type toolLoopRawResultLogEntry struct {
-	MessageIndex  int
-	ItemIndex     int
-	ToolCallID    string
-	ToolName      string
-	ResultPreview string
-	IsError       *bool
-}
+type toolLoopRawResultLogEntry = toolLoopResultLogEntry
 
 type toolLoopCallLogEntry struct {
-	BlockIndex       int
-	ToolCallID       string
-	ToolName         string
-	ArgumentsPreview string
+	BlockIndex    int
+	ToolCallID    string
+	ToolName      string
+	ArgumentBytes int
 }
 
 type agentToolTranscriptGap struct {
@@ -52,10 +40,11 @@ type toolLoopCallTracker struct {
 }
 
 type toolLoopCallState struct {
-	blockIndex int
-	toolCallID string
-	toolName   string
-	rawArgs    strings.Builder
+	blockIndex        int
+	toolCallID        string
+	toolName          string
+	argumentBytes     int
+	argumentsObserved bool
 }
 
 func newToolLoopCallTracker() *toolLoopCallTracker {
@@ -74,26 +63,27 @@ func (t *toolLoopCallTracker) Observe(event cif.CIFStreamEvent) {
 		return
 	}
 
+	argsDelta, hasArgsDelta := delta.Delta.(cif.ToolArgumentsDelta)
+	state := t.ensure(delta.Index)
 	if contentBlock, ok := delta.ContentBlock.(cif.CIFToolCallPart); ok {
-		state := t.ensure(delta.Index)
 		if contentBlock.ToolCallID != "" {
 			state.toolCallID = contentBlock.ToolCallID
 		}
 		if contentBlock.ToolName != "" {
 			state.toolName = contentBlock.ToolName
 		}
-		if state.rawArgs.Len() == 0 && len(contentBlock.ToolArguments) > 0 {
-			state.rawArgs.WriteString(mustMarshalCompactJSON(contentBlock.ToolArguments))
+		if !state.argumentsObserved && len(contentBlock.ToolArguments) > 0 && (!hasArgsDelta || argsDelta.PartialJSON == "") {
+			state.argumentBytes = compactJSONLength(contentBlock.ToolArguments)
+			state.argumentsObserved = true
 		}
 	}
 
-	argsDelta, ok := delta.Delta.(cif.ToolArgumentsDelta)
-	if !ok || strings.TrimSpace(argsDelta.PartialJSON) == "" {
+	if !hasArgsDelta || argsDelta.PartialJSON == "" {
 		return
 	}
 
-	state := t.ensure(delta.Index)
-	state.rawArgs.WriteString(argsDelta.PartialJSON)
+	state.argumentBytes += len(argsDelta.PartialJSON)
+	state.argumentsObserved = true
 }
 
 func (t *toolLoopCallTracker) Entries() []toolLoopCallLogEntry {
@@ -108,10 +98,10 @@ func (t *toolLoopCallTracker) Entries() []toolLoopCallLogEntry {
 			continue
 		}
 		entries = append(entries, toolLoopCallLogEntry{
-			BlockIndex:       state.blockIndex,
-			ToolCallID:       state.toolCallID,
-			ToolName:         state.toolName,
-			ArgumentsPreview: truncateToolLoopValue(state.rawArgs.String()),
+			BlockIndex:    state.blockIndex,
+			ToolCallID:    state.toolCallID,
+			ToolName:      state.toolName,
+			ArgumentBytes: state.argumentBytes,
 		})
 	}
 	return entries
@@ -164,12 +154,12 @@ func extractLatestRawAnthropicToolResultEntries(payload map[string]interface{}) 
 			}
 			toolName, _ := partMap["name"].(string)
 			entries = append(entries, toolLoopRawResultLogEntry{
-				MessageIndex:  messageIndex,
-				ItemIndex:     itemIndex,
-				ToolCallID:    toolUseID,
-				ToolName:      toolName,
-				ResultPreview: truncateToolLoopValue(rawAnthropicToolResultContent(partMap["content"])),
-				IsError:       rawAnthropicToolResultIsError(partMap["is_error"]),
+				MessageIndex: messageIndex,
+				ItemIndex:    itemIndex,
+				ToolCallID:   toolUseID,
+				ToolName:     toolName,
+				ResultBytes:  rawAnthropicToolResultContentLength(partMap["content"]),
+				IsError:      rawAnthropicToolResultIsError(partMap["is_error"]),
 			})
 		}
 		if len(entries) > 0 {
@@ -180,33 +170,34 @@ func extractLatestRawAnthropicToolResultEntries(payload map[string]interface{}) 
 	return nil
 }
 
-func rawAnthropicToolResultContent(content interface{}) string {
+func rawAnthropicToolResultContentLength(content interface{}) int {
 	switch value := content.(type) {
 	case string:
-		return value
+		return len(value)
 	case []interface{}:
-		parts := make([]string, 0, len(value))
+		length := 0
+		textParts := 0
 		for _, rawPart := range value {
 			partMap, ok := rawPart.(map[string]interface{})
 			if !ok {
 				continue
 			}
 			if text, ok := partMap["text"].(string); ok {
-				parts = append(parts, text)
+				if textParts > 0 {
+					length += 2
+				}
+				length += len(text)
+				textParts++
 			}
 		}
-		if len(parts) > 0 {
-			return strings.Join(parts, "\n\n")
+		if textParts > 0 {
+			return length
 		}
 	case nil:
-		return ""
+		return 0
 	}
 
-	jsonBytes, err := json.Marshal(content)
-	if err != nil {
-		return ""
-	}
-	return string(jsonBytes)
+	return compactJSONLength(content)
 }
 
 func rawAnthropicToolResultIsError(value interface{}) *bool {
@@ -235,12 +226,12 @@ func extractLatestToolResultLogEntries(request *cif.CanonicalRequest) []toolLoop
 				continue
 			}
 			entries = append(entries, toolLoopResultLogEntry{
-				MessageIndex:  messageIndex,
-				ItemIndex:     itemIndex,
-				ToolCallID:    toolResult.ToolCallID,
-				ToolName:      toolResult.ToolName,
-				ResultPreview: truncateToolLoopValue(toolResult.Content),
-				IsError:       toolResult.IsError,
+				MessageIndex: messageIndex,
+				ItemIndex:    itemIndex,
+				ToolCallID:   toolResult.ToolCallID,
+				ToolName:     toolResult.ToolName,
+				ResultBytes:  len(toolResult.Content),
+				IsError:      toolResult.IsError,
 			})
 		}
 		if len(entries) > 0 {
@@ -263,10 +254,10 @@ func extractToolCallLogEntriesFromResponse(response *cif.CanonicalResponse) []to
 			continue
 		}
 		entries = append(entries, toolLoopCallLogEntry{
-			BlockIndex:       blockIndex,
-			ToolCallID:       toolCall.ToolCallID,
-			ToolName:         toolCall.ToolName,
-			ArgumentsPreview: truncateToolLoopValue(mustMarshalCompactJSON(toolCall.ToolArguments)),
+			BlockIndex:    blockIndex,
+			ToolCallID:    toolCall.ToolCallID,
+			ToolName:      toolCall.ToolName,
+			ArgumentBytes: compactJSONLength(toolCall.ToolArguments),
 		})
 	}
 	return entries
@@ -300,16 +291,6 @@ func filterErroredToolResultEntries(entries []toolLoopResultLogEntry) []toolLoop
 	filtered := make([]toolLoopResultLogEntry, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsError != nil && *entry.IsError {
-			filtered = append(filtered, entry)
-		}
-	}
-	return filtered
-}
-
-func filterToolCallEntriesByName(entries []toolLoopCallLogEntry, toolName string) []toolLoopCallLogEntry {
-	filtered := make([]toolLoopCallLogEntry, 0, len(entries))
-	for _, entry := range entries {
-		if entry.ToolName == toolName {
 			filtered = append(filtered, entry)
 		}
 	}
@@ -402,8 +383,8 @@ func logRawAnthropicToolLoopPayload(requestID string, payload map[string]interfa
 			Int("loop_item_index", entry.ItemIndex).
 			Str("tool_call_id", entry.ToolCallID).
 			Str("tool_name", entry.ToolName).
-			Str("tool_result", entry.ResultPreview).
-			Bool("raw_inbound_payload", true)
+			Int("tool_result_bytes", entry.ResultBytes).
+			Bool("raw_inbound", true)
 		if entry.IsError != nil {
 			event = event.Bool("tool_is_error", *entry.IsError)
 		}
@@ -421,7 +402,7 @@ func logAnthropicToolLoopRequest(requestID string, request *cif.CanonicalRequest
 			Int("loop_item_index", entry.ItemIndex).
 			Str("tool_call_id", entry.ToolCallID).
 			Str("tool_name", entry.ToolName).
-			Str("tool_result", entry.ResultPreview)
+			Int("tool_result_bytes", entry.ResultBytes)
 		if entry.IsError != nil {
 			event = event.Bool("tool_is_error", *entry.IsError)
 		}
@@ -443,7 +424,7 @@ func logAnthropicToolLoopResponse(requestID, originalModel, modelUsed, providerI
 			Int("loop_block_index", entry.BlockIndex).
 			Str("tool_call_id", entry.ToolCallID).
 			Str("tool_name", entry.ToolName).
-			Str("tool_arguments", entry.ArgumentsPreview).
+			Int("tool_argument_bytes", entry.ArgumentBytes).
 			Msg("TOOL LOOP outbound tool_call")
 	}
 
@@ -475,19 +456,17 @@ func logAnthropicAgentGuardrailRequest(requestID string, request *cif.CanonicalR
 		Msg("AGENT TOOL inbound guardrail")
 
 	for _, entry := range agentErroredResults {
-		event := log.Warn().
+		log.Warn().
 			Str("request_id", requestID).
 			Str("api_shape", "anthropic").
 			Str("model_requested", request.Model).
 			Str("tool_call_id", entry.ToolCallID).
 			Str("tool_name", entry.ToolName).
-			Str("tool_result", entry.ResultPreview).
+			Int("tool_result_bytes", entry.ResultBytes).
 			Bool("likely_client_tool_execution_failure", true).
-			Str("failure_boundary", "local_claude_client_after_outbound_tool_call")
-		if entry.IsError != nil {
-			event = event.Bool("tool_is_error", *entry.IsError)
-		}
-		event.Msg("AGENT TOOL inbound tool_result indicates local client execution failure")
+			Str("failure_boundary", "local_claude_client_after_outbound_tool_call").
+			Bool("tool_is_error", true).
+			Msg("AGENT TOOL inbound tool_result indicates local client execution failure")
 	}
 
 	for _, gap := range agentGaps {
@@ -510,7 +489,11 @@ func logAnthropicAgentGuardrailRequest(requestID string, request *cif.CanonicalR
 }
 
 func logAnthropicAgentGuardrailResponse(requestID, originalModel, modelUsed, providerID string, stream bool, entries []toolLoopCallLogEntry) {
-	for _, entry := range filterToolCallEntriesByName(entries, anthropicAgentToolName) {
+	for _, entry := range entries {
+		if entry.ToolName != anthropicAgentToolName {
+			continue
+		}
+
 		log.Debug().
 			Str("request_id", requestID).
 			Str("api_shape", "anthropic").
@@ -526,35 +509,13 @@ func logAnthropicAgentGuardrailResponse(requestID, originalModel, modelUsed, pro
 	}
 }
 
-// truncateToolLoopValue caps a value for inclusion in a log field.
-//
-// The cut lands on a UTF-8 boundary at or below the byte limit. Slicing at a
-// fixed byte offset severs any multi-byte character straddling it, leaving
-// orphaned continuation bytes and a log field that is not valid UTF-8 --
-// which breaks strict JSON-log consumers. Tool results routinely carry CJK,
-// emoji, and accented text, so this is reached in practice.
-func truncateToolLoopValue(raw string) string {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return ""
-	}
-	if len(trimmed) <= toolLoopLogValueLimit {
-		return trimmed
-	}
-	cut := toolLoopLogValueLimit
-	for cut > 0 && !utf8.RuneStart(trimmed[cut]) {
-		cut--
-	}
-	return trimmed[:cut] + "...(truncated)"
-}
-
-func mustMarshalCompactJSON(value interface{}) string {
+func compactJSONLength(value interface{}) int {
 	if value == nil {
-		return ""
+		return 0
 	}
 	jsonBytes, err := json.Marshal(value)
 	if err != nil {
-		return ""
+		return 0
 	}
-	return string(jsonBytes)
+	return len(jsonBytes)
 }
