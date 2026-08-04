@@ -138,6 +138,13 @@ func TestRemoveDeletesProviderAndToken(t *testing.T) {
 	}
 
 	tokenStore := database.NewTokenStore()
+	if err := database.NewProviderInstanceStore().Save(&database.ProviderInstanceRecord{
+		InstanceID: provider.GetInstanceID(),
+		ProviderID: provider.GetID(),
+		Name:       provider.GetName(),
+	}); err != nil {
+		t.Fatalf("save provider instance: %v", err)
+	}
 	if err := tokenStore.Save("mock-1", map[string]string{"token": "secret"}); err != nil {
 		t.Fatalf("save token failed: %v", err)
 	}
