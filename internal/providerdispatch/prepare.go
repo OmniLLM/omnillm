@@ -11,9 +11,10 @@ import (
 )
 
 type Attempt struct {
-	RequestedModel  string
-	NormalizedModel string
-	ProviderID      string
+	RequestedModel            string
+	NormalizedModel           string
+	ProviderID                string
+	OnlyIfPreviousUnavailable bool
 }
 
 type ResolveFunc func(requestedModel, normalizedModel, providerID string, cache *modelrouting.ModelCache) (*modelrouting.ResolvedModelRoute, error)

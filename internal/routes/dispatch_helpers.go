@@ -6,9 +6,10 @@ func toDispatchAttempts(attempts []resolvedModelAttempt) []providerdispatch.Atte
 	out := make([]providerdispatch.Attempt, 0, len(attempts))
 	for _, attempt := range attempts {
 		out = append(out, providerdispatch.Attempt{
-			RequestedModel:  attempt.RequestedModel,
-			NormalizedModel: attempt.NormalizedModel,
-			ProviderID:      attempt.ProviderID,
+			RequestedModel:            attempt.RequestedModel,
+			NormalizedModel:           attempt.NormalizedModel,
+			ProviderID:                attempt.ProviderID,
+			OnlyIfPreviousUnavailable: attempt.OnlyIfPreviousUnavailable,
 		})
 	}
 	return out

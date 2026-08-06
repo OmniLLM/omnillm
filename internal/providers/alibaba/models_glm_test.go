@@ -12,7 +12,6 @@ func TestNeedsToolChoiceNil(t *testing.T) {
 		{"qwen3.6-plus", true},
 		{"qwen-turbo", true},
 		{"QWEN3-MAX", true},
-		{"alibaba-sk/qwen3.6-plus", true},
 		{"glm-5.1", true},
 		{"GLM-5.1", true},
 		{"deepseek-v3", true},
@@ -28,4 +27,3 @@ func TestNeedsToolChoiceNil(t *testing.T) {
 		}
 	}
 }
-

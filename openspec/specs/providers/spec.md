@@ -74,6 +74,10 @@ Provider adapters SHALL preserve gateway contracts while applying verified provi
 - **WHEN** Alibaba live model discovery returns a known model identifier
 - **THEN** provider model output applies the available metadata-enriched display name consistently
 
+#### Scenario: Alibaba namespaced model identifier
+- **WHEN** a request routes to Alibaba with a native upstream model identifier containing one or more slashes
+- **THEN** Alibaba forwards the complete native model identifier without removing namespace segments
+
 #### Scenario: DeepSeek V4 tool turn
 - **WHEN** an Alibaba DeepSeek V4 request includes tools
 - **THEN** upstream thinking is disabled and upstream `tool_choice` is omitted

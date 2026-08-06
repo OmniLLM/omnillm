@@ -14,8 +14,10 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"testing"
 
 	"omnillm/internal/cif"
@@ -70,6 +72,50 @@ func registerPrefixProvider(
 	}
 
 	// Seed subtitle into DB so resolveProviderPrefix can match it.
+	store := database.NewProviderInstanceStore()
+	if err := store.Save(&database.ProviderInstanceRecord{
+		InstanceID: instanceID,
+		ProviderID: providerType,
+		Name:       instanceID,
+		Subtitle:   subtitle,
+		Priority:   0,
+		Activated:  true,
+	}); err != nil {
+		t.Fatalf("seed DB record for %s: %v", instanceID, err)
+	}
+
+	t.Cleanup(func() {
+		_ = reg.Remove(instanceID)
+		_ = store.Delete(instanceID)
+	})
+}
+
+func registerPrefixProviderWithExecute(
+	t *testing.T,
+	instanceID, subtitle, providerType, modelID string,
+	executeFn func(context.Context, *cif.CanonicalRequest) (*cif.CanonicalResponse, error),
+) {
+	t.Helper()
+
+	model := providertypes.Model{ID: modelID, Name: modelID, Provider: instanceID}
+	provider := &stubProvider{
+		id:         providerType,
+		instanceID: instanceID,
+		name:       instanceID,
+		models:     &providertypes.ModelsResponse{Object: "list", Data: []providertypes.Model{model}},
+	}
+	adapter := &stubAdapter{executeFn: executeFn}
+	provider.adapter = adapter
+	adapter.provider = provider
+
+	reg := registry.GetProviderRegistry()
+	if err := reg.Register(provider, false); err != nil {
+		t.Fatalf("register %s: %v", instanceID, err)
+	}
+	if _, err := reg.AddActive(instanceID); err != nil {
+		t.Fatalf("activate %s: %v", instanceID, err)
+	}
+
 	store := database.NewProviderInstanceStore()
 	if err := store.Save(&database.ProviderInstanceRecord{
 		InstanceID: instanceID,
@@ -207,15 +253,87 @@ func TestProviderPrefixRouting_SlashInModelID(t *testing.T) {
 	}
 }
 
-// TestProviderPrefixRouting_UnknownPrefix verifies that a prefix that matches
-// no known instance ID produces an error rather than silently routing elsewhere.
-func TestProviderPrefixRouting_UnknownPrefix(t *testing.T) {
+// TestProviderPrefixRouting_UnknownNamespace verifies that an unrecognized
+// first segment is treated as part of the native model ID. It still fails when
+// no provider advertises the complete identifier.
+func TestProviderPrefixRouting_UnknownNamespace(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()
 
 	status, body := chatCompletions(t, srv.URL, "totally-unknown-prefix-xyz/gpt-4o")
 	if status == http.StatusOK {
 		t.Fatalf("expected error response for unknown prefix, got 200: %s", body)
+	}
+}
+
+func TestProviderPrefixRouting_UnqualifiedNamespacedModel(t *testing.T) {
+	const modelID = "kimi/kimi-k3"
+
+	var capturedModel string
+	registerPrefixProvider(t, "pfx-native-namespace", "", "openai-compat", modelID, &capturedModel)
+
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	status, body := chatCompletions(t, srv.URL, modelID)
+	if status != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", status, body)
+	}
+	if capturedModel != modelID {
+		t.Errorf("expected full model %q forwarded; got %q", modelID, capturedModel)
+	}
+}
+
+func TestProviderPrefixRouting_NativeModelWinsPrefixCollision(t *testing.T) {
+	const modelID = "kimi/kimi-k3"
+	var nativeCaptured, prefixCaptured string
+
+	registerPrefixProvider(t, "kimi", "", "stub-provider", "kimi-k3", &prefixCaptured)
+	registerPrefixProvider(t, "pfx-native-collision", "", "openai-compat", modelID, &nativeCaptured)
+
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	status, body := chatCompletions(t, srv.URL, modelID)
+	if status != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", status, body)
+	}
+	if nativeCaptured != modelID {
+		t.Errorf("native provider should receive %q; got %q", modelID, nativeCaptured)
+	}
+	if prefixCaptured != "" {
+		t.Errorf("colliding prefix provider should not be called; got %q", prefixCaptured)
+	}
+}
+
+func TestProviderPrefixRouting_NamespacedModelFailover(t *testing.T) {
+	const modelID = "org/namespaced-model"
+	var attempts []string
+
+	registerPrefixProviderWithExecute(t, "pfx-failover-01", "", "stub-provider", modelID, func(_ context.Context, req *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+		attempts = append(attempts, "pfx-failover-01:"+req.Model)
+		return nil, errors.New("retryable upstream failure")
+	})
+	registerPrefixProviderWithExecute(t, "pfx-failover-02", "", "stub-provider", modelID, func(_ context.Context, req *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+		attempts = append(attempts, "pfx-failover-02:"+req.Model)
+		return &cif.CanonicalResponse{
+			ID:         "resp-prefix-failover",
+			Model:      req.Model,
+			Content:    []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: "pong"}},
+			StopReason: cif.StopReasonEndTurn,
+		}, nil
+	})
+
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	status, body := chatCompletions(t, srv.URL, modelID)
+	if status != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", status, body)
+	}
+	want := []string{"pfx-failover-01:" + modelID, "pfx-failover-02:" + modelID}
+	if !slices.Equal(attempts, want) {
+		t.Fatalf("attempts = %v, want %v", attempts, want)
 	}
 }
 
@@ -231,9 +349,9 @@ func TestProviderPrefixRouting_NoPrefixUnaffected(t *testing.T) {
 		func(_ context.Context, req *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
 			capturedModel = req.Model
 			return &cif.CanonicalResponse{
-				ID:    "resp-no-prefix",
-				Model: req.Model,
-				Content: []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: "pong"}},
+				ID:         "resp-no-prefix",
+				Model:      req.Model,
+				Content:    []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: "pong"}},
 				StopReason: cif.StopReasonEndTurn,
 			}, nil
 		},

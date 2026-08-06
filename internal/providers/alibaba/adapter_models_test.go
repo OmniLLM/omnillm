@@ -26,7 +26,6 @@ func TestBuildRequestAlibabaToolHistoryIncludesAssistantContent(t *testing.T) {
 		{name: "deepseek v4 flash", model: "deepseek-v4-flash", wantCallID: true},
 		{name: "qwen reasoning", model: "qwen3.6-flash"},
 		{name: "qwen3.6-plus needs call_id", model: "qwen3.6-plus", wantCallID: true},
-		{name: "prefixed model", model: "alibaba-test/deepseek-v4-flash", wantCallID: true},
 	}
 
 	for _, tt := range tests {
@@ -206,7 +205,6 @@ func TestBuildRequestThinkingFlagByModelAndShape(t *testing.T) {
 		{name: "qwen3.6 plus tools", model: "qwen3.6-plus", messages: plainMessages, tools: []cif.CIFTool{tool}, wantThinking: true},
 		{name: "qwen3.6 plus tool result", model: "qwen3.6-plus", messages: toolResultMessages, tools: []cif.CIFTool{tool}, wantThinking: true},
 		{name: "qwen3.6 plus local restream", model: "qwen3.6-plus", messages: plainMessages, stream: true, wantThinking: true},
-		{name: "prefixed qwen3.6 plus", model: "alibaba-test/qwen3.6-plus", messages: plainMessages, wantThinking: true},
 		{name: "deepseek v4 flash exclusion", model: "deepseek-v4-flash", messages: plainMessages},
 		{name: "qwen3.5 plus exclusion", model: "qwen3.5-plus", messages: plainMessages},
 		{name: "glm 5.1 exclusion", model: "glm-5.1", messages: plainMessages},

@@ -6,11 +6,7 @@ import (
 )
 
 func RemapModel(modelID string) string {
-	trimmed := strings.TrimSpace(modelID)
-	if idx := strings.LastIndex(trimmed, "/"); idx >= 0 {
-		return strings.TrimSpace(trimmed[idx+1:])
-	}
-	return trimmed
+	return strings.TrimSpace(modelID)
 }
 
 func IsChatCompletionsModel(modelID string) bool {
