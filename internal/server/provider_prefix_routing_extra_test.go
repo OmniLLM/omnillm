@@ -52,6 +52,13 @@ func anthropicMessages(t *testing.T, srvURL, model string) (int, string) {
 	return resp.StatusCode, readBody(t, resp)
 }
 
+func responsesRequest(t *testing.T, srvURL, model string) (int, string) {
+	t.Helper()
+	body := fmt.Sprintf(`{"model":%q,"input":"ping"}`, model)
+	resp := postJSON(t, srvURL+"/v1/responses", body, nil)
+	return resp.StatusCode, readBody(t, resp)
+}
+
 // streamingChatCompletions fires a POST /v1/chat/completions with stream:true
 // and returns the collected SSE lines and HTTP status.
 func streamingChatCompletions(t *testing.T, srvURL, model string) (int, []string) {
@@ -66,6 +73,9 @@ func streamingChatCompletions(t *testing.T, srvURL, model string) (int, []string
 	sc := bufio.NewScanner(resp.Body)
 	for sc.Scan() {
 		lines = append(lines, sc.Text())
+	}
+	if err := sc.Err(); err != nil {
+		t.Fatalf("scan streaming response: %v", err)
 	}
 	return resp.StatusCode, lines
 }
@@ -320,6 +330,59 @@ func TestProviderPrefixRouting_AnthropicShape_SlashInModelID(t *testing.T) {
 	}
 	if capturedModel != modelID {
 		t.Errorf("expected bare model %q forwarded; got %q", modelID, capturedModel)
+	}
+}
+
+func TestProviderPrefixRouting_ResponsesShape_SlashInModelID(t *testing.T) {
+	sfx := fmt.Sprintf("%d", stubProviderCounter.Add(1))
+	instanceID := "pfx-responses-slash-" + sfx
+	modelID := "kimi/kimi-k3"
+
+	var capturedModel string
+	registerPrefixProvider(t, instanceID, "", "stub-provider", modelID, &capturedModel)
+
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	status, body := responsesRequest(t, srv.URL, instanceID+"/"+modelID)
+	if status != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", status, body)
+	}
+	if capturedModel != modelID {
+		t.Errorf("expected bare model %q forwarded; got %q", modelID, capturedModel)
+	}
+}
+
+func TestNativeNamespacedModelAcrossGenerationShapes(t *testing.T) {
+	sfx := fmt.Sprintf("%d", stubProviderCounter.Add(1))
+	instanceID := "pfx-native-shapes-" + sfx
+	modelID := "kimi/kimi-k3"
+
+	var capturedModel string
+	registerPrefixProvider(t, instanceID, "", "stub-provider", modelID, &capturedModel)
+
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	tests := []struct {
+		name string
+		call func(*testing.T, string, string) (int, string)
+	}{
+		{name: "chat completions", call: chatCompletions},
+		{name: "anthropic messages", call: anthropicMessages},
+		{name: "responses", call: responsesRequest},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			capturedModel = ""
+			status, body := tt.call(t, srv.URL, modelID)
+			if status != http.StatusOK {
+				t.Fatalf("expected 200, got %d: %s", status, body)
+			}
+			if capturedModel != modelID {
+				t.Errorf("expected full model %q forwarded; got %q", modelID, capturedModel)
+			}
+		})
 	}
 }
 

@@ -59,49 +59,13 @@ func handleResponses(c *gin.Context) {
 
 	originalModel := prepareCanonicalRequest(c, canonicalRequest, "responses")
 
-	// Resolve providers
-	resolvedModel, normalizedModel := resolveRequestedModel(requestIDStr, canonicalRequest.Model)
-	canonicalRequest.Model = resolvedModel
-	modelRoute, err := modelrouting.ResolveProvidersForModel(
-		canonicalRequest.Model,
-		normalizedModel,
-		"",
-		modelCache,
-	)
-	if err != nil {
-		log.Error().Err(err).Str("request_id", requestIDStr).Str("model", canonicalRequest.Model).Msg("Failed to resolve providers")
-		writeResolveProvidersError(c, err, "server_error")
-		return
-	}
-
-	if len(modelRoute.CandidateProviders) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": gin.H{
-				"message": fmt.Sprintf("Model '%s' not found or no providers available", canonicalRequest.Model),
-				"type":    "invalid_request_error",
-			},
-		})
-		return
-	}
-
-	if normalizedModel != canonicalRequest.Model {
-		log.Debug().
-			Str("request_id", requestIDStr).
-			Str("from", canonicalRequest.Model).
-			Str("to", normalizedModel).
-			Msg("Normalized Responses API request model")
-		canonicalRequest.Model = normalizedModel
-	}
-
-	// Try candidate providers
+	// Resolve providers using the same ordered attempt pipeline as the other
+	// generation dialects so provider pinning and failover remain intact.
+	attempts := resolveRequestedModels(requestIDStr, canonicalRequest.Model)
 	executor := providerdispatch.NewExecutor(providerdispatch.ApplyGitHubCopilotSingleUpstreamMode, providerdispatch.DefaultUpstreamAPI)
 	resolveFailed := false
 	lastErr := executor.TryAttempts(
-		[]providerdispatch.Attempt{{
-			RequestedModel:  canonicalRequest.Model,
-			NormalizedModel: normalizedModel,
-			ProviderID:      "",
-		}},
+		toDispatchAttempts(attempts),
 		canonicalRequest,
 		modelCache,
 		modelrouting.ResolveProvidersForModel,

@@ -761,6 +761,18 @@ func TestAnthropicMessagesRouteStripsPrefixedVirtualModelUpstreamID(t *testing.T
 		nil,
 	)
 
+	providerStore := database.NewProviderInstanceStore()
+	if err := providerStore.Save(&database.ProviderInstanceRecord{
+		InstanceID: providerID,
+		ProviderID: "stub-provider",
+		Name:       providerID,
+		Subtitle:   "alipay01",
+		Activated:  true,
+	}); err != nil {
+		t.Fatalf("save provider subtitle: %v", err)
+	}
+	t.Cleanup(func() { _ = providerStore.Delete(providerID) })
+
 	virtualmodelStore := database.NewVirtualModelStore()
 	if err := virtualmodelStore.Create(&database.VirtualModelRecord{
 		VirtualModelID: virtualModel,

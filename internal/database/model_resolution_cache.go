@@ -22,11 +22,11 @@ import (
 type ModelResolutionCache struct {
 	mu sync.RWMutex
 
-	vmByName     map[string]*VirtualModelRecord            // key: lowercase name/id
-	vmUpstreams  map[string][]VirtualModelUpstreamRecord   // key: virtualModelID
-	provInst     []ProviderInstanceRecord
-	instByID     map[string]ProviderInstanceRecord         // key: instanceID
-	instByLcSub  map[string]string                        // key: lc subtitle → instanceID
+	vmByName    map[string]*VirtualModelRecord          // key: lowercase name/id
+	vmUpstreams map[string][]VirtualModelUpstreamRecord // key: virtualModelID
+	provInst    []ProviderInstanceRecord
+	instByID    map[string]ProviderInstanceRecord // key: instanceID
+	instByLcSub map[string]string                 // key: lc subtitle → instanceID
 
 	vmLoaded   bool
 	instLoaded bool
@@ -34,13 +34,13 @@ type ModelResolutionCache struct {
 
 // ModelStateCache caches GetAllByInstance results keyed by instanceID.
 type ModelStateCache struct {
-	mu    sync.RWMutex
-	data  map[string]map[string]bool // instanceID → modelID → enabled
+	mu     sync.RWMutex
+	data   map[string]map[string]bool // instanceID → modelID → enabled
 	loaded bool
 }
 
 var (
-	globalModelResCache = &ModelResolutionCache{}
+	globalModelResCache   = &ModelResolutionCache{}
 	globalModelStateCache = &ModelStateCache{}
 )
 
@@ -222,8 +222,8 @@ func (c *ModelResolutionCache) GetAllProviderInstances() []ProviderInstanceRecor
 	return r
 }
 
-// ResolveProviderPrefix maps a prefix to an instance ID using the cache.
-func (c *ModelResolutionCache) ResolveProviderPrefix(prefix string) string {
+// LookupProviderPrefix maps a known prefix to an instance ID using the cache.
+func (c *ModelResolutionCache) LookupProviderPrefix(prefix string) (string, bool) {
 	c.ensureInstLoaded()
 	c.mu.RLock()
 	byID := c.instByID
@@ -231,9 +231,15 @@ func (c *ModelResolutionCache) ResolveProviderPrefix(prefix string) string {
 	c.mu.RUnlock()
 
 	if _, ok := byID[prefix]; ok {
-		return prefix
+		return prefix, true
 	}
-	if id, ok := byLcSub[strings.ToLower(prefix)]; ok {
+	id, ok := byLcSub[strings.ToLower(prefix)]
+	return id, ok
+}
+
+// ResolveProviderPrefix maps a prefix to an instance ID using the cache.
+func (c *ModelResolutionCache) ResolveProviderPrefix(prefix string) string {
+	if id, ok := c.LookupProviderPrefix(prefix); ok {
 		return id
 	}
 	return prefix

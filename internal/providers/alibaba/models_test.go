@@ -38,11 +38,9 @@ func TestIsReasoningModelWith(t *testing.T) {
 		{"reasoning=false from models.dev", &modelsmeta.ModelMetadata{SupportsReasoning: boolPtr(false)}, "glm-5.1", false},
 		{"qwen3.6-plus falls back when metadata is missing", nil, "qwen3.6-plus", true},
 		{"qwen3.6-plus fallback overrides stale negative metadata", &modelsmeta.ModelMetadata{SupportsReasoning: boolPtr(false)}, "QWEN3.6-PLUS", true},
-		{"prefixed qwen3.6-plus falls back", nil, "alibaba-sk/qwen3.6-plus", true},
 		{"no models.dev entry (nil)", nil, "unknown-model", false},
 		{"models.dev entry but SupportsReasoning nil", &modelsmeta.ModelMetadata{}, "some-model", false},
 		{"model ID case folded", &modelsmeta.ModelMetadata{SupportsReasoning: boolPtr(true)}, "QWEN3-MAX", true},
-		{"provider-prefixed ID stripped", &modelsmeta.ModelMetadata{SupportsReasoning: boolPtr(true)}, "alibaba-sk/qwen3-max", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -60,8 +58,8 @@ func TestRemapModel(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"qwen3-max", "qwen3-max"},
 		{"  qwen3-coder-plus  ", "qwen3-coder-plus"},
-		{"alibaba-sk-ab2c5/deepseek-v4-flash", "deepseek-v4-flash"},
-		{"  alibaba-sk-ab2c5/deepseek-v4-flash  ", "deepseek-v4-flash"},
+		{"kimi/kimi-k3", "kimi/kimi-k3"},
+		{"  kimi/kimi-k3  ", "kimi/kimi-k3"},
 	}
 	for _, tc := range cases {
 		if got := RemapModel(tc.in); got != tc.want {

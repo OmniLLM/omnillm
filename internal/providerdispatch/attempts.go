@@ -52,8 +52,12 @@ func isAbort(err error) bool {
 
 func (e *Executor) TryAttempts(attempts []Attempt, request *cif.CanonicalRequest, cache *modelrouting.ModelCache, resolve ResolveFunc, onEmpty AttemptEmptyHandler, onError AttemptErrorHandler, handle CandidateHandler) error {
 	var lastErr error
+	previousUnavailable := true
 
 	for _, attempt := range attempts {
+		if attempt.OnlyIfPreviousUnavailable && !previousUnavailable {
+			continue
+		}
 		prepared, err := e.PrepareCandidates(attempt, request, cache, resolve)
 		if err != nil {
 			if onError != nil {
@@ -63,6 +67,7 @@ func (e *Executor) TryAttempts(attempts []Attempt, request *cif.CanonicalRequest
 		}
 
 		if len(prepared) == 0 {
+			previousUnavailable = true
 			lastErr = fmt.Errorf("model '%s' not found or no providers available", attempt.RequestedModel)
 			if onEmpty != nil {
 				onEmpty(attempt)
@@ -70,6 +75,7 @@ func (e *Executor) TryAttempts(attempts []Attempt, request *cif.CanonicalRequest
 			continue
 		}
 
+		previousUnavailable = false
 		for _, preparedCandidate := range prepared {
 			candidate := preparedCandidate.Candidate
 			providerID := preparedCandidate.ProviderID

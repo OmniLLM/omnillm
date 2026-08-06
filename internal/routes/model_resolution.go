@@ -9,43 +9,13 @@ import (
 )
 
 type resolvedModelAttempt struct {
-	RequestedModel  string
-	NormalizedModel string
-	ProviderID      string // non-empty when resolved from a virtual model upstream with a specific provider
-}
-
-func resolveRequestedModel(requestID, requestedModel string) (string, string) {
-	attempts := resolveRequestedModels(requestID, requestedModel)
-	if len(attempts) == 0 {
-		normalizedModel := modelrouting.NormalizeModelName(requestedModel)
-		return requestedModel, normalizedModel
-	}
-	return attempts[0].RequestedModel, attempts[0].NormalizedModel
+	RequestedModel            string
+	NormalizedModel           string
+	ProviderID                string // non-empty when resolved from a virtual model upstream with a specific provider
+	OnlyIfPreviousUnavailable bool
 }
 
 func resolveRequestedModels(requestID, requestedModel string) []resolvedModelAttempt {
-	// Strip optional "<instanceID>/<modelID>" prefix before any further resolution.
-	// When a prefix is present the request is pinned to that specific provider.
-	prefixProviderID, bareModel := modelrouting.ParseProviderPrefix(requestedModel)
-	if prefixProviderID != "" {
-		// Resolve the prefix: first try it as a literal instance ID, then fall
-		// back to matching against provider subtitles (the user-visible short
-		// label shown in the UI, e.g. "alipay01").
-		resolvedInstanceID := resolveProviderPrefix(prefixProviderID)
-		log.Debug().
-			Str("request_id", requestID).
-			Str("provider_prefix", prefixProviderID).
-			Str("resolved_instance_id", resolvedInstanceID).
-			Str("model", bareModel).
-			Msg("Provider prefix detected in model name")
-		normalizedModel := modelrouting.NormalizeModelName(bareModel)
-		return []resolvedModelAttempt{{
-			RequestedModel:  bareModel,
-			NormalizedModel: normalizedModel,
-			ProviderID:      resolvedInstanceID,
-		}}
-	}
-
 	normalizedModel := modelrouting.NormalizeModelName(requestedModel)
 
 	cache := database.GetModelResolutionCache()
@@ -55,7 +25,8 @@ func resolveRequestedModels(requestID, requestedModel string) []resolvedModelAtt
 		vm = cache.GetVirtualModel(normalizedModel)
 	}
 	if vm == nil || !vm.Enabled {
-		return []resolvedModelAttempt{{RequestedModel: requestedModel, NormalizedModel: normalizedModel}}
+		attempts := []resolvedModelAttempt{{RequestedModel: requestedModel, NormalizedModel: normalizedModel}}
+		return appendProviderPrefixFallback(requestID, attempts, requestedModel)
 	}
 
 	upstreams := cache.GetUpstreams(vm.VirtualModelID)
@@ -72,13 +43,13 @@ func resolveRequestedModels(requestID, requestedModel string) []resolvedModelAtt
 
 	attempts := make([]resolvedModelAttempt, 0, len(ordered))
 	for _, upstream := range ordered {
-		upstreamPrefix, bareUpstreamModel := modelrouting.ParseProviderPrefix(upstream.ModelID)
+		prefix, bareUpstreamModel := modelrouting.ParseProviderPrefix(upstream.ModelID)
 		executionModel := upstream.ModelID
 		providerID := upstream.ProviderID
-		if upstreamPrefix != "" {
+		if resolvedInstanceID, ok := lookupProviderPrefix(prefix); ok {
 			executionModel = bareUpstreamModel
 			if providerID == "" {
-				providerID = resolveProviderPrefix(upstreamPrefix)
+				providerID = resolvedInstanceID
 			}
 		}
 
@@ -100,15 +71,36 @@ func resolveRequestedModels(requestID, requestedModel string) []resolvedModelAtt
 	return attempts
 }
 
-// resolveProviderPrefix maps a user-supplied prefix to a registry instance ID.
+func appendProviderPrefixFallback(requestID string, attempts []resolvedModelAttempt, requestedModel string) []resolvedModelAttempt {
+	prefix, bareModel := modelrouting.ParseProviderPrefix(requestedModel)
+	resolvedInstanceID, ok := lookupProviderPrefix(prefix)
+	if !ok || bareModel == "" {
+		return attempts
+	}
+
+	log.Debug().
+		Str("request_id", requestID).
+		Str("provider_prefix", prefix).
+		Str("resolved_instance_id", resolvedInstanceID).
+		Str("model", bareModel).
+		Msg("Adding provider-qualified model fallback")
+	return append(attempts, resolvedModelAttempt{
+		RequestedModel:            bareModel,
+		NormalizedModel:           modelrouting.NormalizeModelName(bareModel),
+		ProviderID:                resolvedInstanceID,
+		OnlyIfPreviousUnavailable: true,
+	})
+}
+
+// lookupProviderPrefix maps a user-supplied prefix to a known registry instance ID.
 //
 // The lookup order is:
 //  1. Exact match against a registered instance ID (e.g. "alibaba-2").
 //  2. Case-insensitive match against the provider's subtitle — the short label
 //     users set in the UI (e.g. "alipay01").
-//
-// If neither matches, the original prefix is returned unchanged so the caller
-// can produce a meaningful "provider not found" error downstream.
-func resolveProviderPrefix(prefix string) string {
-	return database.GetModelResolutionCache().ResolveProviderPrefix(prefix)
+func lookupProviderPrefix(prefix string) (string, bool) {
+	if prefix == "" {
+		return "", false
+	}
+	return database.GetModelResolutionCache().LookupProviderPrefix(prefix)
 }
