@@ -18,12 +18,29 @@ const (
 	ProviderGoogle           ProviderID = "google"
 	ProviderKimi             ProviderID = "kimi"
 	ProviderOpenAICompatible ProviderID = "openai-compatible"
-	ProviderModelScope      ProviderID = "alibaba-modelscope"
+	ProviderModelScope       ProviderID = "alibaba-modelscope"
 	// ProviderCodex authenticates with an OpenAI platform API key.
 	ProviderCodex ProviderID = "codex"
 	// ProviderOpenAI authenticates with a ChatGPT account via OAuth.
 	ProviderOpenAI ProviderID = "openai"
 )
+
+// SupportedProviderIDs is the production-owned enumerable provider catalog.
+// Callers receive a fresh slice so they cannot mutate the canonical set.
+func SupportedProviderIDs() []ProviderID {
+	return []ProviderID{
+		ProviderGitHubCopilot,
+		ProviderAntigravity,
+		ProviderAlibaba,
+		ProviderAzureOpenAI,
+		ProviderGoogle,
+		ProviderKimi,
+		ProviderOpenAICompatible,
+		ProviderModelScope,
+		ProviderCodex,
+		ProviderOpenAI,
+	}
+}
 
 // AuthOptions is decoded from JSON request bodies.  Fields accept both
 // camelCase (frontend convention) and snake_case (legacy) names via a custom
@@ -39,8 +56,8 @@ type AuthOptions struct {
 	Region              string `json:"region,omitempty"`
 	Plan                string `json:"plan,omitempty"`
 	Endpoint            string `json:"endpoint,omitempty"`
-	APIFormat           string `json:"apiFormat,omitempty"` // e.g. "anthropic" for Alibaba Anthropic-compatible endpoint
-	Models              string `json:"models,omitempty"`    // JSON-encoded []string, used by openai-compatible
+	APIFormat           string `json:"apiFormat,omitempty"`   // e.g. "anthropic" for Alibaba Anthropic-compatible endpoint
+	Models              string `json:"models,omitempty"`      // JSON-encoded []string, used by openai-compatible
 	Deployments         string `json:"deployments,omitempty"` // JSON-encoded []string, used by azure-openai
 	APIVersion          string `json:"apiVersion,omitempty"`  // e.g. "2024-02-01", used by azure-openai
 	AllowLocalEndpoints bool   `json:"allowLocalEndpoints,omitempty"`

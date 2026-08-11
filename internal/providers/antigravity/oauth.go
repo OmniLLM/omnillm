@@ -8,8 +8,10 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"omnillm/internal/providers/shared"
 	"time"
+
+	"omnillm/internal/oauthcode"
+	"omnillm/internal/providers/shared"
 )
 
 const (
@@ -25,16 +27,8 @@ const (
 	DefaultProjectID = "rising-fact-p41fc"
 )
 
-// OAuthTokenResponse holds the payload returned by Google's token endpoint.
-type OAuthTokenResponse struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	ExpiresIn    int64  `json:"expires_in"`
-	TokenType    string `json:"token_type"`
-	IDToken      string `json:"id_token,omitempty"`
-	Error        string `json:"error,omitempty"`
-	ErrorDesc    string `json:"error_description,omitempty"`
-}
+// OAuthTokenResponse is the provider-compatible alias for a shared OAuth token response.
+type OAuthTokenResponse = oauthcode.TokenResponse
 
 var oauthHTTPClient = shared.DefaultHTTPClient(30 * time.Second)
 
@@ -49,7 +43,7 @@ func BuildAuthURL(clientID, redirectURI, state string) string {
 	v.Set("access_type", "offline")
 	v.Set("prompt", "consent") // force refresh token to be returned
 	v.Set("state", state)
-	return googleAuthURL + "?" + v.Encode()
+	return oauthcode.BuildAuthorizationURL(googleAuthURL, v)
 }
 
 // ExchangeCode exchanges an authorization code for access + refresh tokens.
@@ -74,8 +68,8 @@ func ExchangeCode(clientID, clientSecret, code, redirectURI string) (*OAuthToken
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 
-	var t OAuthTokenResponse
-	if err := json.Unmarshal(body, &t); err != nil {
+	t, err := oauthcode.DecodeTokenResponse(body)
+	if err != nil {
 		return nil, fmt.Errorf("antigravity: failed to parse token response: %w", err)
 	}
 	if t.Error != "" {
@@ -84,7 +78,7 @@ func ExchangeCode(clientID, clientSecret, code, redirectURI string) (*OAuthToken
 	if t.AccessToken == "" {
 		return nil, fmt.Errorf("antigravity: no access_token in response: %s", string(body))
 	}
-	return &t, nil
+	return t, nil
 }
 
 // RefreshAccessToken exchanges a refresh token for a new access token.
@@ -108,8 +102,8 @@ func RefreshAccessToken(clientID, clientSecret, refreshToken string) (*OAuthToke
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 
-	var t OAuthTokenResponse
-	if err := json.Unmarshal(body, &t); err != nil {
+	t, err := oauthcode.DecodeTokenResponse(body)
+	if err != nil {
 		return nil, fmt.Errorf("antigravity: failed to parse refresh response: %w", err)
 	}
 	if t.Error != "" {
@@ -118,7 +112,7 @@ func RefreshAccessToken(clientID, clientSecret, refreshToken string) (*OAuthToke
 	if t.AccessToken == "" {
 		return nil, fmt.Errorf("antigravity: no access_token in refresh response: %s", string(body))
 	}
-	return &t, nil
+	return t, nil
 }
 
 // FetchUserEmail calls Google's userinfo endpoint to retrieve the authenticated

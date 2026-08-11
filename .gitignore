@@ -48,6 +48,10 @@ pages/admin/
 .tmp-live-*-err.log
 .tmp-live-*-out.log
 
+# live model compatibility matrix local state and reports
+/scripts/live-model-matrix.json
+/.tmp-live-tests/
+
 # runtime logs
 omniproxy-*.log
 

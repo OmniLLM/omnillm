@@ -192,6 +192,52 @@ func TestResponses_HealthyUpstreamCalledOnce(t *testing.T) {
 
 // Caller cancellation must propagate immediately rather than waiting out the
 // (now much larger) /responses budget.
+func TestResponses_StreamBodyOutlivesResponseHeaderBudget(t *testing.T) {
+	withResponsesBudget(t, 150*time.Millisecond)
+
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			t.Errorf("unexpected path %q", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		_, _ = w.Write([]byte("event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_long\",\"model\":\"gpt-5.6-sol\"}}\n\n"))
+		flusher.Flush()
+		<-release
+		_, _ = w.Write([]byte("event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_long\",\"model\":\"gpt-5.6-sol\",\"status\":\"completed\",\"output\":[]}}\n\n"))
+		flusher.Flush()
+	}))
+	defer server.Close()
+
+	adapter := newTestAdapter(t, server.URL)
+	request := testRequest()
+	request.Stream = true
+	events, err := adapter.executeResponsesStream(context.Background(), request)
+	if err != nil {
+		t.Fatalf("open stream: %v", err)
+	}
+
+	time.Sleep(2 * copilotResponsesClient.Timeout)
+	close(release)
+	starts := 0
+	terminals := 0
+	errorsSeen := 0
+	for event := range events {
+		switch event.(type) {
+		case cif.CIFStreamStart:
+			starts++
+		case cif.CIFStreamEnd:
+			terminals++
+		case cif.CIFStreamError:
+			errorsSeen++
+		}
+	}
+	if starts != 1 || terminals != 1 || errorsSeen != 0 {
+		t.Fatalf("stream starts=%d terminals=%d errors=%d, want 1/1/0", starts, terminals, errorsSeen)
+	}
+}
+
 func TestResponses_ContextCancellationBeatsBudget(t *testing.T) {
 	withResponsesBudget(t, 30*time.Second)
 

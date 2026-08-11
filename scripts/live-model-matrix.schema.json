@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://omnillm.dev/schemas/live-model-matrix.schema.json",
+  "title": "OmniLLM live model compatibility matrix",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "rows"],
+  "properties": {
+    "version": { "const": 1 },
+    "budgets": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "startupMs": { "type": "integer", "minimum": 1000, "maximum": 300000 },
+        "requestMs": { "type": "integer", "minimum": 1000, "maximum": 300000 },
+        "suiteMs": { "type": "integer", "minimum": 1000, "maximum": 3600000 }
+      }
+    },
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "provider",
+          "model",
+          "shapes",
+          "credentials",
+          "capabilities"
+        ],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "provider": { "type": "string", "minLength": 1 },
+          "model": { "type": "string", "minLength": 1 },
+          "shapes": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "chat": { "$ref": "#/$defs/support" },
+              "messages": { "$ref": "#/$defs/support" },
+              "responses": { "$ref": "#/$defs/support" }
+            }
+          },
+          "credentials": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["env"],
+                  "properties": {
+                    "env": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["tokenBundleEnv", "target"],
+                  "properties": {
+                    "tokenBundleEnv": {
+                      "type": "string",
+                      "pattern": "^[A-Z][A-Z0-9_]*$"
+                    },
+                    "target": { "type": "string", "pattern": "^[^/].*" }
+                  }
+                }
+              ]
+            }
+          },
+          "capabilities": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "tools",
+              "parallelTools",
+              "largeResults",
+              "longStream",
+              "cancellation"
+            ],
+            "properties": {
+              "tools": { "$ref": "#/$defs/support" },
+              "parallelTools": { "$ref": "#/$defs/support" },
+              "largeResults": { "$ref": "#/$defs/support" },
+              "longStream": { "$ref": "#/$defs/support" },
+              "cancellation": { "$ref": "#/$defs/support" }
+            }
+          },
+          "provision": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "body"],
+            "properties": {
+              "path": { "type": "string", "pattern": "^/api/admin/" },
+              "body": { "type": "object" },
+              "activate": { "type": "boolean", "default": true }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "support": {
+      "oneOf": [
+        { "const": true },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["notApplicable"],
+          "properties": {
+            "notApplicable": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,7 +1,9 @@
 package openaicompatprovider
 
 import (
+	"omnillm/internal/cif"
 	"omnillm/internal/providers/types"
+	"omnillm/internal/testcompat"
 	"testing"
 )
 
@@ -110,6 +112,27 @@ func TestGetAdapter_NotNil(t *testing.T) {
 	}
 	if a.GetProvider() != p {
 		t.Fatal("GetAdapter().GetProvider() != p")
+	}
+}
+
+func TestCompatibilityManifestOpenAICompatibleShapeRows(t *testing.T) {
+	for _, row := range testcompat.ProviderStrategies() {
+		if row.Provider != types.ProviderOpenAICompatible {
+			continue
+		}
+		provider := NewProvider("compat-"+row.Name, row.Name)
+		provider.baseURL = "https://example.invalid/v1"
+		provider.configLoaded = true
+		provider.config = map[string]interface{}{"api_format": string(row.UpstreamShape)}
+		adapter := provider.GetAdapter().(*Adapter)
+		want := string(row.UpstreamShape)
+		if want == string(testcompat.ShapeChat) {
+			want = "chat.completions"
+		}
+		got := adapter.UpstreamAPI(&cif.CanonicalRequest{Model: row.Model}, row.Model)
+		if got != want {
+			t.Errorf("%s selected %q, want %q", row.Name, got, want)
+		}
 	}
 }
 

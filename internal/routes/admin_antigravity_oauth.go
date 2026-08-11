@@ -1,8 +1,6 @@
 package routes
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"net/http"
 	"strings"
@@ -13,6 +11,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"omnillm/internal/database"
+	"omnillm/internal/oauthcode"
 	antigravitypkg "omnillm/internal/providers/antigravity"
 	"omnillm/internal/registry"
 )
@@ -32,6 +31,11 @@ type antigravityOAuthState struct {
 }
 
 var (
+	generateAntigravityOAuthState = func() (string, error) {
+		return oauthcode.GenerateState(16, oauthcode.StateEncodingHex)
+	}
+	exchangeAntigravityOAuthCode = antigravitypkg.ExchangeCode
+
 	agOAuthMu     sync.Mutex
 	agOAuthStates = map[string]*antigravityOAuthState{} // keyed by state nonce
 
@@ -50,10 +54,11 @@ type antigravityOAuthResult struct {
 	Expiry     time.Time
 }
 
-func newAntigravityOAuthState(providerID, clientID, clientSecret, redirectURI string, isNew bool) *antigravityOAuthState {
-	b := make([]byte, 16)
-	_, _ = rand.Read(b)
-	nonce := hex.EncodeToString(b)
+func newAntigravityOAuthState(providerID, clientID, clientSecret, redirectURI string, isNew bool) (*antigravityOAuthState, error) {
+	nonce, err := generateAntigravityOAuthState()
+	if err != nil {
+		return nil, fmt.Errorf("antigravity: failed to generate OAuth state: %w", err)
+	}
 	s := &antigravityOAuthState{
 		ProviderID:    providerID,
 		ClientID:      clientID,
@@ -66,7 +71,7 @@ func newAntigravityOAuthState(providerID, clientID, clientSecret, redirectURI st
 	agOAuthMu.Lock()
 	agOAuthStates[nonce] = s
 	agOAuthMu.Unlock()
-	return s
+	return s, nil
 }
 
 func getAntigravityOAuthState(nonce string) *antigravityOAuthState {
@@ -75,10 +80,15 @@ func getAntigravityOAuthState(nonce string) *antigravityOAuthState {
 	return agOAuthStates[nonce]
 }
 
-func deleteAntigravityOAuthState(nonce string) {
+func takeAntigravityOAuthState(nonce string, now time.Time) *antigravityOAuthState {
 	agOAuthMu.Lock()
+	defer agOAuthMu.Unlock()
+	state := agOAuthStates[nonce]
+	if state == nil || now.After(state.Expiry) {
+		return nil
+	}
 	delete(agOAuthStates, nonce)
-	agOAuthMu.Unlock()
+	return state
 }
 
 // ─── Route: POST /providers/antigravity/start-oauth ──────────────────────────
@@ -115,7 +125,12 @@ func handleAntigravityStartOAuth(c *gin.Context) {
 	host := c.Request.Host
 	redirectURI := fmt.Sprintf("%s://%s/api/admin/providers/antigravity/oauth-callback", scheme, host)
 
-	state := newAntigravityOAuthState(providerID, req.ClientID, req.ClientSecret, redirectURI, isNew)
+	state, err := newAntigravityOAuthState(providerID, req.ClientID, req.ClientSecret, redirectURI, isNew)
+	if err != nil {
+		log.Error().Err(err).Str("provider", providerID).Msg("Antigravity: failed to generate OAuth state")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Unable to start OAuth. Please retry."})
+		return
+	}
 	authURL := antigravitypkg.BuildAuthURL(req.ClientID, redirectURI, state.State)
 
 	log.Info().
@@ -152,15 +167,14 @@ func handleAntigravityOAuthCallback(c *gin.Context) {
 		return
 	}
 
-	state := getAntigravityOAuthState(nonce)
-	if state == nil || time.Now().After(state.Expiry) {
+	state := takeAntigravityOAuthState(nonce, time.Now())
+	if state == nil {
 		renderOAuthResult(c, false, "OAuth state expired or not found — please try again")
 		return
 	}
-	deleteAntigravityOAuthState(nonce)
 
 	// Exchange authorization code for tokens.
-	tokenResp, err := antigravitypkg.ExchangeCode(state.ClientID, state.ClientSecret, code, state.RedirectURI)
+	tokenResp, err := exchangeAntigravityOAuthCode(state.ClientID, state.ClientSecret, code, state.RedirectURI)
 	if err != nil {
 		log.Error().Err(err).Str("provider", state.ProviderID).Msg("Antigravity: OAuth code exchange failed")
 		renderOAuthResult(c, false, fmt.Sprintf("Token exchange failed: %v", err))

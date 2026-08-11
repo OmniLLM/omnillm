@@ -148,6 +148,12 @@ func (u *fakeAzureResponsesUpstream) lastRequest(t *testing.T) capturedAzureResp
 func TestProviderModelMessageMatrixAcrossIngressShapes(t *testing.T) {
 	shapes := []ingressShapeCase{
 		{
+			name:             "chat completions root",
+			endpoint:         "/chat/completions",
+			body:             matrixChatCompletionsBody,
+			expectedAPIShape: "openai",
+		},
+		{
 			name:             "chat completions",
 			endpoint:         "/v1/chat/completions",
 			body:             matrixChatCompletionsBody,
@@ -518,7 +524,7 @@ func assertEndpointResponseText(t *testing.T, endpoint, body, want string) {
 	t.Helper()
 
 	switch endpoint {
-	case "/v1/chat/completions":
+	case "/chat/completions", "/v1/chat/completions":
 		var payload struct {
 			Choices []struct {
 				Message struct {

@@ -4,6 +4,9 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"io"
+	"maps"
+	"net/http"
 	"net/url"
 	"os"
 	"strings"
@@ -93,6 +96,85 @@ func TestRedirectURIMatchesWhitelistedValue(t *testing.T) {
 	if got, want := RedirectURI(), "http://localhost:1455/auth/callback"; got != want {
 		t.Errorf("RedirectURI() = %q, want %q", got, want)
 	}
+}
+
+func TestBuildAuthURLPinsCompleteQuery(t *testing.T) {
+	got := BuildAuthURL("challenge value", "state value")
+	parsed, err := url.Parse(got)
+	if err != nil {
+		t.Fatalf("parse authorization URL: %v", err)
+	}
+	endpoint := parsed.Scheme + "://" + parsed.Host + parsed.Path
+	if endpoint != oauthAuthorizeURL {
+		t.Fatalf("endpoint = %q, want %q", endpoint, oauthAuthorizeURL)
+	}
+	want := url.Values{
+		"client_id":                  {OAuthClientID},
+		"code_challenge":             {"challenge value"},
+		"code_challenge_method":      {"S256"},
+		"id_token_add_organizations": {"true"},
+		"prompt":                     {"login"},
+		"redirect_uri":               {RedirectURI()},
+		"response_type":              {"code"},
+		"scope":                      {OAuthScopes},
+		"state":                      {"state value"},
+	}
+	if parsed.Query().Encode() != want.Encode() {
+		t.Fatalf("query = %q, want %q", parsed.Query().Encode(), want.Encode())
+	}
+}
+
+func TestTokenRequestsUseJSONAndPreserveWireFields(t *testing.T) {
+	old := oauthHTTPClient
+	t.Cleanup(func() { oauthHTTPClient = old })
+	requests := make(chan map[string]string, 2)
+	oauthHTTPClient = &http.Client{Transport: openAIRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.Header.Get("Content-Type") != "application/json" || request.Header.Get("Accept") != "application/json" {
+			t.Fatalf("unexpected headers: %v", request.Header)
+		}
+		var payload map[string]string
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		requests <- payload
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"access_token":"access","refresh_token":"retained"}`)), Header: make(http.Header)}, nil
+	})}
+
+	exchanged, err := ExchangeCode("code", "verifier")
+	if err != nil || exchanged.RefreshToken != "retained" {
+		t.Fatalf("ExchangeCode = %#v, %v", exchanged, err)
+	}
+	codePayload := <-requests
+	wantCode := map[string]string{"grant_type": "authorization_code", "client_id": OAuthClientID, "code": "code", "redirect_uri": RedirectURI(), "code_verifier": "verifier"}
+	if !maps.Equal(codePayload, wantCode) {
+		t.Fatalf("code payload = %#v, want %#v", codePayload, wantCode)
+	}
+
+	if _, err := RefreshAccessToken("refresh"); err != nil {
+		t.Fatalf("RefreshAccessToken: %v", err)
+	}
+	refreshPayload := <-requests
+	wantRefresh := map[string]string{"grant_type": "refresh_token", "client_id": OAuthClientID, "refresh_token": "refresh", "scope": OAuthScopes}
+	if !maps.Equal(refreshPayload, wantRefresh) {
+		t.Fatalf("refresh payload = %#v, want %#v", refreshPayload, wantRefresh)
+	}
+}
+
+func TestTokenRequestsSurfaceOAuthErrors(t *testing.T) {
+	old := oauthHTTPClient
+	t.Cleanup(func() { oauthHTTPClient = old })
+	oauthHTTPClient = &http.Client{Transport: openAIRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusBadRequest, Body: io.NopCloser(strings.NewReader(`{"error":"invalid_grant","error_description":"expired"}`)), Header: make(http.Header)}, nil
+	})}
+	if _, err := ExchangeCode("code", "verifier"); err == nil || !strings.Contains(err.Error(), "invalid_grant") {
+		t.Fatalf("ExchangeCode error = %v", err)
+	}
+}
+
+type openAIRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f openAIRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
 }
 
 // makeJWT builds an unsigned JWT with the given claims payload.
