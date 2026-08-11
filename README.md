@@ -390,6 +390,25 @@ bun run test:frontend
 
 There are also live or environment-dependent scripts in `scripts/`, including model-matrix and provider integration checks.
 
+### Isolated live model compatibility matrix
+
+The live matrix is manual and credential-gated. Running any live-matrix package command without `OMNILLM_RUN_LIVE_MATRIX=1` exits successfully before reading a manifest or credentials, building the binary, creating state, allocating a port, or making a network request.
+
+Copy `scripts/live-model-matrix.example.json` to the ignored `scripts/live-model-matrix.json` (or set `OMNILLM_LIVE_MATRIX_MANIFEST`) and declare only credential **environment-variable names** or isolated token-bundle paths. Never put secret values in the manifest. Each run builds and launches OmniLLM with a temporary `HOME`, config directory, SQLite database, and automatically allocated loopback port; temporary state is removed when the run finishes.
+
+```sh
+# Safe disabled check (no build, credential read, state access, or network)
+bun run test:model-matrix:live
+
+# Bounded availability, plain, streaming, and tool-replay checks
+OMNILLM_RUN_LIVE_MATRIX=1 bun run test:model-matrix:live:smoke
+
+# Smoke plus repeated/parallel tools, large results, long streams, and cancellation
+OMNILLM_RUN_LIVE_MATRIX=1 bun run test:model-matrix:live:extended
+```
+
+Use `OMNILLM_LIVE_MATRIX_REPORT_DIR` to choose the sanitized JSON report directory. Reports classify every planned shape/scenario as `pass`, `fail`, `skipped`, or `not_applicable`; missing referenced credentials skip rows, while supplied credentials that fail provisioning or execution fail them. The compatibility command `test:model-matrix:5100` now invokes the safe smoke runner and no longer assumes port 5100 or normal user configuration.
+
 ## Spec-Driven Development
 
 OpenSpec is the source of truth for OmniLLM behavior. Read the [current-state specifications](openspec/specs/), the mandatory [agent workflow](CLAUDE.md), and the [contributor guide](CONTRIBUTING.md) before changing code. Every code, test, dependency, or build/runtime configuration change must include a validated and approved OpenSpec change; CI enforces this with `bun run spec:check`.

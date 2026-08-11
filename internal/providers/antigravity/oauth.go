@@ -43,11 +43,7 @@ func BuildAuthURL(clientID, redirectURI, state string) string {
 	v.Set("access_type", "offline")
 	v.Set("prompt", "consent") // force refresh token to be returned
 	v.Set("state", state)
-	authURL, err := oauthcode.BuildAuthorizationURL(googleAuthURL, v)
-	if err != nil {
-		return ""
-	}
-	return authURL
+	return oauthcode.BuildAuthorizationURL(googleAuthURL, v)
 }
 
 // ExchangeCode exchanges an authorization code for access + refresh tokens.

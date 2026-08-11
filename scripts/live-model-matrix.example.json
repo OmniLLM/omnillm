@@ -1,0 +1,59 @@
+{
+  "$schema": "./live-model-matrix.schema.json",
+  "version": 1,
+  "budgets": {
+    "startupMs": 30000,
+    "requestMs": 90000,
+    "suiteMs": 600000
+  },
+  "rows": [
+    {
+      "id": "google-gemini-example",
+      "provider": "google",
+      "model": "gemini-2.5-flash",
+      "shapes": {
+        "chat": true,
+        "messages": true,
+        "responses": true
+      },
+      "credentials": [{ "env": "OMNILLM_LIVE_GOOGLE_API_KEY" }],
+      "capabilities": {
+        "tools": true,
+        "parallelTools": true,
+        "largeResults": true,
+        "longStream": true,
+        "cancellation": true
+      },
+      "provision": {
+        "path": "/api/admin/providers/auth-and-create/google",
+        "body": { "apiKey": { "$env": "OMNILLM_LIVE_GOOGLE_API_KEY" } },
+        "activate": true
+      }
+    },
+    {
+      "id": "openai-oauth-example",
+      "provider": "openai",
+      "model": "gpt-5",
+      "shapes": {
+        "chat": true,
+        "messages": {
+          "notApplicable": "This example token bundle is configured for OpenAI request shapes only."
+        },
+        "responses": true
+      },
+      "credentials": [
+        {
+          "tokenBundleEnv": "OMNILLM_LIVE_OPENAI_TOKEN_BUNDLE",
+          "target": ".config/omnillm/openai-token-bundle.json"
+        }
+      ],
+      "capabilities": {
+        "tools": true,
+        "parallelTools": true,
+        "largeResults": true,
+        "longStream": true,
+        "cancellation": true
+      }
+    }
+  ]
+}

@@ -80,10 +80,15 @@ func getAntigravityOAuthState(nonce string) *antigravityOAuthState {
 	return agOAuthStates[nonce]
 }
 
-func deleteAntigravityOAuthState(nonce string) {
+func takeAntigravityOAuthState(nonce string, now time.Time) *antigravityOAuthState {
 	agOAuthMu.Lock()
+	defer agOAuthMu.Unlock()
+	state := agOAuthStates[nonce]
+	if state == nil || now.After(state.Expiry) {
+		return nil
+	}
 	delete(agOAuthStates, nonce)
-	agOAuthMu.Unlock()
+	return state
 }
 
 // ─── Route: POST /providers/antigravity/start-oauth ──────────────────────────
@@ -122,7 +127,8 @@ func handleAntigravityStartOAuth(c *gin.Context) {
 
 	state, err := newAntigravityOAuthState(providerID, req.ClientID, req.ClientSecret, redirectURI, isNew)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		log.Error().Err(err).Str("provider", providerID).Msg("Antigravity: failed to generate OAuth state")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Unable to start OAuth. Please retry."})
 		return
 	}
 	authURL := antigravitypkg.BuildAuthURL(req.ClientID, redirectURI, state.State)
@@ -161,12 +167,11 @@ func handleAntigravityOAuthCallback(c *gin.Context) {
 		return
 	}
 
-	state := getAntigravityOAuthState(nonce)
-	if state == nil || time.Now().After(state.Expiry) {
+	state := takeAntigravityOAuthState(nonce, time.Now())
+	if state == nil {
 		renderOAuthResult(c, false, "OAuth state expired or not found — please try again")
 		return
 	}
-	deleteAntigravityOAuthState(nonce)
 
 	// Exchange authorization code for tokens.
 	tokenResp, err := exchangeAntigravityOAuthCode(state.ClientID, state.ClientSecret, code, state.RedirectURI)

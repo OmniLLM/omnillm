@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -58,6 +59,9 @@ func TestAntigravityStartOAuthFailsClosedOnRandomFailure(t *testing.T) {
 	if recorder.Code != http.StatusInternalServerError || strings.Contains(recorder.Body.String(), "auth_url") {
 		t.Fatalf("response = %d %s", recorder.Code, recorder.Body.String())
 	}
+	if strings.Contains(recorder.Body.String(), "entropy unavailable") {
+		t.Fatalf("response leaked internal error: %s", recorder.Body.String())
+	}
 	agOAuthMu.Lock()
 	defer agOAuthMu.Unlock()
 	if len(agOAuthStates) != 0 {
@@ -98,6 +102,39 @@ func TestAntigravityCallbackRejectsMissingUnknownAndExpiredState(t *testing.T) {
 				t.Fatalf("response body = %q", recorder.Body.String())
 			}
 		})
+	}
+}
+
+func TestAntigravityCallbackConsumesStateAtomically(t *testing.T) {
+	resetAntigravityOAuthTestState(t)
+	agOAuthMu.Lock()
+	agOAuthStates["valid"] = &antigravityOAuthState{ProviderID: "provider", ClientID: "client", ClientSecret: "secret", RedirectURI: "http://redirect", State: "valid", Expiry: time.Now().Add(time.Minute)}
+	agOAuthMu.Unlock()
+
+	var exchanges atomic.Int32
+	exchangeAntigravityOAuthCode = func(string, string, string, string) (*antigravitypkg.OAuthTokenResponse, error) {
+		exchanges.Add(1)
+		time.Sleep(10 * time.Millisecond)
+		return nil, errors.New("stop after exchange")
+	}
+
+	start := make(chan struct{})
+	done := make(chan struct{}, 2)
+	for range 2 {
+		go func() {
+			<-start
+			recorder := httptest.NewRecorder()
+			context, _ := gin.CreateTestContext(recorder)
+			context.Request = httptest.NewRequest(http.MethodGet, "/callback?code=code&state=valid", nil)
+			handleAntigravityOAuthCallback(context)
+			done <- struct{}{}
+		}()
+	}
+	close(start)
+	<-done
+	<-done
+	if got := exchanges.Load(); got != 1 {
+		t.Fatalf("token exchanges = %d, want 1", got)
 	}
 }
 

@@ -85,11 +85,7 @@ func BuildAuthURL(challenge, state string) string {
 	v.Set("state", state)
 	v.Set("prompt", "login")
 	v.Set("id_token_add_organizations", "true")
-	authURL, err := oauthcode.BuildAuthorizationURL(oauthAuthorizeURL, v)
-	if err != nil {
-		return ""
-	}
-	return authURL
+	return oauthcode.BuildAuthorizationURL(oauthAuthorizeURL, v)
 }
 
 // TokenResponse is the provider-compatible alias for a shared OAuth token response.

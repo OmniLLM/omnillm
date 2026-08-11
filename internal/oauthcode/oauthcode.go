@@ -20,8 +20,6 @@ const (
 	StateEncodingHex
 )
 
-var randomReader io.Reader = rand.Reader
-
 // TokenResponse contains the common fields returned by OAuth token endpoints.
 type TokenResponse struct {
 	AccessToken  string `json:"access_token"`
@@ -44,21 +42,27 @@ func DecodeTokenResponse(data []byte) (*TokenResponse, error) {
 
 // GenerateState returns byteLength bytes of secure randomness using encoding.
 func GenerateState(byteLength int, encoding StateEncoding) (string, error) {
+	return generateState(rand.Reader, byteLength, encoding)
+}
+
+func generateState(reader io.Reader, byteLength int, encoding StateEncoding) (string, error) {
 	if byteLength <= 0 {
 		return "", fmt.Errorf("OAuth state byte length must be positive")
 	}
-	bytes := make([]byte, byteLength)
-	if _, err := io.ReadFull(randomReader, bytes); err != nil {
-		return "", fmt.Errorf("generate OAuth state: %w", err)
-	}
+	var encode func([]byte) string
 	switch encoding {
 	case StateEncodingBase64URL:
-		return base64.RawURLEncoding.EncodeToString(bytes), nil
+		encode = base64.RawURLEncoding.EncodeToString
 	case StateEncodingHex:
-		return hex.EncodeToString(bytes), nil
+		encode = hex.EncodeToString
 	default:
 		return "", fmt.Errorf("unsupported OAuth state encoding %d", encoding)
 	}
+	bytes := make([]byte, byteLength)
+	if _, err := io.ReadFull(reader, bytes); err != nil {
+		return "", fmt.Errorf("generate OAuth state: %w", err)
+	}
+	return encode(bytes), nil
 }
 
 // PKCE contains an S256 code verifier/challenge pair.
@@ -69,11 +73,14 @@ type PKCE struct {
 
 // GeneratePKCE generates a 32-byte, unpadded-base64url S256 PKCE pair.
 func GeneratePKCE() (*PKCE, error) {
-	bytes := make([]byte, 32)
-	if _, err := io.ReadFull(randomReader, bytes); err != nil {
+	return generatePKCE(rand.Reader)
+}
+
+func generatePKCE(reader io.Reader) (*PKCE, error) {
+	verifier, err := generateState(reader, 32, StateEncodingBase64URL)
+	if err != nil {
 		return nil, fmt.Errorf("generate PKCE verifier: %w", err)
 	}
-	verifier := base64.RawURLEncoding.EncodeToString(bytes)
 	digest := sha256.Sum256([]byte(verifier))
 	return &PKCE{
 		Verifier:  verifier,
@@ -82,21 +89,13 @@ func GeneratePKCE() (*PKCE, error) {
 }
 
 // BuildAuthorizationURL adds an encoded query to a caller-owned endpoint.
-func BuildAuthorizationURL(endpoint string, values url.Values) (string, error) {
-	parsed, err := url.Parse(endpoint)
-	if err != nil {
-		return "", fmt.Errorf("parse OAuth authorization endpoint: %w", err)
+func BuildAuthorizationURL(endpoint string, values url.Values) string {
+	if len(values) == 0 {
+		return endpoint
 	}
-	if parsed.Scheme == "" || parsed.Host == "" {
-		return "", fmt.Errorf("OAuth authorization endpoint must be absolute")
+	separator := "?"
+	if parsed, err := url.Parse(endpoint); err == nil && parsed.RawQuery != "" {
+		separator = "&"
 	}
-	query := parsed.Query()
-	for key, entries := range values {
-		query.Del(key)
-		for _, value := range entries {
-			query.Add(key, value)
-		}
-	}
-	parsed.RawQuery = query.Encode()
-	return parsed.String(), nil
+	return endpoint + separator + values.Encode()
 }
