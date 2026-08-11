@@ -10,8 +10,6 @@ package openai
 
 import (
 	"bytes"
-	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -21,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"omnillm/internal/oauthcode"
 	"omnillm/internal/providers/shared"
 )
 
@@ -53,33 +52,25 @@ func RedirectURI() string {
 
 var oauthHTTPClient = shared.DefaultHTTPClient(30 * time.Second)
 
-// PKCE holds a generated code verifier/challenge pair.
-type PKCE struct {
-	Verifier  string
-	Challenge string
-}
+// PKCE is the provider-compatible alias for a shared S256 PKCE pair.
+type PKCE = oauthcode.PKCE
 
 // GeneratePKCE creates a cryptographically random S256 PKCE pair.
 func GeneratePKCE() (*PKCE, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
+	pkce, err := oauthcode.GeneratePKCE()
+	if err != nil {
 		return nil, fmt.Errorf("openai: failed to generate PKCE verifier: %w", err)
 	}
-	verifier := base64.RawURLEncoding.EncodeToString(b)
-	sum := sha256.Sum256([]byte(verifier))
-	return &PKCE{
-		Verifier:  verifier,
-		Challenge: base64.RawURLEncoding.EncodeToString(sum[:]),
-	}, nil
+	return pkce, nil
 }
 
 // RandomState returns a random state nonce for CSRF protection.
 func RandomState() (string, error) {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
+	state, err := oauthcode.GenerateState(16, oauthcode.StateEncodingBase64URL)
+	if err != nil {
 		return "", fmt.Errorf("openai: failed to generate state: %w", err)
 	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
+	return state, nil
 }
 
 // BuildAuthURL returns the URL the user must visit to grant access.
@@ -94,19 +85,15 @@ func BuildAuthURL(challenge, state string) string {
 	v.Set("state", state)
 	v.Set("prompt", "login")
 	v.Set("id_token_add_organizations", "true")
-	return oauthAuthorizeURL + "?" + v.Encode()
+	authURL, err := oauthcode.BuildAuthorizationURL(oauthAuthorizeURL, v)
+	if err != nil {
+		return ""
+	}
+	return authURL
 }
 
-// TokenResponse is the payload returned by the ChatGPT token endpoint.
-type TokenResponse struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	IDToken      string `json:"id_token,omitempty"`
-	TokenType    string `json:"token_type,omitempty"`
-	ExpiresIn    int64  `json:"expires_in,omitempty"`
-	Error        string `json:"error,omitempty"`
-	ErrorDesc    string `json:"error_description,omitempty"`
-}
+// TokenResponse is the provider-compatible alias for a shared OAuth token response.
+type TokenResponse = oauthcode.TokenResponse
 
 // postToken sends a JSON body to the token endpoint and decodes the result.
 func postToken(payload map[string]string) (*TokenResponse, error) {
@@ -129,8 +116,8 @@ func postToken(payload map[string]string) (*TokenResponse, error) {
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
 
-	var t TokenResponse
-	if err := json.Unmarshal(raw, &t); err != nil {
+	t, err := oauthcode.DecodeTokenResponse(raw)
+	if err != nil {
 		return nil, fmt.Errorf("openai: failed to parse token response (status %d): %s",
 			resp.StatusCode, truncate(string(raw), 200))
 	}
@@ -141,7 +128,7 @@ func postToken(payload map[string]string) (*TokenResponse, error) {
 		return nil, fmt.Errorf("openai: no access_token in response (status %d): %s",
 			resp.StatusCode, truncate(string(raw), 200))
 	}
-	return &t, nil
+	return t, nil
 }
 
 // ExchangeCode swaps an authorization code for access + refresh tokens.
