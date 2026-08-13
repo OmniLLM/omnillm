@@ -218,6 +218,7 @@ async function testToolUse(
           "Use the Read tool to inspect README.md, then I will provide tool output in the next turn.",
       },
     ],
+    tool_choice: { type: "function", function: { name: "Read" } },
     tools,
   })
 

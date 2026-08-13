@@ -51,5 +51,5 @@ func (cs *ConfigStore) GetAll() (map[string]string, error) {
 		}
 		result[key] = value
 	}
-	return result, nil
+	return result, rows.Err()
 }

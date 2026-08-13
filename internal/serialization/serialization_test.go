@@ -78,6 +78,33 @@ func TestSerializeToOpenAI_StopReasonMapping(t *testing.T) {
 	}
 }
 
+func TestSerializeToOpenAI_ToolCallOverridesGenericStopReason(t *testing.T) {
+	resp := &cif.CanonicalResponse{
+		ID:    "resp_generic_stop",
+		Model: "claude-haiku-4.5",
+		Content: []cif.CIFContentPart{
+			cif.CIFToolCallPart{
+				Type:          "tool_call",
+				ToolCallID:    "call_read",
+				ToolName:      "Read",
+				ToolArguments: map[string]interface{}{"file_path": "README.md"},
+			},
+		},
+		StopReason: cif.StopReasonEndTurn,
+	}
+
+	out, err := SerializeToOpenAI(resp)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if reason := out.Choices[0].FinishReason; reason == nil || *reason != "tool_calls" {
+		t.Fatalf("expected tool_calls finish reason, got %v", reason)
+	}
+	if len(out.Choices[0].Message.ToolCalls) != 1 {
+		t.Fatalf("expected preserved tool call, got %#v", out.Choices[0].Message)
+	}
+}
+
 func TestSerializeToOpenAI_ToolCall(t *testing.T) {
 	resp := &cif.CanonicalResponse{
 		ID:    "resp_002",

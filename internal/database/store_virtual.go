@@ -39,7 +39,7 @@ func (s *VirtualModelStore) GetAll() ([]VirtualModelRecord, error) {
 		r.UpdatedAt = parseTime(updatedAtStr)
 		records = append(records, r)
 	}
-	return records, nil
+	return records, rows.Err()
 }
 
 func (s *VirtualModelStore) Get(virtualModelID string) (*VirtualModelRecord, error) {
@@ -174,7 +174,7 @@ func (s *VirtualModelUpstreamStore) GetForVModel(virtualModelID string) ([]Virtu
 		r.UpdatedAt = parseTime(updatedAtStr)
 		records = append(records, r)
 	}
-	return records, nil
+	return records, rows.Err()
 }
 
 // SetForVModel atomically replaces all upstreams for a virtual model.

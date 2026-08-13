@@ -55,7 +55,8 @@ type GitHubCopilotProvider struct {
 	// call (thundering-herd protection): when many requests find the token
 	// expired at once, only one performs the exchange and the rest wait for it.
 	refreshGroup singleflight.Group
-	shapeCache   modelShapeCache // populated once by GetModels(); read-only after that — no mutex needed
+	shapeMu      sync.RWMutex
+	shapeCache   modelShapeCache // immutable snapshot replaced after successful model discovery
 }
 
 type CopilotAdapter struct {

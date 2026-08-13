@@ -67,7 +67,7 @@ func (cs *ChatStore) ListSessions() ([]ChatSessionRecord, error) {
 		session.UpdatedAt = parseTime(updatedAtStr)
 		sessions = append(sessions, session)
 	}
-	return sessions, nil
+	return sessions, rows.Err()
 }
 
 func (cs *ChatStore) GetSession(sessionID string) (*ChatSessionRecord, error) {
@@ -128,5 +128,5 @@ func (cs *ChatStore) GetMessages(sessionID string) ([]ChatMessageRecord, error) 
 		message.CreatedAt = parseTime(createdAtStr)
 		messages = append(messages, message)
 	}
-	return messages, nil
+	return messages, rows.Err()
 }

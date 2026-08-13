@@ -51,13 +51,27 @@ func (p *GitHubCopilotProvider) GetBaseURL() string { return p.baseURL }
 //
 // Provider-dispatch code uses this via an interface assertion to avoid the
 // import cycle that would arise from depending on the copilot package directly.
-func (p *GitHubCopilotProvider) IsResponsesOnlyModel(model string) bool {
-	if p == nil || p.shapeCache == nil {
-		return false
+func (p *GitHubCopilotProvider) publishShapeCache(cache modelShapeCache) {
+	p.shapeMu.Lock()
+	p.shapeCache = cache
+	p.shapeMu.Unlock()
+}
+
+func (p *GitHubCopilotProvider) lookupShape(model string) (copilotAPIShape, bool) {
+	if p == nil {
+		return "", false
 	}
+	p.shapeMu.RLock()
+	shape, ok := p.shapeCache[model]
+	p.shapeMu.RUnlock()
+	return shape, ok
+}
+
+func (p *GitHubCopilotProvider) IsResponsesOnlyModel(model string) bool {
 	normalized := strings.ToLower(strings.TrimSpace(model))
 	if normalized == "" {
 		return false
 	}
-	return p.shapeCache[normalized] == shapeResponses
+	shape, ok := p.lookupShape(normalized)
+	return ok && shape == shapeResponses
 }

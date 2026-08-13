@@ -15,19 +15,7 @@ const LEVEL_NUMBERS: Record<LogLevel, number> = {
 
 // Global minimum level — anything below this number is dropped.
 // Defaults to "info" in production, "debug" in development.
-let currentLevel: LogLevel = import.meta.env.DEV ? "debug" : "info"
-
-/**
- * Set the minimum log level that will be emitted.
- * Example: setLevel("debug") to see debug and trace logs.
- */
-export function setLevel(level: LogLevel): void {
-  currentLevel = level
-}
-
-export function getLevel(): LogLevel {
-  return currentLevel
-}
+const currentLevel: LogLevel = import.meta.env.DEV ? "debug" : "info"
 
 function shouldLog(level: LogLevel): boolean {
   return LEVEL_NUMBERS[level] <= LEVEL_NUMBERS[currentLevel]

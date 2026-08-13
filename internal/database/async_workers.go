@@ -8,15 +8,13 @@ import (
 
 // asyncWorkers holds the bounded channel-based worker pools for fire-and-forget
 // database writes that must never block or slow down the request path.
-//
-// Both pools are started once via StartAsyncWorkers (called from database init)
-// and drained via StopAsyncWorkers (called from server shutdown).
 var asyncWorkers struct {
-	mu      sync.Mutex
-	metering chan MeteringRecord
-	lastUsed chan string // access token ID
-	wg      sync.WaitGroup
-	running bool
+	lifecycle sync.Mutex
+	mu        sync.Mutex
+	metering  chan MeteringRecord
+	lastUsed  chan string
+	wg        sync.WaitGroup
+	running   bool
 }
 
 const (
@@ -29,24 +27,24 @@ const (
 // StartAsyncWorkers starts the bounded background worker pools.
 // If workers are already running they are stopped first (supports re-init in tests).
 func StartAsyncWorkers() {
+	asyncWorkers.lifecycle.Lock()
+	defer asyncWorkers.lifecycle.Unlock()
+	stopAsyncWorkers()
+
 	asyncWorkers.mu.Lock()
 	defer asyncWorkers.mu.Unlock()
-
-	// Stop any previously running workers (e.g. test re-init).
-	if asyncWorkers.running {
-		stopWorkersLocked()
-	}
-
 	asyncWorkers.metering = make(chan MeteringRecord, meteringBufSize)
 	asyncWorkers.lastUsed = make(chan string, lastUsedBufSize)
 	asyncWorkers.running = true
 
+	metering := asyncWorkers.metering
+	lastUsed := asyncWorkers.lastUsed
 	for range meteringWorkers {
 		asyncWorkers.wg.Add(1)
 		go func() {
 			defer asyncWorkers.wg.Done()
 			db := GetDatabase()
-			for rec := range asyncWorkers.metering {
+			for rec := range metering {
 				if err := db.InsertMeteringRecord(rec); err != nil {
 					log.Error().Err(err).Str("request_id", rec.RequestID).Msg("Failed to record metering data")
 				}
@@ -59,7 +57,7 @@ func StartAsyncWorkers() {
 		go func() {
 			defer asyncWorkers.wg.Done()
 			db := GetDatabase()
-			for id := range asyncWorkers.lastUsed {
+			for id := range lastUsed {
 				if _, err := db.db.Exec(`UPDATE access_tokens SET last_used_at = datetime('now') WHERE id = ?`, id); err != nil {
 					log.Debug().Err(err).Str("token_id", id).Msg("Failed to stamp access token last_used_at")
 				}
@@ -68,27 +66,30 @@ func StartAsyncWorkers() {
 	}
 }
 
-// StopAsyncWorkers closes both worker channels and waits for all pending
-// writes to finish. Call from server shutdown.
+// StopAsyncWorkers closes both worker channels and waits for all pending writes
+// to finish. Channels are detached while holding the lifecycle mutex so no
+// enqueuer can select a channel after it has been closed.
 func StopAsyncWorkers() {
-	asyncWorkers.mu.Lock()
-	defer asyncWorkers.mu.Unlock()
-	stopWorkersLocked()
+	asyncWorkers.lifecycle.Lock()
+	defer asyncWorkers.lifecycle.Unlock()
+	stopAsyncWorkers()
 }
 
-func stopWorkersLocked() {
+func stopAsyncWorkers() {
+	asyncWorkers.mu.Lock()
 	if !asyncWorkers.running {
+		asyncWorkers.mu.Unlock()
 		return
 	}
 	asyncWorkers.running = false
-	if asyncWorkers.metering != nil {
-		close(asyncWorkers.metering)
-		asyncWorkers.metering = nil
-	}
-	if asyncWorkers.lastUsed != nil {
-		close(asyncWorkers.lastUsed)
-		asyncWorkers.lastUsed = nil
-	}
+	metering := asyncWorkers.metering
+	lastUsed := asyncWorkers.lastUsed
+	asyncWorkers.metering = nil
+	asyncWorkers.lastUsed = nil
+	close(metering)
+	close(lastUsed)
+	asyncWorkers.mu.Unlock()
+
 	asyncWorkers.wg.Wait()
 }
 
@@ -96,13 +97,12 @@ func stopWorkersLocked() {
 // If the buffer is full (overload), the record is dropped and a warning is logged.
 func EnqueueMeteringRecord(rec MeteringRecord) {
 	asyncWorkers.mu.Lock()
-	ch := asyncWorkers.metering
-	asyncWorkers.mu.Unlock()
-	if ch == nil {
+	defer asyncWorkers.mu.Unlock()
+	if asyncWorkers.metering == nil {
 		return
 	}
 	select {
-	case ch <- rec:
+	case asyncWorkers.metering <- rec:
 	default:
 		log.Warn().Str("request_id", rec.RequestID).Msg("Metering worker pool full, dropping record")
 	}
@@ -112,15 +112,12 @@ func EnqueueMeteringRecord(rec MeteringRecord) {
 // If the buffer is full the update is silently skipped — this is metadata-only.
 func EnqueueLastUsedAt(tokenID string) {
 	asyncWorkers.mu.Lock()
-	ch := asyncWorkers.lastUsed
-	asyncWorkers.mu.Unlock()
-	if ch == nil {
+	defer asyncWorkers.mu.Unlock()
+	if asyncWorkers.lastUsed == nil {
 		return
 	}
 	select {
-	case ch <- tokenID:
+	case asyncWorkers.lastUsed <- tokenID:
 	default:
-		// Drop silently; last_used_at is informational only.
 	}
 }
-
