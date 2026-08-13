@@ -14,6 +14,7 @@ import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path"
 import process from "node:process"
 
 const HOST = "127.0.0.1"
+export const MINIMUM_SEQUENTIAL_TOOL_CALLS = 5
 const INBOUND_API_KEY = "omnillm-live-matrix-inbound"
 const DEFAULT_MANIFEST = "scripts/live-model-matrix.json"
 const DEFAULT_REPORT_DIR = ".tmp-live-tests/reports"
@@ -1017,8 +1018,8 @@ async function repeatedTools(
 ): Promise<void> {
   let request = requestFor(shape, row.model, "tool")
   let turn = await toolRequest(baseUrl, shape, timeoutMs, request)
-  for (let cycle = 0; cycle < 3; cycle += 1) {
-    const forceTools = cycle < 2
+  for (let cycle = 1; cycle <= MINIMUM_SEQUENTIAL_TOOL_CALLS; cycle += 1) {
+    const forceTools = cycle < MINIMUM_SEQUENTIAL_TOOL_CALLS
     request = replayRequest(
       shape,
       row.model,

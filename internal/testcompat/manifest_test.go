@@ -4,7 +4,7 @@ import "testing"
 
 func TestSemanticScenarioManifestCompleteness(t *testing.T) {
 	required := []string{
-		"plain", "one-tool-cycle", "three-sequential-tool-cycles", "parallel-interleaved-calls",
+		"plain", "one-tool-cycle", "five-sequential-tool-cycles", "parallel-interleaved-calls",
 		"mixed-text-and-calls", "empty-arguments", "large-result", "tool-error",
 		"thinking-before-tool", "normal-completion", "abrupt-failure", "cancellation",
 	}
@@ -22,6 +22,9 @@ func TestSemanticScenarioManifestCompleteness(t *testing.T) {
 		if !seen[name] {
 			t.Errorf("semantic scenario %q has no deterministic fixture", name)
 		}
+	}
+	if got := len(AgenticScenario().Exchanges); got < MinimumSequentialToolCalls {
+		t.Fatalf("agentic scenario has %d exchanges, want at least %d", got, MinimumSequentialToolCalls)
 	}
 }
 

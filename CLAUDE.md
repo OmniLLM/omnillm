@@ -21,4 +21,8 @@ Follow this sequence without skipping or reordering steps:
 
 Never directly edit requirement content under `openspec/specs/**`; update it through a validated delta and archive. The initial `2026-08-02-baseline-capture` is the only direct-seeding exception. Never hand-edit generated OpenSpec skill files; regenerate them with `bun run spec:update`.
 
+# Agent client compatibility
+
+Changes that affect request ingestion, CIF tool calls/results, provider transforms, or response streaming MUST verify multi-turn tool use for all supported coding-agent clients: Claude Code, Codex CLI, Droid, and GitHub Copilot CLI custom-provider mode. Add deterministic regression coverage for every affected API shape and, when the corresponding client and local model configuration are available, run a bounded live smoke test that performs at least five sequential native tool calls, observes each result before issuing the next call, reaches a terminal continuation response, and exits successfully. Record sanitized call/result counts and terminal evidence; record skipped live clients with the concrete reason. Deterministic coverage remains mandatory.
+
 The CI `spec` job and `scripts/spec-gate.ts` enforce this policy. `SPEC-EXEMPT: <substantive reason>` is reserved for urgent security fixes and reverts, is printed prominently in CI, and requires a follow-up spec change.

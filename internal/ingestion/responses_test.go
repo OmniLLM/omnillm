@@ -2,8 +2,10 @@ package ingestion
 
 import (
 	"encoding/json"
-	"omnillm/internal/cif"
+	"reflect"
 	"testing"
+
+	"omnillm/internal/cif"
 )
 
 func mustRawR(t *testing.T, v any) json.RawMessage {
@@ -403,7 +405,6 @@ func TestParseResponsesPayload_InfersMissingFunctionCallOutputType(t *testing.T)
 	}
 }
 
-
 func TestParseResponsesPayload_IgnoresReasoningItems(t *testing.T) {
 	req, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
 		"model": "gpt-5.4-mini",
@@ -469,6 +470,17 @@ func TestParseResponsesPayload_IgnoresAdditionalToolsItems(t *testing.T) {
 							},
 						},
 					},
+					map[string]interface{}{
+						"type": "namespace",
+						"name": "duplicate",
+						"tools": []interface{}{
+							map[string]interface{}{
+								"name":        "read",
+								"description": "Duplicate should be ignored",
+								"parameters":  map[string]interface{}{"type": "object"},
+							},
+						},
+					},
 				},
 			},
 			map[string]interface{}{
@@ -491,8 +503,216 @@ func TestParseResponsesPayload_IgnoresAdditionalToolsItems(t *testing.T) {
 	for _, tl := range req.Tools {
 		names[tl.Name] = true
 	}
-	if !names["shell"] || !names["fs__read"] {
-		t.Fatalf("expected tools shell + fs__read, got %#v", names)
+	if !names["shell"] || !names["read"] {
+		t.Fatalf("expected tools shell + read, got %#v", names)
+	}
+	if names["fs__read"] {
+		t.Fatalf("namespace prefix changed callable name: %#v", names)
+	}
+}
+
+func TestParseResponsesPayload_PreservesCodexExecToolName(t *testing.T) {
+	req, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
+		"model": "gpt-5.6-sol",
+		"input": []interface{}{
+			map[string]interface{}{
+				"type": "additional_tools",
+				"tools": []interface{}{
+					map[string]interface{}{
+						"type": "namespace",
+						"name": "functions",
+						"tools": []interface{}{
+							map[string]interface{}{
+								"type":        "custom",
+								"name":        "exec",
+								"description": "Run a shell command",
+								"parameters":  map[string]interface{}{"type": "object"},
+							},
+						},
+					},
+				},
+			},
+			map[string]interface{}{"type": "message", "role": "user", "content": "run it"},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(req.Tools) != 1 || req.Tools[0].Name != "exec" {
+		t.Fatalf("Codex tool name changed: %#v", req.Tools)
+	}
+	if req.Tools[0].ToolKind != cif.CIFToolKindCustom {
+		t.Fatalf("Codex custom tool kind lost: %#v", req.Tools[0])
+	}
+}
+
+func TestParseResponsesPayload_NormalizesCustomToolHistory(t *testing.T) {
+	rawInput := "*** Update File: settings.json\n@@\n- old\n+ new"
+	contentOutput := []interface{}{
+		map[string]interface{}{"type": "input_text", "text": "failed"},
+		map[string]interface{}{"type": "input_image", "image_url": "https://example.com/error.png"},
+		map[string]interface{}{"type": "input_image", "file_id": "file_image_123"},
+		map[string]interface{}{"type": "input_file", "file_id": "file_123"},
+	}
+	req, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
+		"model": "gpt-5.4-mini",
+		"input": []interface{}{
+			map[string]interface{}{
+				"type":    "message",
+				"role":    "assistant",
+				"content": "Applying the change.",
+			},
+			map[string]interface{}{
+				"type":    "custom_tool_call",
+				"call_id": "call_patch",
+				"name":    "ApplyPatch",
+				"input":   rawInput,
+			},
+			map[string]interface{}{
+				"type":      "function_call",
+				"call_id":   "call_read",
+				"name":      "Read",
+				"arguments": `{"file_path":"settings.json"}`,
+			},
+			map[string]interface{}{
+				"type":    "custom_tool_call_output",
+				"call_id": "call_patch",
+				"output":  "patch failed",
+			},
+			map[string]interface{}{
+				"type":    "custom_tool_call",
+				"call_id": "call_empty",
+				"name":    "ApplyPatch",
+				"input":   "",
+			},
+			map[string]interface{}{
+				"type":    "custom_tool_call_output",
+				"call_id": "call_empty",
+				"output":  contentOutput,
+			},
+		},
+		"tools": []interface{}{
+			map[string]interface{}{
+				"type":        "custom",
+				"name":        "ApplyPatch",
+				"description": "Apply a patch",
+				"format":      map[string]interface{}{"type": "text"},
+			},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	assistant := req.Messages[0].(cif.CIFAssistantMessage)
+	if len(assistant.Content) != 3 {
+		t.Fatalf("expected text plus two calls, got %#v", assistant.Content)
+	}
+	customCall := assistant.Content[1].(cif.CIFToolCallPart)
+	if customCall.ToolCallID != "call_patch" || customCall.ToolName != "ApplyPatch" {
+		t.Fatalf("unexpected custom call: %#v", customCall)
+	}
+	if customCall.ToolKind != cif.CIFToolKindCustom || customCall.RawInput == nil || *customCall.RawInput != rawInput {
+		t.Fatalf("native custom call data changed: %#v", customCall)
+	}
+	if !reflect.DeepEqual(customCall.ToolArguments, map[string]interface{}{"input": rawInput}) {
+		t.Fatalf("custom input changed: %#v", customCall.ToolArguments)
+	}
+	functionCall := assistant.Content[2].(cif.CIFToolCallPart)
+	if !reflect.DeepEqual(functionCall.ToolArguments, map[string]interface{}{"file_path": "settings.json"}) {
+		t.Fatalf("function arguments changed: %#v", functionCall.ToolArguments)
+	}
+
+	firstResult := req.Messages[1].(cif.CIFUserMessage).Content[0].(cif.CIFToolResultPart)
+	if firstResult.ToolCallID != "call_patch" || firstResult.Content != "patch failed" {
+		t.Fatalf("unexpected string result: %#v", firstResult)
+	}
+	if firstResult.ToolKind != cif.CIFToolKindCustom || firstResult.CustomOutput != "patch failed" {
+		t.Fatalf("native custom output changed: %#v", firstResult)
+	}
+	secondAssistant := req.Messages[2].(cif.CIFAssistantMessage)
+	emptyCall := secondAssistant.Content[0].(cif.CIFToolCallPart)
+	if emptyCall.ToolArguments["input"] != "" {
+		t.Fatalf("empty custom input was not preserved: %#v", emptyCall.ToolArguments)
+	}
+	listResult := req.Messages[3].(cif.CIFUserMessage).Content[0].(cif.CIFToolResultPart)
+	wantOutput, _ := json.Marshal(contentOutput)
+	if listResult.ToolCallID != "call_empty" || listResult.Content != string(wantOutput) {
+		t.Fatalf("unexpected content-list result: %#v", listResult)
+	}
+
+	if len(req.Tools) != 1 {
+		t.Fatalf("expected one custom tool, got %#v", req.Tools)
+	}
+	wantSchema := map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"input": map[string]interface{}{"type": "string"},
+		},
+		"required":             []interface{}{"input"},
+		"additionalProperties": false,
+	}
+	if !reflect.DeepEqual(req.Tools[0].ParametersSchema, wantSchema) {
+		t.Fatalf("unexpected custom tool schema: %#v", req.Tools[0].ParametersSchema)
+	}
+}
+
+func TestParseResponsesPayload_ValidatesCustomToolItems(t *testing.T) {
+	tests := []struct {
+		name string
+		item map[string]interface{}
+	}{
+		{"call-missing-id", map[string]interface{}{"type": "custom_tool_call", "name": "ApplyPatch", "input": ""}},
+		{"call-missing-name", map[string]interface{}{"type": "custom_tool_call", "call_id": "call_1", "input": ""}},
+		{"call-missing-input", map[string]interface{}{"type": "custom_tool_call", "call_id": "call_1", "name": "ApplyPatch"}},
+		{"call-non-string-input", map[string]interface{}{"type": "custom_tool_call", "call_id": "call_1", "name": "ApplyPatch", "input": map[string]interface{}{}}},
+		{"output-missing-id", map[string]interface{}{"type": "custom_tool_call_output", "output": ""}},
+		{"output-missing-value", map[string]interface{}{"type": "custom_tool_call_output", "call_id": "call_1"}},
+		{"output-invalid-scalar", map[string]interface{}{"type": "custom_tool_call_output", "call_id": "call_1", "output": 42}},
+		{"output-invalid-member", map[string]interface{}{"type": "custom_tool_call_output", "call_id": "call_1", "output": []interface{}{map[string]interface{}{"type": "unknown"}}}},
+		{"output-text-missing-text", map[string]interface{}{"type": "custom_tool_call_output", "call_id": "call_1", "output": []interface{}{map[string]interface{}{"type": "input_text"}}}},
+		{"output-image-missing-url", map[string]interface{}{"type": "custom_tool_call_output", "call_id": "call_1", "output": []interface{}{map[string]interface{}{"type": "input_image"}}}},
+		{"output-file-missing-reference", map[string]interface{}{"type": "custom_tool_call_output", "call_id": "call_1", "output": []interface{}{map[string]interface{}{"type": "input_file"}}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
+				"model": "gpt-5.4-mini",
+				"input": []interface{}{test.item},
+			}))
+			if err == nil {
+				t.Fatal("expected invalid custom item to fail")
+			}
+		})
+	}
+}
+
+func TestParseResponsesPayload_AcceptsEmptyCustomOutputValues(t *testing.T) {
+	for _, output := range []interface{}{"", []interface{}{}} {
+		req, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
+			"model": "gpt-5.4-mini",
+			"input": []interface{}{
+				map[string]interface{}{
+					"type":    "custom_tool_call_output",
+					"call_id": "call_1",
+					"output":  output,
+				},
+			},
+		}))
+		if err != nil {
+			t.Fatalf("output %#v: %v", output, err)
+		}
+		result := req.Messages[0].(cif.CIFUserMessage).Content[0].(cif.CIFToolResultPart)
+		if outputList, ok := output.([]interface{}); ok {
+			encoded, _ := json.Marshal(outputList)
+			if result.Content != string(encoded) {
+				t.Fatalf("empty list encoded as %q", result.Content)
+			}
+			continue
+		}
+		if result.Content != "" {
+			t.Fatalf("empty string changed to %q", result.Content)
+		}
 	}
 }
 
@@ -505,4 +725,3 @@ func TestParseResponsesPayload_RejectsMalformedInputItem(t *testing.T) {
 		t.Fatal("expected malformed input item to fail")
 	}
 }
-

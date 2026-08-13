@@ -88,3 +88,62 @@ Canonical response normalization SHALL treat the presence of valid tool-call con
 - **WHEN** a client replays the assistant tool call and corresponding tool result in a subsequent request
 - **THEN** the canonical conversation remains valid and can produce a terminal assistant response
 
+### Requirement: Responses custom-tool normalization
+Responses ingestion SHALL normalize explicitly typed custom tool calls and outputs into the canonical tool-call and tool-result vocabulary without parsing a custom call's raw input as JSON. The canonical call SHALL retain the `call_id`, tool name, and item order; its arguments SHALL contain exactly one `input` property whose string value equals the raw custom input. A string custom output SHALL remain unchanged, and a supported ordered content-list output SHALL be represented as compact JSON text without reordering its members. The custom wire discriminator and custom-only metadata are not required to survive this compatibility normalization.
+
+#### Scenario: Raw multiline custom input
+- **WHEN** a Responses history contains a `custom_tool_call` with a `call_id`, name, and multiline non-JSON `input`
+- **THEN** canonical translation produces a tool call with the same identifier and name and an `input` argument equal to the original raw string
+
+#### Scenario: Empty custom input
+- **WHEN** a Responses custom call includes an explicitly present empty `input` string
+- **THEN** canonical translation preserves the required `input` argument with an empty-string value
+
+#### Scenario: String custom output
+- **WHEN** a `custom_tool_call_output` contains a string output associated with a prior custom call
+- **THEN** canonical translation preserves the string unchanged and associates the tool result with the same `call_id`
+
+#### Scenario: Ordered content-list custom output
+- **WHEN** a custom output contains an ordered list of supported text, image, or file content items
+- **THEN** canonical translation preserves the complete ordered list as compact JSON tool-result content associated with the same `call_id`
+
+#### Scenario: Mixed tool history
+- **WHEN** assistant messages, function calls, and custom calls are interleaved before their results
+- **THEN** canonical translation preserves assistant-part order and each call-to-result relationship
+
+### Requirement: Responses custom-tool definition normalization
+Responses ingestion SHALL normalize a named custom tool definition into a canonical tool definition whose input schema accepts exactly one required string property named `input`.
+
+#### Scenario: Custom tool offered to a translated provider
+- **WHEN** a Responses request declares a named custom tool
+- **THEN** the canonical request contains the same name and description with a required string `input` schema suitable for existing function-tool provider adapters
+
+### Requirement: Native Responses custom-tool representation
+CIF SHALL preserve the native Responses custom-tool discriminator, custom definition format, raw call input, optional namespace, and original output value while retaining function-compatible argument and text fallbacks. Existing CIF values that omit the discriminator SHALL continue to represent function tools.
+
+#### Scenario: Custom tool definition
+- **WHEN** a Responses request declares a custom tool with a format
+- **THEN** CIF preserves its custom kind and format while retaining a fallback schema with one required string `input`
+
+#### Scenario: Raw custom call input
+- **WHEN** a custom call contains arbitrary text, including an explicitly empty string
+- **THEN** CIF preserves the exact raw input and custom kind without JSON parsing while retaining the same text under fallback argument `input`
+
+#### Scenario: Original custom output
+- **WHEN** a custom output is a string or supported ordered content list
+- **THEN** CIF preserves the original value and custom kind while retaining normalized text content for non-Responses fallbacks
+
+#### Scenario: Legacy function tool
+- **WHEN** an existing CIF tool, call, or result omits the new kind field
+- **THEN** all serializers and providers continue treating it as an ordinary function tool
+
+### Requirement: Responses additional-tool name fidelity
+Responses ingestion SHALL preserve the declared name of each nested `additional_tools` definition as the canonical callable tool name. Transport namespace labels SHALL NOT be prepended to the declared name unless a reversible client-facing mapping preserves the original name through the complete call round trip.
+
+#### Scenario: Codex functions namespace
+- **WHEN** Codex declares a nested custom tool named `exec` under an `additional_tools` namespace named `functions`
+- **THEN** canonical translation exposes the callable name as `exec` and not `functions__exec`
+
+#### Scenario: Duplicate declared names
+- **WHEN** multiple nested namespace groups declare the same callable tool name
+- **THEN** translation retains one deterministic canonical definition for that name rather than inventing namespace-prefixed names the client did not register

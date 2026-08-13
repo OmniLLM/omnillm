@@ -1,8 +1,11 @@
 package serialization
 
 import (
-	"omnillm/internal/cif"
+	"encoding/json"
+	"strings"
 	"testing"
+
+	"omnillm/internal/cif"
 )
 
 func TestSerializeToAnthropic_PreservesThinkingBlocks(t *testing.T) {
@@ -42,6 +45,63 @@ func TestSerializeToAnthropic_PreservesThinkingBlocks(t *testing.T) {
 	}
 	if out.Content[1].Type != "text" || out.Content[1].Text != "The answer is 345." {
 		t.Fatalf("unexpected text block: %#v", out.Content[1])
+	}
+}
+
+func TestSerializeToResponses_PreservesCodexExecToolName(t *testing.T) {
+	response, err := SerializeToResponses(&cif.CanonicalResponse{
+		ID:    "resp_exec",
+		Model: "gpt-5.6-sol",
+		Content: []cif.CIFContentPart{
+			func() cif.CIFToolCallPart {
+				rawInput := "printf ok"
+				return cif.CIFToolCallPart{
+					Type:          "tool_call",
+					ToolCallID:    "call_exec",
+					ToolName:      "exec",
+					ToolArguments: map[string]interface{}{"input": rawInput},
+					ToolKind:      cif.CIFToolKindCustom,
+					RawInput:      &rawInput,
+				}
+			}(),
+		},
+		StopReason: cif.StopReasonToolUse,
+	})
+	if err != nil {
+		t.Fatalf("serialize Responses: %v", err)
+	}
+	if len(response.Output) != 1 || response.Output[0].Name != "exec" {
+		t.Fatalf("Responses output = %#v", response.Output)
+	}
+	if response.Output[0].Type != "custom_tool_call" || response.Output[0].Input == nil || *response.Output[0].Input != "printf ok" || response.Output[0].Arguments != "" {
+		t.Fatalf("Responses custom output = %#v", response.Output[0])
+	}
+}
+
+func TestSerializeToResponses_PreservesEmptyCustomInputField(t *testing.T) {
+	rawInput := ""
+	response, err := SerializeToResponses(&cif.CanonicalResponse{
+		ID:    "resp_empty_exec",
+		Model: "gpt-5.6-sol",
+		Content: []cif.CIFContentPart{cif.CIFToolCallPart{
+			Type:          "tool_call",
+			ToolCallID:    "call_empty_exec",
+			ToolName:      "exec",
+			ToolArguments: map[string]interface{}{"input": rawInput},
+			ToolKind:      cif.CIFToolKindCustom,
+			RawInput:      &rawInput,
+		}},
+		StopReason: cif.StopReasonToolUse,
+	})
+	if err != nil {
+		t.Fatalf("serialize Responses: %v", err)
+	}
+	encoded, err := json.Marshal(response)
+	if err != nil {
+		t.Fatalf("marshal Responses JSON: %v", err)
+	}
+	if !strings.Contains(string(encoded), `"input":""`) {
+		t.Fatalf("empty required custom input omitted: %s", encoded)
 	}
 }
 

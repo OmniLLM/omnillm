@@ -4,11 +4,70 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"testing"
 
 	"omnillm/internal/cif"
 	"omnillm/internal/testcompat"
 )
+
+func TestCompatibilityDroidCustomToolRoute(t *testing.T) {
+	var captured *cif.CanonicalRequest
+	registerStubProvider(t, testcompat.Model, func(_ context.Context, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+		captured = request
+		return &cif.CanonicalResponse{
+			ID:         "droid-custom-route",
+			Model:      request.Model,
+			Content:    []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: testcompat.FinalAnswer}},
+			StopReason: cif.StopReasonEndTurn,
+		}, nil
+	}, nil)
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	resp := postJSON(t, srv.URL+"/v1/responses", string(testcompat.DroidCustomToolResponsesRequest(false)), nil)
+	body := readBody(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", resp.StatusCode, body)
+	}
+	if captured == nil {
+		t.Fatal("provider did not receive custom-tool request")
+	}
+	want := []testcompat.ToolExchange{{
+		ID:        testcompat.DroidCallID,
+		Name:      testcompat.DroidToolName,
+		Arguments: map[string]interface{}{"input": testcompat.DroidRawInput},
+		Result:    testcompat.DroidToolResult,
+	}}
+	assertCompatibilityExchanges(t, captured.Messages, want)
+	if got := captured.Tools[0].ParametersSchema["required"]; !reflect.DeepEqual(got, []interface{}{"input"}) {
+		t.Fatalf("custom tool required fields = %#v", got)
+	}
+}
+
+func TestCompatibilityDroidCustomToolRouteRejectsMalformedItem(t *testing.T) {
+	registerStubProvider(t, testcompat.Model, func(_ context.Context, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+		t.Fatalf("provider received malformed request: %#v", request)
+		return nil, nil
+	}, nil)
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	body := `{"model":"compatibility-model","input":[{"type":"custom_tool_call","call_id":"call_bad","name":"ApplyPatch"}]}`
+	resp := postJSON(t, srv.URL+"/v1/responses", body, nil)
+	responseBody := readBody(t, resp)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status %d: %s", resp.StatusCode, responseBody)
+	}
+	var envelope map[string]interface{}
+	if err := json.Unmarshal([]byte(responseBody), &envelope); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	errorObject, ok := envelope["error"].(map[string]interface{})
+	if !ok || errorObject["type"] != "invalid_request_error" {
+		t.Fatalf("unexpected error envelope: %#v", envelope)
+	}
+}
 
 func TestCompatibilityAgenticRouteMatrix(t *testing.T) {
 	scenario := testcompat.AgenticScenario()
@@ -74,8 +133,10 @@ func assertCompatibilityExchanges(t *testing.T, messages []cif.CIFMessage, want 
 		t.Fatalf("calls=%d results=%d want=%d", len(calls), len(results), len(want))
 	}
 	for _, exchange := range want {
-		if calls[exchange.ID].ToolName != exchange.Name || results[exchange.ID].Content != exchange.Result {
-			t.Errorf("exchange %s lost relationship: call=%#v result=%#v", exchange.ID, calls[exchange.ID], results[exchange.ID])
+		call := calls[exchange.ID]
+		result := results[exchange.ID]
+		if call.ToolName != exchange.Name || !reflect.DeepEqual(call.ToolArguments, exchange.Arguments) || result.Content != exchange.Result {
+			t.Errorf("exchange %s lost relationship: call=%#v result=%#v", exchange.ID, call, result)
 		}
 	}
 }

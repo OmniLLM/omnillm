@@ -29,19 +29,28 @@ type CIFThinkingPart struct {
 	Signature *string `json:"signature,omitempty"` // Antigravity thoughtSignature
 }
 
+type CIFToolKind string
+
+const CIFToolKindCustom CIFToolKind = "custom"
+
 type CIFToolCallPart struct {
 	Type          string                 `json:"type"`
 	ToolCallID    string                 `json:"toolCallId"`
 	ToolName      string                 `json:"toolName"`
 	ToolArguments map[string]interface{} `json:"toolArguments"`
+	ToolKind      CIFToolKind            `json:"toolKind,omitempty"`
+	RawInput      *string                `json:"rawInput,omitempty"`
+	Namespace     string                 `json:"namespace,omitempty"`
 }
 
 type CIFToolResultPart struct {
-	Type       string `json:"type"`
-	ToolCallID string `json:"toolCallId"`
-	ToolName   string `json:"toolName"` // name is needed by Antigravity functionResponse
-	Content    string `json:"content"`  // serialized result text
-	IsError    *bool  `json:"isError,omitempty"`
+	Type         string      `json:"type"`
+	ToolCallID   string      `json:"toolCallId"`
+	ToolName     string      `json:"toolName"` // name is needed by Antigravity functionResponse
+	Content      string      `json:"content"`  // serialized result text
+	IsError      *bool       `json:"isError,omitempty"`
+	ToolKind     CIFToolKind `json:"toolKind,omitempty"`
+	CustomOutput interface{} `json:"customOutput,omitempty"`
 }
 
 type CIFContentPart interface {
@@ -89,6 +98,8 @@ type CIFTool struct {
 	Name             string                 `json:"name"`
 	Description      *string                `json:"description,omitempty"`
 	ParametersSchema map[string]interface{} `json:"parametersSchema"` // JSON Schema object
+	ToolKind         CIFToolKind            `json:"toolKind,omitempty"`
+	Format           interface{}            `json:"format,omitempty"`
 }
 
 type CIFToolChoice interface{}
@@ -225,9 +236,15 @@ type ToolArgumentsDelta struct {
 	PartialJSON string `json:"partialJson"`
 }
 
-func (d TextDelta) GetDeltaType() string          { return "text_delta" }
-func (d ThinkingDelta) GetDeltaType() string      { return "thinking_delta" }
-func (d ToolArgumentsDelta) GetDeltaType() string { return "tool_arguments_delta" }
+type CustomToolInputDelta struct {
+	Type  string `json:"type"`
+	Delta string `json:"delta"`
+}
+
+func (d TextDelta) GetDeltaType() string            { return "text_delta" }
+func (d ThinkingDelta) GetDeltaType() string        { return "thinking_delta" }
+func (d ToolArgumentsDelta) GetDeltaType() string   { return "tool_arguments_delta" }
+func (d CustomToolInputDelta) GetDeltaType() string { return "custom_tool_input_delta" }
 
 type CIFContentBlockStop struct {
 	Type  string `json:"type"`
@@ -277,8 +294,12 @@ type ContentPartJSON struct {
 	ToolCallID    string                 `json:"toolCallId,omitempty"`
 	ToolName      string                 `json:"toolName,omitempty"`
 	ToolArguments map[string]interface{} `json:"toolArguments,omitempty"`
+	ToolKind      CIFToolKind            `json:"toolKind,omitempty"`
+	RawInput      *string                `json:"rawInput,omitempty"`
+	Namespace     string                 `json:"namespace,omitempty"`
 	Content       string                 `json:"content,omitempty"`
 	IsError       *bool                  `json:"isError,omitempty"`
+	CustomOutput  interface{}            `json:"customOutput,omitempty"`
 }
 
 // Custom JSON marshaling for content parts
@@ -308,14 +329,19 @@ func MarshalCIFContentPart(p CIFContentPart) ([]byte, error) {
 			ToolCallID:    part.ToolCallID,
 			ToolName:      part.ToolName,
 			ToolArguments: part.ToolArguments,
+			ToolKind:      part.ToolKind,
+			RawInput:      part.RawInput,
+			Namespace:     part.Namespace,
 		})
 	case CIFToolResultPart:
 		return json.Marshal(ContentPartJSON{
-			Type:       "tool_result",
-			ToolCallID: part.ToolCallID,
-			ToolName:   part.ToolName,
-			Content:    part.Content,
-			IsError:    part.IsError,
+			Type:         "tool_result",
+			ToolCallID:   part.ToolCallID,
+			ToolName:     part.ToolName,
+			Content:      part.Content,
+			IsError:      part.IsError,
+			ToolKind:     part.ToolKind,
+			CustomOutput: part.CustomOutput,
 		})
 	default:
 		return nil, errors.New("unknown content part type")

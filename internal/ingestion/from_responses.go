@@ -45,17 +45,22 @@ type ResponsesTool struct {
 	Name        string                 `json:"name"`
 	Description string                 `json:"description,omitempty"`
 	Parameters  map[string]interface{} `json:"parameters"`
+	Format      interface{}            `json:"format,omitempty"`
 }
 
 type InputItem struct {
-	Type      string      `json:"type"`
-	Role      string      `json:"role,omitempty"`
-	Content   interface{} `json:"content,omitempty"` // string or []InputContentBlock
-	ID        string      `json:"id,omitempty"`
-	CallID    string      `json:"call_id,omitempty"`
-	Name      string      `json:"name,omitempty"`
-	Arguments string      `json:"arguments,omitempty"`
-	Output    string      `json:"output,omitempty"`
+	Type          string      `json:"type"`
+	Role          string      `json:"role,omitempty"`
+	Content       interface{} `json:"content,omitempty"` // string or []InputContentBlock
+	ID            string      `json:"id,omitempty"`
+	CallID        string      `json:"call_id,omitempty"`
+	Name          string      `json:"name,omitempty"`
+	Arguments     string      `json:"arguments,omitempty"`
+	Input         interface{} `json:"input,omitempty"`
+	InputPresent  bool        `json:"-"`
+	Output        interface{} `json:"output,omitempty"`
+	OutputPresent bool        `json:"-"`
+	Namespace     string      `json:"namespace,omitempty"`
 }
 
 type InputContentBlock struct {
@@ -193,6 +198,10 @@ func translateResponsesInput(input interface{}) ([]cif.CIFMessage, error) {
 				})
 
 			case "function_call_output":
+				output, ok := inputItem.Output.(string)
+				if !ok {
+					return nil, fmt.Errorf("function_call_output item output must be a string")
+				}
 				flushAssistant()
 				messages = append(messages, cif.CIFUserMessage{
 					Role: "user",
@@ -201,7 +210,57 @@ func translateResponsesInput(input interface{}) ([]cif.CIFMessage, error) {
 							Type:       "tool_result",
 							ToolCallID: inputItem.CallID,
 							ToolName:   inputItem.Name,
-							Content:    inputItem.Output,
+							Content:    output,
+						},
+					},
+				})
+
+			case "custom_tool_call":
+				if inputItem.CallID == "" {
+					return nil, fmt.Errorf("custom_tool_call item missing call_id")
+				}
+				if inputItem.Name == "" {
+					return nil, fmt.Errorf("custom_tool_call item missing name")
+				}
+				if !inputItem.InputPresent {
+					return nil, fmt.Errorf("custom_tool_call item missing input")
+				}
+				rawInput, ok := inputItem.Input.(string)
+				if !ok {
+					return nil, fmt.Errorf("custom_tool_call item input must be a string")
+				}
+				pendingAssistantParts = append(pendingAssistantParts, cif.CIFToolCallPart{
+					Type:          "tool_call",
+					ToolCallID:    inputItem.CallID,
+					ToolName:      inputItem.Name,
+					ToolArguments: map[string]interface{}{"input": rawInput},
+					ToolKind:      cif.CIFToolKindCustom,
+					RawInput:      &rawInput,
+					Namespace:     inputItem.Namespace,
+				})
+
+			case "custom_tool_call_output":
+				if inputItem.CallID == "" {
+					return nil, fmt.Errorf("custom_tool_call_output item missing call_id")
+				}
+				if !inputItem.OutputPresent {
+					return nil, fmt.Errorf("custom_tool_call_output item missing output")
+				}
+				output, err := normalizeCustomToolOutput(inputItem.Output)
+				if err != nil {
+					return nil, err
+				}
+				flushAssistant()
+				messages = append(messages, cif.CIFUserMessage{
+					Role: "user",
+					Content: []cif.CIFContentPart{
+						cif.CIFToolResultPart{
+							Type:         "tool_result",
+							ToolCallID:   inputItem.CallID,
+							ToolName:     inputItem.Name,
+							Content:      output,
+							ToolKind:     cif.CIFToolKindCustom,
+							CustomOutput: inputItem.Output,
 						},
 					},
 				})
@@ -226,8 +285,10 @@ func inputItemType(item InputItem) string {
 		switch {
 		case item.Role != "" && item.Content != nil:
 			itemType = "message"
-		case item.Output != "" && item.CallID != "":
-			itemType = "function_call_output"
+		case item.OutputPresent && item.CallID != "":
+			if _, ok := item.Output.(string); ok {
+				itemType = "function_call_output"
+			}
 		case item.Name != "" && (item.Arguments != "" || item.ID != "" || item.CallID != ""):
 			itemType = "function_call"
 		}
@@ -293,31 +354,99 @@ func parseToolArguments(argumentsStr string) map[string]interface{} {
 	return map[string]interface{}{"_unparsable_arguments": argumentsStr}
 }
 
+func normalizeCustomToolOutput(output interface{}) (string, error) {
+	switch value := output.(type) {
+	case string:
+		return value, nil
+	case []interface{}:
+		for _, item := range value {
+			content, ok := item.(map[string]interface{})
+			if !ok {
+				return "", fmt.Errorf("custom_tool_call_output item contains invalid content type: %T", item)
+			}
+			if err := validateCustomToolOutputContent(content); err != nil {
+				return "", err
+			}
+		}
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return "", fmt.Errorf("failed to encode custom_tool_call_output content: %w", err)
+		}
+		return string(encoded), nil
+	default:
+		return "", fmt.Errorf("custom_tool_call_output item output must be a string or content list")
+	}
+}
+
+func validateCustomToolOutputContent(content map[string]interface{}) error {
+	contentType, _ := content["type"].(string)
+	requireString := func(field string) error {
+		if _, ok := content[field].(string); !ok {
+			return fmt.Errorf("custom_tool_call_output %s content requires string field %s", contentType, field)
+		}
+		return nil
+	}
+
+	switch contentType {
+	case "input_text", "output_text", "text":
+		return requireString("text")
+	case "input_image":
+		imageURL, hasImageURL := content["image_url"].(string)
+		fileID, hasFileID := content["file_id"].(string)
+		if hasImageURL && imageURL != "" || hasFileID && fileID != "" {
+			return nil
+		}
+		return fmt.Errorf("custom_tool_call_output input_image content requires image_url or file_id")
+	case "input_file":
+		fileID, hasFileID := content["file_id"].(string)
+		fileURL, hasFileURL := content["file_url"].(string)
+		filename, hasFilename := content["filename"].(string)
+		_, hasFileData := content["file_data"].(string)
+		if hasFileID && fileID != "" || hasFileURL && fileURL != "" || hasFilename && filename != "" && hasFileData {
+			return nil
+		}
+		return fmt.Errorf("custom_tool_call_output input_file content requires a supported file reference")
+	default:
+		return fmt.Errorf("custom_tool_call_output item contains unknown content type: %s", contentType)
+	}
+}
+
 // extractAdditionalTools pulls tool definitions out of a Codex responses-lite
 // "additional_tools" input item. Codex nests tools either as flat function
 // tools ({name, description, parameters}) or as namespaced groups
-// ({type:"namespace", name, tools:[...]}). Namespaced tool names are flattened
-// to "<namespace>__<tool>" to keep them unique across groups.
+// ({type:"namespace", name, tools:[...]}). Nested tools keep their declared
+// callable names; the namespace is transport grouping, not part of the name.
 func extractAdditionalTools(input any) []cif.CIFTool {
 	items, ok := input.([]interface{})
 	if !ok {
 		return nil
 	}
 	var cifTools []cif.CIFTool
-	appendTool := func(prefix string, tm map[string]interface{}) {
+	seenNames := map[string]struct{}{}
+	appendTool := func(tm map[string]interface{}) {
 		name, _ := tm["name"].(string)
 		if name == "" {
 			return
 		}
-		if prefix != "" {
-			name = prefix + "__" + name
+		if _, seen := seenNames[name]; seen {
+			return
 		}
+		seenNames[name] = struct{}{}
 		desc, _ := tm["description"].(string)
 		params, _ := tm["parameters"].(map[string]interface{})
+		toolKind := cif.CIFToolKind("")
+		var format interface{}
+		if toolType, _ := tm["type"].(string); toolType == "custom" {
+			toolKind = cif.CIFToolKindCustom
+			format = tm["format"]
+			params = customToolParametersSchema()
+		}
 		cifTools = append(cifTools, cif.CIFTool{
 			Name:             name,
 			Description:      &desc,
 			ParametersSchema: params,
+			ToolKind:         toolKind,
+			Format:           format,
 		})
 	}
 	for _, item := range items {
@@ -338,22 +467,32 @@ func extractAdditionalTools(input any) []cif.CIFTool {
 				continue
 			}
 			if tt, _ := tm["type"].(string); tt == "namespace" {
-				ns, _ := tm["name"].(string)
 				nested, _ := tm["tools"].([]interface{})
 				for _, nraw := range nested {
 					if ntm, ok := nraw.(map[string]interface{}); ok {
-						appendTool(ns, ntm)
+						appendTool(ntm)
 					}
 				}
 				continue
 			}
-			appendTool("", tm)
+			appendTool(tm)
 		}
 	}
 	if len(cifTools) == 0 {
 		return nil
 	}
 	return cifTools
+}
+
+func customToolParametersSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"input": map[string]interface{}{"type": "string"},
+		},
+		"required":             []interface{}{"input"},
+		"additionalProperties": false,
+	}
 }
 
 func translateResponsesTools(tools []ResponsesTool) []cif.CIFTool {
@@ -367,10 +506,18 @@ func translateResponsesTools(tools []ResponsesTool) []cif.CIFTool {
 			continue
 		}
 		desc := tool.Description
+		parameters := tool.Parameters
+		toolKind := cif.CIFToolKind("")
+		if tool.Type == "custom" {
+			parameters = customToolParametersSchema()
+			toolKind = cif.CIFToolKindCustom
+		}
 		cifTools = append(cifTools, cif.CIFTool{
 			Name:             tool.Name,
 			Description:      &desc,
-			ParametersSchema: tool.Parameters,
+			ParametersSchema: parameters,
+			ToolKind:         toolKind,
+			Format:           tool.Format,
 		})
 	}
 
@@ -449,15 +596,21 @@ func inputItemFromMap(m map[string]interface{}) InputItem {
 		v, _ := m[key].(string)
 		return v
 	}
+	input, inputPresent := m["input"]
+	output, outputPresent := m["output"]
 	return InputItem{
-		Type:      getString("type"),
-		Role:      getString("role"),
-		Content:   m["content"],
-		ID:        getString("id"),
-		CallID:    getString("call_id"),
-		Name:      getString("name"),
-		Arguments: getString("arguments"),
-		Output:    getString("output"),
+		Type:          getString("type"),
+		Role:          getString("role"),
+		Content:       m["content"],
+		ID:            getString("id"),
+		CallID:        getString("call_id"),
+		Name:          getString("name"),
+		Arguments:     getString("arguments"),
+		Input:         input,
+		InputPresent:  inputPresent,
+		Output:        output,
+		OutputPresent: outputPresent,
+		Namespace:     getString("namespace"),
 	}
 }
 

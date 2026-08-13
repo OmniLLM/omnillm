@@ -39,6 +39,8 @@ type copilotResponsesOutputItem struct {
 	Role      string                         `json:"role,omitempty"`
 	Name      string                         `json:"name,omitempty"`
 	Arguments string                         `json:"arguments,omitempty"`
+	Input     string                         `json:"input,omitempty"`
+	Namespace string                         `json:"namespace,omitempty"`
 	Content   []copilotResponsesContentBlock `json:"content,omitempty"`
 	Status    string                         `json:"status,omitempty"`
 }
@@ -103,9 +105,16 @@ func (a *CopilotAdapter) buildResponsesPayload(request *cif.CanonicalRequest, st
 		tools := make([]map[string]any, 0, len(request.Tools))
 		for _, tool := range request.Tools {
 			item := map[string]any{
-				"type":       "function",
-				"name":       tool.Name,
-				"parameters": shared.NormalizeToolParameters(tool.ParametersSchema),
+				"name": tool.Name,
+			}
+			if tool.ToolKind == cif.CIFToolKindCustom {
+				item["type"] = "custom"
+				if tool.Format != nil {
+					item["format"] = tool.Format
+				}
+			} else {
+				item["type"] = "function"
+				item["parameters"] = shared.NormalizeToolParameters(tool.ParametersSchema)
 			}
 			if tool.Description != nil {
 				item["description"] = *tool.Description
@@ -195,6 +204,18 @@ func responsesUserItems(message cif.CIFUserMessage) []map[string]any {
 			if p.IsError != nil && *p.IsError && out == "" {
 				out = "Error: tool call failed"
 			}
+			if p.ToolKind == cif.CIFToolKindCustom {
+				customOutput := p.CustomOutput
+				if customOutput == nil {
+					customOutput = out
+				}
+				items = append(items, map[string]any{
+					"type":    "custom_tool_call_output",
+					"call_id": p.ToolCallID,
+					"output":  customOutput,
+				})
+				continue
+			}
 			items = append(items, map[string]any{
 				"type":    "function_call_output",
 				"call_id": p.ToolCallID,
@@ -236,6 +257,23 @@ func responsesAssistantItems(message cif.CIFAssistantMessage) []map[string]any {
 			})
 		case cif.CIFToolCallPart:
 			flush()
+			if p.ToolKind == cif.CIFToolKindCustom {
+				rawInput := ""
+				if p.RawInput != nil {
+					rawInput = *p.RawInput
+				}
+				item := map[string]any{
+					"type":    "custom_tool_call",
+					"call_id": p.ToolCallID,
+					"name":    p.ToolName,
+					"input":   rawInput,
+				}
+				if p.Namespace != "" {
+					item["namespace"] = p.Namespace
+				}
+				items = append(items, item)
+				continue
+			}
 			argsBytes, _ := json.Marshal(p.ToolArguments)
 			items = append(items, map[string]any{
 				"type":      "function_call",
@@ -285,6 +323,17 @@ func parseResponsesResponse(resp *copilotResponsesResponse) *cif.CanonicalRespon
 				}
 				result.Content = append(result.Content, cif.CIFTextPart{Type: "text", Text: block.Text})
 			}
+		case "custom_tool_call":
+			rawInput := item.Input
+			result.Content = append(result.Content, cif.CIFToolCallPart{
+				Type:          "tool_call",
+				ToolCallID:    firstNonEmpty(item.CallID, item.ID),
+				ToolName:      item.Name,
+				ToolArguments: map[string]any{"input": rawInput},
+				ToolKind:      cif.CIFToolKindCustom,
+				RawInput:      &rawInput,
+				Namespace:     item.Namespace,
+			})
 		case "function_call":
 			var args map[string]any
 			json.Unmarshal([]byte(item.Arguments), &args) //nolint:errcheck
@@ -307,7 +356,7 @@ func responsesStopReason(resp *copilotResponsesResponse) cif.CIFStopReason {
 		return cif.StopReasonEndTurn
 	}
 	for _, item := range resp.Output {
-		if item.Type == "function_call" {
+		if item.Type == "function_call" || item.Type == "custom_tool_call" {
 			return cif.StopReasonToolUse
 		}
 	}
@@ -584,33 +633,78 @@ func handleResponsesSSEEvent(eventType, data string, state *responsesSSEState, e
 		if err := json.Unmarshal([]byte(data), &payload); err != nil {
 			return
 		}
-		if payload.Item.Type != "function_call" {
+		if payload.Item.Type != "function_call" && payload.Item.Type != "custom_tool_call" {
 			return
 		}
+		isCustom := payload.Item.Type == "custom_tool_call"
 		index, exists := state.toolCallIndices[payload.OutputIndex]
 		if !exists {
 			index = state.nextContentIndex
 			state.nextContentIndex++
 			state.toolCallIndices[payload.OutputIndex] = index
+			contentBlock := cif.CIFToolCallPart{
+				Type:          "tool_call",
+				ToolCallID:    firstNonEmpty(payload.Item.CallID, payload.Item.ID),
+				ToolName:      payload.Item.Name,
+				ToolArguments: map[string]any{},
+			}
+			var delta cif.DeltaContent = cif.ToolArgumentsDelta{Type: "tool_arguments_delta", PartialJSON: ""}
+			if isCustom {
+				rawInput := payload.Item.Input
+				contentBlock.ToolKind = cif.CIFToolKindCustom
+				contentBlock.RawInput = &rawInput
+				contentBlock.Namespace = payload.Item.Namespace
+				contentBlock.ToolArguments = map[string]any{"input": rawInput}
+				delta = cif.CustomToolInputDelta{Type: "custom_tool_input_delta", Delta: ""}
+			}
 			eventCh <- cif.CIFContentDelta{
-				Type:  "content_delta",
-				Index: index,
-				ContentBlock: cif.CIFToolCallPart{
-					Type:          "tool_call",
-					ToolCallID:    firstNonEmpty(payload.Item.CallID, payload.Item.ID),
-					ToolName:      payload.Item.Name,
-					ToolArguments: map[string]any{},
-				},
-				Delta: cif.ToolArgumentsDelta{Type: "tool_arguments_delta", PartialJSON: ""},
+				Type:         "content_delta",
+				Index:        index,
+				ContentBlock: contentBlock,
+				Delta:        delta,
 			}
 		}
-		if payload.Item.Arguments == "" || state.toolCallHasDelta[payload.OutputIndex] {
+		partial := payload.Item.Arguments
+		if isCustom {
+			partial = payload.Item.Input
+		}
+		if partial == "" || state.toolCallHasDelta[payload.OutputIndex] {
+			return
+		}
+		var delta cif.DeltaContent = cif.ToolArgumentsDelta{Type: "tool_arguments_delta", PartialJSON: partial}
+		if isCustom {
+			delta = cif.CustomToolInputDelta{Type: "custom_tool_input_delta", Delta: partial}
+		}
+		eventCh <- cif.CIFContentDelta{Type: "content_delta", Index: index, Delta: delta}
+		state.toolCallHasDelta[payload.OutputIndex] = true
+
+	case "response.custom_tool_call_input.delta", "response.custom_tool_call_input.done":
+		var payload struct {
+			OutputIndex int    `json:"output_index"`
+			Delta       string `json:"delta"`
+			Input       string `json:"input"`
+		}
+		if err := json.Unmarshal([]byte(data), &payload); err != nil {
+			return
+		}
+		index, ok := state.toolCallIndices[payload.OutputIndex]
+		if !ok {
+			return
+		}
+		partial := payload.Delta
+		if partial == "" {
+			partial = payload.Input
+		}
+		if partial == "" {
+			return
+		}
+		if eventType == "response.custom_tool_call_input.done" && state.toolCallHasDelta[payload.OutputIndex] {
 			return
 		}
 		eventCh <- cif.CIFContentDelta{
 			Type:  "content_delta",
 			Index: index,
-			Delta: cif.ToolArgumentsDelta{Type: "tool_arguments_delta", PartialJSON: payload.Item.Arguments},
+			Delta: cif.CustomToolInputDelta{Type: "custom_tool_input_delta", Delta: partial},
 		}
 		state.toolCallHasDelta[payload.OutputIndex] = true
 

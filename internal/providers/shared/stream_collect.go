@@ -16,6 +16,7 @@ func CollectStream(ch <-chan cif.CIFStreamEvent) (*cif.CanonicalResponse, error)
 	thinkingSignatures := make(map[int]*string)
 	toolCalls := make(map[int]*cif.CIFToolCallPart)
 	toolArgBufs := make(map[int]*strings.Builder)
+	customInputBufs := make(map[int]*strings.Builder)
 
 	for event := range ch {
 		switch e := event.(type) {
@@ -50,6 +51,11 @@ func CollectStream(ch <-chan cif.CIFStreamEvent) (*cif.CanonicalResponse, error)
 					toolArgBufs[e.Index] = &strings.Builder{}
 				}
 				toolArgBufs[e.Index].WriteString(d.PartialJSON)
+			case cif.CustomToolInputDelta:
+				if customInputBufs[e.Index] == nil {
+					customInputBufs[e.Index] = &strings.Builder{}
+				}
+				customInputBufs[e.Index].WriteString(d.Delta)
 			}
 		case cif.CIFStreamEnd:
 			response.StopReason = e.StopReason
@@ -88,7 +94,13 @@ func CollectStream(ch <-chan cif.CIFStreamEvent) (*cif.CanonicalResponse, error)
 		}
 		if tc, ok := toolCalls[idx]; ok {
 			finalTC := *tc
-			if buf, ok := toolArgBufs[idx]; ok {
+			if finalTC.ToolKind == cif.CIFToolKindCustom {
+				if buf, exists := customInputBufs[idx]; exists {
+					rawInput := buf.String()
+					finalTC.RawInput = &rawInput
+					finalTC.ToolArguments = map[string]interface{}{"input": rawInput}
+				}
+			} else if buf, exists := toolArgBufs[idx]; exists {
 				json.Unmarshal([]byte(buf.String()), &finalTC.ToolArguments) //nolint:errcheck
 			}
 			response.Content = append(response.Content, finalTC)

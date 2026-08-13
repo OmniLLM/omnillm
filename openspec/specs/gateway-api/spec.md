@@ -165,3 +165,44 @@ An OpenAI-compatible non-streaming response containing one or more assistant too
 - **WHEN** a provider response contains no tool calls and terminates normally
 - **THEN** the OpenAI-compatible choice retains the ordinary `stop` finish reason
 
+### Requirement: Responses custom-tool history input
+The `/v1/responses` endpoint SHALL accept valid, explicitly typed `custom_tool_call` and `custom_tool_call_output` history items and SHALL process them through ordinary provider dispatch after canonical normalization.
+
+#### Scenario: Droid custom-tool continuation
+- **WHEN** Droid submits a Responses history containing a valid custom tool call and its associated output
+- **THEN** the gateway accepts the request and reaches provider dispatch instead of returning an unknown-item HTTP 400
+
+#### Scenario: Missing custom call identifier
+- **WHEN** a custom tool call or output omits `call_id`
+- **THEN** the gateway returns HTTP 400 with a structured invalid-request error
+
+#### Scenario: Missing custom call name
+- **WHEN** a custom tool call omits its name
+- **THEN** the gateway returns HTTP 400 with a structured invalid-request error
+
+#### Scenario: Missing versus empty custom input
+- **WHEN** a custom tool call omits `input`
+- **THEN** the gateway returns HTTP 400, while an explicitly present empty string is accepted
+
+#### Scenario: Missing versus empty custom output
+- **WHEN** a custom tool output omits `output`
+- **THEN** the gateway returns HTTP 400, while an explicitly present empty string or supported empty content list is accepted
+
+#### Scenario: Invalid custom output shape
+- **WHEN** a custom tool output is neither a string nor a list of supported output content items
+- **THEN** the gateway returns HTTP 400 with a structured invalid-request error
+
+### Requirement: Native Responses custom-tool output
+The public Responses API SHALL serialize canonical custom tool calls as native `custom_tool_call` items with their original declared name and raw input.
+
+#### Scenario: Non-streaming custom call
+- **WHEN** a canonical response contains a custom tool call
+- **THEN** the Responses output contains `type: custom_tool_call`, the original `call_id`, name, raw `input`, and no function `arguments`
+
+#### Scenario: Streaming custom input
+- **WHEN** a provider streams a custom tool call and raw input
+- **THEN** the Responses stream emits a custom output-item announcement followed by `response.custom_tool_call_input.delta`, `response.custom_tool_call_input.done`, output-item completion, and final response completion in order
+
+#### Scenario: Function call remains unchanged
+- **WHEN** a canonical response contains an ordinary function call
+- **THEN** Responses serialization continues to emit existing `function_call` items and function-argument events

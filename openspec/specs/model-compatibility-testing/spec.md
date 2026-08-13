@@ -22,8 +22,8 @@ The test suite SHALL verify model compatibility through separate client-shape-to
 The matrix SHALL verify that applicable models preserve tool definitions, call identifiers, names, arguments, results, ordering, error markers, and assistant-turn structure through repeated and parallel tool-use turns.
 
 #### Scenario: Sequential tool loop
-- **WHEN** an applicable model executes at least three sequential tool cycles
-- **THEN** every result remains associated with its originating call and the final response terminates without an unexpected additional tool call
+- **WHEN** an applicable model executes at least five sequential tool cycles
+- **THEN** five distinct calls and results remain associated in order and the final response terminates without an unexpected sixth tool call
 
 #### Scenario: Parallel streamed tools
 - **WHEN** an applicable streaming model emits interleaved arguments for multiple tool calls
@@ -85,3 +85,48 @@ Matrix execution SHALL produce a human-readable summary and a machine-readable r
 #### Scenario: Incomplete planned coverage
 - **WHEN** a deterministic row expected by the maintained capability manifest does not execute
 - **THEN** the deterministic matrix fails rather than silently reducing coverage
+
+### Requirement: Droid custom-tool compatibility fixture
+The deterministic compatibility suite SHALL include a sanitized Droid-style Responses history containing a raw `ApplyPatch` custom call and its associated result, and SHALL verify canonical normalization and route dispatch.
+
+#### Scenario: Sanitized ApplyPatch replay
+- **WHEN** the compatibility suite submits the Droid-style custom-tool fixture to `/v1/responses`
+- **THEN** the request succeeds, provider dispatch occurs, the raw patch input is preserved under the canonical `input` argument, and the result remains associated with the originating `call_id`
+
+#### Scenario: Existing function-tool fixtures
+- **WHEN** the compatibility suite runs existing Responses function-call histories after custom-tool support is added
+- **THEN** their canonical messages, arguments, ordering, and call-result relationships remain unchanged
+
+### Requirement: Coding-agent client tool-loop verification
+Changes affecting ingestion, canonical tool calls or results, provider transforms, or streaming SHALL retain deterministic multi-turn tool-loop coverage for Claude Code, Codex CLI, Droid, and GitHub Copilot CLI custom-provider client shapes and SHALL run bounded live client smoke tests when the corresponding local client and model configuration are available.
+
+#### Scenario: Deterministic client-shape coverage
+- **WHEN** a tool-call compatibility change is verified
+- **THEN** automated tests exercise the affected Anthropic, Chat Completions, and Responses request shapes with at least five sequential calls, five correctly associated results, and a terminal continuation without a sixth call
+
+#### Scenario: Configured local clients
+- **WHEN** Claude Code, Codex CLI, Droid, or GitHub Copilot CLI custom provider and a local OmniLLM model route are available
+- **THEN** verification runs a bounded live smoke that performs at least five sequential native tool calls, observes each result before issuing the next call, reaches a terminal assistant response, and exits successfully
+
+#### Scenario: Live client unavailable
+- **WHEN** a live smoke cannot run because its executable, authentication, custom-provider capability, model route, or gateway is unavailable
+- **THEN** verification records the concrete skip reason while deterministic client-shape regression coverage remains required
+
+#### Scenario: Live client produces incomplete loop
+- **WHEN** a configured live client produces fewer than five calls, duplicate or missing markers, an association error, an unexpected sixth call, no terminal response, or a non-zero exit
+- **THEN** verification reports failure rather than skip
+
+### Requirement: Codex Responses custom-tool compatibility
+The compatibility suite SHALL verify that Codex custom `exec` definitions and calls retain native kind, name, and raw input through Responses ingestion, Copilot execution, and Responses serialization.
+
+#### Scenario: Deterministic exec round trip
+- **WHEN** a Codex-shaped Responses fixture declares namespace `functions` custom tool `exec` and the provider calls it
+- **THEN** every deterministic boundary exposes native custom kind, name `exec`, exact raw input, and the correct call identifier
+
+#### Scenario: Live Codex multi-turn tool loop
+- **WHEN** Codex CLI and `jzhu/gpt-5.6-sol` are locally available through OmniLLM
+- **THEN** a bounded smoke test executes at least two sequential `exec` calls and reaches a terminal response without unsupported-name or incompatible-payload errors
+
+#### Scenario: Other coding clients remain compatible
+- **WHEN** native Codex custom-tool fidelity is verified
+- **THEN** bounded Claude Code and Droid multi-turn tool-loop tests continue reaching terminal responses
