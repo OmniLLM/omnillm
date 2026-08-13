@@ -56,7 +56,7 @@ func (ms *ModelStateStore) GetAllByInstance(instanceID string) ([]ProviderModelS
 		record.UpdatedAt = parseTime(updatedAtStr)
 		records = append(records, record)
 	}
-	return records, nil
+	return records, rows.Err()
 }
 
 func (ms *ModelStateStore) SetEnabled(instanceID, modelID string, enabled bool) error {

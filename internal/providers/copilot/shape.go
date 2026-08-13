@@ -22,10 +22,8 @@ func (a *CopilotAdapter) selectShape(model string, request *cif.CanonicalRequest
 	// Normalize once; use the same key for cache lookup and heuristic.
 	normalized := strings.ToLower(strings.TrimSpace(model))
 
-	if a.provider.shapeCache != nil {
-		if shape, ok := a.provider.shapeCache[normalized]; ok {
-			return shape
-		}
+	if shape, ok := a.provider.lookupShape(normalized); ok {
+		return shape
 	}
 
 	// Cache miss: fall back to family heuristic so the provider works

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": [
+    "frontend/src/main.tsx",
+    "desktop/src/main.tsx",
+    "scripts/**/*.ts",
+    "tests/**/*.ts"
+  ],
+  "project": [
+    "frontend/**/*.{ts,tsx}",
+    "desktop/**/*.{ts,tsx}",
+    "scripts/**/*.ts",
+    "tests/**/*.ts",
+    "*.ts"
+  ],
+  "ignore": [
+    "frontend/src/vite-env.d.ts",
+    "scripts/test-live-model-matrix-5100.ts"
+  ],
+  "ignoreBinaries": ["go", "make"],
+  "ignoreDependencies": ["@tauri-apps/api", "prettier-plugin-packagejson"],
+  "ignoreExportsUsedInFile": true,
+  "vite": {
+    "config": ["frontend/vite.config.ts", "desktop/vite.config.ts"]
+  }
+}

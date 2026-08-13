@@ -54,12 +54,13 @@ func handleMessages(c *gin.Context) {
 	// Parse request body and convert to CIF.
 	// json.Valid is omitted: ParseAnthropicMessages calls json.Unmarshal which
 	// already validates syntax and returns a clear error, avoiding a double parse pass.
-	body, err := io.ReadAll(c.Request.Body)
+	body, err := readGatewayRequestBody(c.Request.Body)
 	if err != nil {
+		status, message := gatewayRequestBodyError(err)
 		log.Error().Err(err).Str("request_id", requestIDStr).Msg("Failed to read request body")
-		c.JSON(http.StatusBadRequest, gin.H{
+		c.JSON(status, gin.H{
 			"error": gin.H{
-				"message": "Invalid request format",
+				"message": message,
 				"type":    "invalid_request_error",
 			},
 		})
@@ -421,11 +422,12 @@ func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 }
 
 func handleCountTokens(c *gin.Context) {
-	body, err := io.ReadAll(c.Request.Body)
+	body, err := readGatewayRequestBody(c.Request.Body)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
+		status, message := gatewayRequestBodyError(err)
+		c.JSON(status, gin.H{
 			"error": gin.H{
-				"message": "Invalid request format",
+				"message": message,
 				"type":    "invalid_request_error",
 			},
 		})

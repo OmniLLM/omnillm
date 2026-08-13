@@ -1,6 +1,8 @@
 package routes
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -57,7 +59,10 @@ func (h *chatCompletionHandler) handleChatCompletions(c *gin.Context) {
 	startTime := time.Now()
 
 	// Check rate limits
-	if err := h.rateLimiter.CheckAndWait(); err != nil {
+	if err := h.rateLimiter.CheckAndWait(c.Request.Context()); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return
+		}
 		c.JSON(http.StatusTooManyRequests, gin.H{
 			"error": gin.H{
 				"message": err.Error(),
@@ -83,12 +88,13 @@ func (h *chatCompletionHandler) handleChatCompletions(c *gin.Context) {
 	// Parse request body and convert to CIF.
 	// json.Valid is omitted: ParseOpenAIChatCompletions calls json.Unmarshal which
 	// already validates syntax and returns a clear error, avoiding a double parse pass.
-	body, err := io.ReadAll(c.Request.Body)
+	body, err := readGatewayRequestBody(c.Request.Body)
 	if err != nil {
+		status, message := gatewayRequestBodyError(err)
 		log.Error().Err(err).Str("request_id", requestIDStr).Msg("Failed to read request body")
-		c.JSON(http.StatusBadRequest, gin.H{
+		c.JSON(status, gin.H{
 			"error": gin.H{
-				"message": "Invalid request format",
+				"message": message,
 				"type":    "invalid_request_error",
 			},
 		})

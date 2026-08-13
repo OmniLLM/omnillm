@@ -377,28 +377,3 @@ export function parseLogLine(line: string): ParsedLogLine {
     }
   )
 }
-
-export function formatCompactLogLine(line: string): string {
-  const parsed = parseLogLine(line)
-  const segments: Array<string> = []
-
-  if (parsed.timestamp) {
-    segments.push(`[${parsed.timestamp}]`)
-  }
-
-  if (parsed.source) {
-    segments.push(parsed.source)
-  }
-
-  segments.push(parsed.level, parsed.message)
-
-  if (parsed.location) {
-    segments.push(`location=${parsed.location}`)
-  }
-
-  for (const field of parsed.fields) {
-    segments.push(`${field.key}=${field.value}`)
-  }
-
-  return segments.join(PIPE_SEPARATOR)
-}

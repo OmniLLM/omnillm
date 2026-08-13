@@ -138,20 +138,6 @@ export interface ChatCompletionResponse {
   }
 }
 
-export interface ResponsesInputItem {
-  type: "message"
-  role: "user" | "assistant" | "system"
-  content: string
-}
-
-export interface ResponsesRequest {
-  model: string
-  input: Array<ResponsesInputItem>
-  max_output_tokens?: number
-  stream?: boolean
-  temperature?: number
-}
-
 export interface ResponsesResponse {
   id: string
   object: "response"
@@ -373,16 +359,6 @@ async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
 export const listProviders = () =>
   apiFetch<Array<Provider>>("/api/admin/providers")
 
-export const switchProvider = (providerId: string) =>
-  apiFetch<{
-    success?: boolean
-    requiresAuth?: boolean
-    provider?: { id: string; name: string }
-  }>("/api/admin/providers/switch", {
-    method: "POST",
-    body: JSON.stringify({ providerId }),
-  })
-
 export const getProviderModels = (id: string) =>
   apiFetch<{ models: Array<Model> }>(`/api/admin/providers/${id}/models`)
 
@@ -537,8 +513,6 @@ export const getInfo = () => apiFetch<ServerInfo>("/api/admin/info")
 
 // ─── Usage ────────────────────────────────────────────────────────────────────
 
-export const getUsage = () => apiFetch<UsageData>("/usage")
-
 export const getProviderUsage = (id: string) =>
   apiFetch<UsageData>(`/api/admin/providers/${id}/usage`)
 
@@ -630,11 +604,6 @@ export const getMeteringByProvider = (params: MeteringQuery = {}) =>
     `/api/admin/metering/by-provider${buildQueryString(params)}`,
   )
 
-export const getMeteringByClient = (params: MeteringQuery = {}) =>
-  apiFetch<{ items: Array<MeteringBreakdownItem> | null }>(
-    `/api/admin/metering/by-client${buildQueryString(params)}`,
-  )
-
 export const getMeteringModels = (params: MeteringQuery = {}) =>
   apiFetch<{ items: Array<string> | null }>(
     `/api/admin/metering/models${buildQueryString(params)}`,
@@ -693,33 +662,6 @@ export async function subscribeToLogs(
     console.error(`❌ EventSource connection failed to ${url}`)
   })
   return es
-}
-
-export async function subscribeToLogsWebSocket(
-  onLine: (line: string) => void,
-): Promise<WebSocket> {
-  const backendBase = await getBackendBase()
-  const protocol = globalThis.location.protocol === "https:" ? "wss:" : "ws:"
-
-  // Extract host and port from backendBase
-  let host = globalThis.location.host
-  if (backendBase && backendBase !== "") {
-    const url = new URL(backendBase)
-    host = url.host
-  }
-
-  const wsUrl = `${protocol}//${host}/api/admin/logs/websocket`
-  const ws = new WebSocket(wsUrl)
-
-  ws.addEventListener("message", (event: Event) => {
-    const messageEvent = event as MessageEvent
-    onLine(messageEvent.data as string)
-  })
-  ws.addEventListener("error", () => {
-    console.error(`❌ WebSocket connection failed to ${wsUrl}`)
-  })
-
-  return ws
 }
 
 // ─── Models ────────────────────────────────────────────────────────────────
@@ -966,9 +908,6 @@ export const listVirtualModels = () =>
   apiFetch<{ data: Array<VirtualModel> }>("/api/admin/virtualmodels").then(
     (r) => r.data,
   )
-
-export const getVirtualModel = (id: string) =>
-  apiFetch<VirtualModel>(`/api/admin/virtualmodels/${encodeURIComponent(id)}`)
 
 export const createVirtualModel = (payload: VirtualModelPayload) =>
   apiFetch<VirtualModel>("/api/admin/virtualmodels", {

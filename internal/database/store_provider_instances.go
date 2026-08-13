@@ -56,7 +56,7 @@ func (pis *ProviderInstanceStore) GetAll() ([]ProviderInstanceRecord, error) {
 		record.UpdatedAt = parseTime(updatedAtStr)
 		records = append(records, record)
 	}
-	return records, nil
+	return records, rows.Err()
 }
 
 func (pis *ProviderInstanceStore) Create(record *ProviderInstanceRecord) (bool, error) {

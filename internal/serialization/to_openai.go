@@ -94,7 +94,9 @@ func SerializeToOpenAI(response *cif.CanonicalResponse) (*OpenAIResponse, error)
 	}
 
 	finishReason := convertStopReasonToOpenAI(response.StopReason)
-	if len(toolCalls) == 0 && response.StopReason == cif.StopReasonToolUse {
+	if len(toolCalls) > 0 {
+		finishReason = convertStopReasonToOpenAI(cif.StopReasonToolUse)
+	} else if response.StopReason == cif.StopReasonToolUse {
 		finishReason = convertStopReasonToOpenAI(cif.StopReasonEndTurn)
 	}
 

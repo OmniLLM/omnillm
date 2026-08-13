@@ -30,12 +30,13 @@ func handleResponses(c *gin.Context) {
 	requestIDStr, _ := requestID.(string)
 	startTime := time.Now()
 
-	body, err := io.ReadAll(c.Request.Body)
+	body, err := readGatewayRequestBody(c.Request.Body)
 	if err != nil {
+		status, message := gatewayRequestBodyError(err)
 		log.Error().Err(err).Str("request_id", requestIDStr).Msg("Failed to read request body")
-		c.JSON(http.StatusBadRequest, gin.H{
+		c.JSON(status, gin.H{
 			"error": gin.H{
-				"message": "Invalid request format",
+				"message": message,
 				"type":    "invalid_request_error",
 			},
 		})

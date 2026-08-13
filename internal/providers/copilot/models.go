@@ -100,9 +100,10 @@ func (p *GitHubCopilotProvider) GetModels() (*types.ModelsResponse, error) {
 					// Build shape cache from supported_endpoints in the Copilot /models response
 					cache := make(modelShapeCache, len(payload.Data))
 					for _, m := range payload.Data {
-						cache[m.ID] = shapeFromEndpoints(m.SupportedEndpoints)
+						key := strings.ToLower(strings.TrimSpace(m.ID))
+						cache[key] = shapeFromEndpoints(m.SupportedEndpoints)
 					}
-					p.shapeCache = cache
+					p.publishShapeCache(cache)
 					models := make([]types.Model, 0, len(payload.Data))
 					for _, model := range payload.Data {
 						capabilities := map[string]interface{}{}

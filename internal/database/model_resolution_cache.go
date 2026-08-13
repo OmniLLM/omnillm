@@ -5,37 +5,25 @@ import (
 	"sync"
 )
 
-// ModelResolutionCache is a read-heavy in-memory cache for the three data sets
-// that are queried on every hot-path request:
-//
-//  1. Virtual models: map[lowercaseName → *VirtualModelRecord]
-//  2. Virtual model upstreams: map[virtualModelID → []VirtualModelUpstreamRecord]
-//  3. Provider instances: []ProviderInstanceRecord (sorted by priority asc)
-//
-// All data is populated lazily on first access and invalidated whenever the
-// underlying store performs a write.  Reads are lock-free after the first load
-// (swap to new map pointer under write lock; readers hold read lock for pointer
-// copy only).
-//
-// Model state (enabled/disabled per instance) is cached separately in
-// ModelStateCache, which is invalidated by SetEnabled/Delete on ModelStateStore.
+// ModelResolutionCache is a read-heavy in-memory cache for data queried on
+// every hot-path request. Snapshots are built locally and published only after
+// their database reads complete successfully.
 type ModelResolutionCache struct {
 	mu sync.RWMutex
 
-	vmByName    map[string]*VirtualModelRecord          // key: lowercase name/id
-	vmUpstreams map[string][]VirtualModelUpstreamRecord // key: virtualModelID
+	vmByName    map[string]*VirtualModelRecord
+	vmUpstreams map[string][]VirtualModelUpstreamRecord
 	provInst    []ProviderInstanceRecord
-	instByID    map[string]ProviderInstanceRecord // key: instanceID
-	instByLcSub map[string]string                 // key: lc subtitle → instanceID
+	instByID    map[string]ProviderInstanceRecord
+	instByLcSub map[string]string
 
 	vmLoaded   bool
 	instLoaded bool
 }
 
-// ModelStateCache caches GetAllByInstance results keyed by instanceID.
 type ModelStateCache struct {
 	mu     sync.RWMutex
-	data   map[string]map[string]bool // instanceID → modelID → enabled
+	data   map[string]map[string]bool
 	loaded bool
 }
 
@@ -44,13 +32,8 @@ var (
 	globalModelStateCache = &ModelStateCache{}
 )
 
-// GetModelResolutionCache returns the process-wide model resolution cache.
 func GetModelResolutionCache() *ModelResolutionCache { return globalModelResCache }
-
-// GetModelStateCache returns the process-wide model state cache.
-func GetModelStateCache() *ModelStateCache { return globalModelStateCache }
-
-// ─── ModelResolutionCache ─────────────────────────────────────────────────────
+func GetModelStateCache() *ModelStateCache           { return globalModelStateCache }
 
 func (c *ModelResolutionCache) ensureVMLoaded() {
 	c.mu.RLock()
@@ -65,69 +48,68 @@ func (c *ModelResolutionCache) ensureVMLoaded() {
 	if c.vmLoaded {
 		return
 	}
-	c.loadVMsLocked()
+	_ = c.loadVMsLocked()
 }
 
-func (c *ModelResolutionCache) loadVMsLocked() {
+func (c *ModelResolutionCache) loadVMsLocked() error {
 	db := GetDatabase()
 	rows, err := db.db.Query(`
 		SELECT virtual_model_id, name, description, api_shape, lb_strategy, enabled, created_at, updated_at
 		FROM virtual_models ORDER BY created_at ASC
 	`)
 	if err != nil {
-		return
+		return err
 	}
 	defer rows.Close()
 
 	byName := make(map[string]*VirtualModelRecord)
-	upstreams := make(map[string][]VirtualModelUpstreamRecord)
-
-	var vms []VirtualModelRecord
 	for rows.Next() {
 		var r VirtualModelRecord
 		var enabledInt int
 		var createdAtStr, updatedAtStr string
 		if err := rows.Scan(&r.VirtualModelID, &r.Name, &r.Description, &r.APIShape, &r.LbStrategy, &enabledInt, &createdAtStr, &updatedAtStr); err != nil {
-			continue
+			return err
 		}
 		r.Enabled = enabledInt == 1
 		r.CreatedAt = parseTime(createdAtStr)
 		r.UpdatedAt = parseTime(updatedAtStr)
-		vms = append(vms, r)
+		rec := r
+		byName[strings.ToLower(r.VirtualModelID)] = &rec
 	}
-	_ = rows.Err()
-
-	for i := range vms {
-		key := strings.ToLower(vms[i].VirtualModelID)
-		rec := vms[i]
-		byName[key] = &rec
+	if err := rows.Err(); err != nil {
+		return err
 	}
 
-	// Load all upstreams in one query.
 	uRows, err := db.db.Query(`
 		SELECT id, virtual_model_id, provider_id, model_id, weight, priority, created_at, updated_at
 		FROM virtual_model_upstreams ORDER BY priority ASC, id ASC
 	`)
-	if err == nil {
-		defer uRows.Close()
-		for uRows.Next() {
-			var u VirtualModelUpstreamRecord
-			var createdAtStr, updatedAtStr string
-			if err := uRows.Scan(&u.ID, &u.VirtualModelID, &u.ProviderID, &u.ModelID, &u.Weight, &u.Priority, &createdAtStr, &updatedAtStr); err != nil {
-				continue
-			}
-			u.CreatedAt = parseTime(createdAtStr)
-			u.UpdatedAt = parseTime(updatedAtStr)
-			upstreams[u.VirtualModelID] = append(upstreams[u.VirtualModelID], u)
+	if err != nil {
+		return err
+	}
+	defer uRows.Close()
+
+	upstreams := make(map[string][]VirtualModelUpstreamRecord)
+	for uRows.Next() {
+		var u VirtualModelUpstreamRecord
+		var createdAtStr, updatedAtStr string
+		if err := uRows.Scan(&u.ID, &u.VirtualModelID, &u.ProviderID, &u.ModelID, &u.Weight, &u.Priority, &createdAtStr, &updatedAtStr); err != nil {
+			return err
 		}
+		u.CreatedAt = parseTime(createdAtStr)
+		u.UpdatedAt = parseTime(updatedAtStr)
+		upstreams[u.VirtualModelID] = append(upstreams[u.VirtualModelID], u)
+	}
+	if err := uRows.Err(); err != nil {
+		return err
 	}
 
 	c.vmByName = byName
 	c.vmUpstreams = upstreams
 	c.vmLoaded = true
+	return nil
 }
 
-// GetVirtualModel returns the cached virtual model record for the given name/id.
 func (c *ModelResolutionCache) GetVirtualModel(nameOrID string) *VirtualModelRecord {
 	c.ensureVMLoaded()
 	c.mu.RLock()
@@ -136,7 +118,6 @@ func (c *ModelResolutionCache) GetVirtualModel(nameOrID string) *VirtualModelRec
 	return r
 }
 
-// GetUpstreams returns the cached upstream list for the given virtual model ID.
 func (c *ModelResolutionCache) GetUpstreams(virtualModelID string) []VirtualModelUpstreamRecord {
 	c.ensureVMLoaded()
 	c.mu.RLock()
@@ -145,16 +126,11 @@ func (c *ModelResolutionCache) GetUpstreams(virtualModelID string) []VirtualMode
 	return u
 }
 
-// InvalidateVMs drops the virtual model + upstream cache. The next read reloads from DB.
 func (c *ModelResolutionCache) InvalidateVMs() {
 	c.mu.Lock()
 	c.vmLoaded = false
-	c.vmByName = nil
-	c.vmUpstreams = nil
 	c.mu.Unlock()
 }
-
-// ─── Provider instance cache ─────────────────────────────────────────────────
 
 func (c *ModelResolutionCache) ensureInstLoaded() {
 	c.mu.RLock()
@@ -169,30 +145,29 @@ func (c *ModelResolutionCache) ensureInstLoaded() {
 	if c.instLoaded {
 		return
 	}
-	c.loadInstLocked()
+	_ = c.loadInstLocked()
 }
 
-func (c *ModelResolutionCache) loadInstLocked() {
+func (c *ModelResolutionCache) loadInstLocked() error {
 	db := GetDatabase()
 	rows, err := db.db.Query(`
 		SELECT instance_id, provider_id, name, subtitle, priority, activated, created_at, updated_at
 		FROM provider_instances ORDER BY priority ASC
 	`)
 	if err != nil {
-		return
+		return err
 	}
 	defer rows.Close()
 
 	var records []ProviderInstanceRecord
 	byID := make(map[string]ProviderInstanceRecord)
 	byLcSub := make(map[string]string)
-
 	for rows.Next() {
 		var r ProviderInstanceRecord
 		var activated int
 		var createdAtStr, updatedAtStr string
 		if err := rows.Scan(&r.InstanceID, &r.ProviderID, &r.Name, &r.Subtitle, &r.Priority, &activated, &createdAtStr, &updatedAtStr); err != nil {
-			continue
+			return err
 		}
 		r.Activated = activated != 0
 		r.CreatedAt = parseTime(createdAtStr)
@@ -206,14 +181,17 @@ func (c *ModelResolutionCache) loadInstLocked() {
 			}
 		}
 	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
 
 	c.provInst = records
 	c.instByID = byID
 	c.instByLcSub = byLcSub
 	c.instLoaded = true
+	return nil
 }
 
-// GetAllProviderInstances returns the cached, priority-sorted provider instance list.
 func (c *ModelResolutionCache) GetAllProviderInstances() []ProviderInstanceRecord {
 	c.ensureInstLoaded()
 	c.mu.RLock()
@@ -222,22 +200,17 @@ func (c *ModelResolutionCache) GetAllProviderInstances() []ProviderInstanceRecor
 	return r
 }
 
-// LookupProviderPrefix maps a known prefix to an instance ID using the cache.
 func (c *ModelResolutionCache) LookupProviderPrefix(prefix string) (string, bool) {
 	c.ensureInstLoaded()
 	c.mu.RLock()
-	byID := c.instByID
-	byLcSub := c.instByLcSub
-	c.mu.RUnlock()
-
-	if _, ok := byID[prefix]; ok {
+	defer c.mu.RUnlock()
+	if _, ok := c.instByID[prefix]; ok {
 		return prefix, true
 	}
-	id, ok := byLcSub[strings.ToLower(prefix)]
+	id, ok := c.instByLcSub[strings.ToLower(prefix)]
 	return id, ok
 }
 
-// ResolveProviderPrefix maps a prefix to an instance ID using the cache.
 func (c *ModelResolutionCache) ResolveProviderPrefix(prefix string) string {
 	if id, ok := c.LookupProviderPrefix(prefix); ok {
 		return id
@@ -245,17 +218,11 @@ func (c *ModelResolutionCache) ResolveProviderPrefix(prefix string) string {
 	return prefix
 }
 
-// InvalidateInstances drops the provider instance cache.
 func (c *ModelResolutionCache) InvalidateInstances() {
 	c.mu.Lock()
 	c.instLoaded = false
-	c.provInst = nil
-	c.instByID = nil
-	c.instByLcSub = nil
 	c.mu.Unlock()
 }
-
-// ─── ModelStateCache ─────────────────────────────────────────────────────────
 
 func (c *ModelStateCache) ensure() {
 	c.mu.RLock()
@@ -270,13 +237,15 @@ func (c *ModelStateCache) ensure() {
 	if c.loaded {
 		return
 	}
+	_ = c.loadLocked()
+}
 
-	db := GetDatabase()
-	rows, err := db.db.Query(`
+func (c *ModelStateCache) loadLocked() error {
+	rows, err := GetDatabase().db.Query(`
 		SELECT instance_id, model_id, enabled FROM provider_model_states
 	`)
 	if err != nil {
-		return
+		return err
 	}
 	defer rows.Close()
 
@@ -285,19 +254,22 @@ func (c *ModelStateCache) ensure() {
 		var instID, modelID string
 		var enabledInt int
 		if err := rows.Scan(&instID, &modelID, &enabledInt); err != nil {
-			continue
+			return err
 		}
 		if data[instID] == nil {
 			data[instID] = make(map[string]bool)
 		}
 		data[instID][modelID] = enabledInt == 1
 	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
 
 	c.data = data
 	c.loaded = true
+	return nil
 }
 
-// GetDisabledModels returns the set of disabled model IDs for the given instance.
 func (c *ModelStateCache) GetDisabledModels(instanceID string) map[string]bool {
 	c.ensure()
 	c.mu.RLock()
@@ -313,10 +285,8 @@ func (c *ModelStateCache) GetDisabledModels(instanceID string) map[string]bool {
 	return disabled
 }
 
-// Invalidate drops the model state cache.
 func (c *ModelStateCache) Invalidate() {
 	c.mu.Lock()
 	c.loaded = false
-	c.data = nil
 	c.mu.Unlock()
 }

@@ -80,5 +80,5 @@ func (ts *TokenStore) GetAllByProvider(providerID string) ([]TokenRecord, error)
 		record.UpdatedAt = parseTime(updatedAtStr)
 		records = append(records, record)
 	}
-	return records, nil
+	return records, rows.Err()
 }

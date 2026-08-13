@@ -2,6 +2,7 @@ package routes
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -196,6 +197,11 @@ func handleSaveConfig(c *gin.Context) {
 	})
 }
 
+const (
+	maxConfigImportBytes        = 4 << 20
+	maxConfigImportRequestBytes = maxConfigImportBytes + (1 << 20)
+)
+
 // handleImportConfig accepts a file upload and saves its content to the config path.
 func handleImportConfig(c *gin.Context) {
 	if !getSecurityOptions().EnableConfigEdit {
@@ -211,6 +217,17 @@ func handleImportConfig(c *gin.Context) {
 		return
 	}
 
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxConfigImportRequestBytes)
+	if err := c.Request.ParseMultipartForm(maxConfigImportRequestBytes); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "Uploaded configuration exceeds the maximum size"})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid multipart upload"})
+		return
+	}
+
 	file, _, err := c.Request.FormFile("file")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "No file uploaded"})
@@ -218,9 +235,13 @@ func handleImportConfig(c *gin.Context) {
 	}
 	defer file.Close()
 
-	content, err := io.ReadAll(file)
+	content, err := io.ReadAll(io.LimitReader(file, maxConfigImportBytes+1))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to read uploaded file: %v", err)})
+		return
+	}
+	if len(content) > maxConfigImportBytes {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "Uploaded configuration exceeds the maximum size"})
 		return
 	}
 

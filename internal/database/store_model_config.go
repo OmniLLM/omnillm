@@ -55,7 +55,7 @@ func (mcs *ModelConfigStore) GetAllByInstance(instanceID string) ([]ModelConfigR
 		record.UpdatedAt = parseTime(updatedAtStr)
 		records = append(records, record)
 	}
-	return records, nil
+	return records, rows.Err()
 }
 
 func (mcs *ModelConfigStore) SetVersion(instanceID, modelID, version string) error {
