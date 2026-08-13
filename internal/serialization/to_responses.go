@@ -30,6 +30,8 @@ type ResponsesOutputItem struct {
 	Content   []ResponsesContentBlock `json:"content,omitempty"`
 	Name      string                  `json:"name,omitempty"`
 	Arguments string                  `json:"arguments,omitempty"`
+	Input     *string                 `json:"input,omitempty"`
+	Namespace string                  `json:"namespace,omitempty"`
 }
 
 type ResponsesContentBlock struct {
@@ -63,6 +65,23 @@ func SerializeToResponses(response *cif.CanonicalResponse) (*ResponsesResponse, 
 				Annotations: []any{},
 			})
 		case cif.CIFToolCallPart:
+			if p.ToolKind == cif.CIFToolKindCustom {
+				rawInput := ""
+				if p.RawInput != nil {
+					rawInput = *p.RawInput
+				}
+				outputItems = append(outputItems, ResponsesOutputItem{
+					Type:      "custom_tool_call",
+					ID:        p.ToolCallID,
+					CallID:    p.ToolCallID,
+					Role:      "assistant",
+					Status:    "completed",
+					Name:      p.ToolName,
+					Input:     &rawInput,
+					Namespace: p.Namespace,
+				})
+				continue
+			}
 			args, _ := json.Marshal(p.ToolArguments)
 			outputItems = append(outputItems, ResponsesOutputItem{
 				Type:      "function_call",
@@ -242,13 +261,21 @@ func ConvertCIFEventToResponsesSSE(event cif.CIFStreamEvent, state *ResponsesStr
 				}
 				outputIndex := len(state.outputItems)
 				toolItem := map[string]interface{}{
-					"type":      "function_call",
-					"id":        cb.ToolCallID,
-					"call_id":   cb.ToolCallID,
-					"role":      "assistant",
-					"status":    "in_progress",
-					"name":      cb.ToolName,
-					"arguments": "",
+					"id":      cb.ToolCallID,
+					"call_id": cb.ToolCallID,
+					"role":    "assistant",
+					"status":  "in_progress",
+					"name":    cb.ToolName,
+				}
+				if cb.ToolKind == cif.CIFToolKindCustom {
+					toolItem["type"] = "custom_tool_call"
+					toolItem["input"] = ""
+					if cb.Namespace != "" {
+						toolItem["namespace"] = cb.Namespace
+					}
+				} else {
+					toolItem["type"] = "function_call"
+					toolItem["arguments"] = ""
 				}
 				events = append(events, map[string]interface{}{
 					"type":         "response.output_item.added",
@@ -280,6 +307,16 @@ func ConvertCIFEventToResponsesSSE(event cif.CIFStreamEvent, state *ResponsesStr
 				"content_index": contentIndex,
 				"delta":         d.Thinking,
 			})
+		case cif.CustomToolInputDelta:
+			if item := state.ToolItemsByIndex[e.Index]; item != nil && item["type"] == "custom_tool_call" {
+				item["input"] = item["input"].(string) + d.Delta
+				events = append(events, map[string]interface{}{
+					"type":         "response.custom_tool_call_input.delta",
+					"output_index": state.OutputItemIndexes[item["call_id"].(string)],
+					"item_id":      item["id"],
+					"delta":        d.Delta,
+				})
+			}
 		case cif.ToolArgumentsDelta:
 			if item := state.ToolItemsByIndex[e.Index]; item != nil {
 				item["arguments"] = item["arguments"].(string) + d.PartialJSON
@@ -353,23 +390,32 @@ func ConvertCIFEventToResponsesSSE(event cif.CIFStreamEvent, state *ResponsesStr
 			state.outputItems[state.MessageOutputIndex] = messageItem
 		}
 
-		// Emit function_call_arguments.done for any pending tool calls.
+		// Emit completion events for any pending tool calls.
 		for _, item := range state.outputItems {
-			if item["type"] == "function_call" {
+			switch item["type"] {
+			case "function_call":
 				events = append(events, map[string]interface{}{
 					"type":         "response.function_call_arguments.done",
 					"output_index": state.OutputItemIndexes[item["call_id"].(string)],
 					"call_id":      item["call_id"],
 					"arguments":    item["arguments"],
 				})
-				// Mark tool item as completed.
-				item["status"] = "completed"
+			case "custom_tool_call":
 				events = append(events, map[string]interface{}{
-					"type":         "response.output_item.done",
+					"type":         "response.custom_tool_call_input.done",
 					"output_index": state.OutputItemIndexes[item["call_id"].(string)],
-					"item":         item,
+					"item_id":      item["id"],
+					"input":        item["input"],
 				})
+			default:
+				continue
 			}
+			item["status"] = "completed"
+			events = append(events, map[string]interface{}{
+				"type":         "response.output_item.done",
+				"output_index": state.OutputItemIndexes[item["call_id"].(string)],
+				"item":         item,
+			})
 		}
 
 		var output []interface{}

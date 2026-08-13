@@ -9,6 +9,37 @@ import (
 	"omnillm/internal/testcompat"
 )
 
+func TestCompatibilityDroidCustomToolIngestion(t *testing.T) {
+	request, err := ParseResponsesPayload(testcompat.DroidCustomToolResponsesRequest(true))
+	if err != nil {
+		t.Fatalf("parse Droid fixture: %v", err)
+	}
+	if request.Model != testcompat.Model || !request.Stream {
+		t.Fatalf("request metadata = model %q stream %v", request.Model, request.Stream)
+	}
+
+	assistant := request.Messages[1].(cif.CIFAssistantMessage)
+	if len(assistant.Content) != 2 {
+		t.Fatalf("assistant parts = %#v", assistant.Content)
+	}
+	call := assistant.Content[1].(cif.CIFToolCallPart)
+	if call.ToolCallID != testcompat.DroidCallID || call.ToolName != testcompat.DroidToolName {
+		t.Fatalf("custom call identity changed: %#v", call)
+	}
+	wantArguments := map[string]interface{}{"input": testcompat.DroidRawInput}
+	if !reflect.DeepEqual(call.ToolArguments, wantArguments) {
+		t.Fatalf("custom call arguments = %#v, want %#v", call.ToolArguments, wantArguments)
+	}
+
+	result := request.Messages[2].(cif.CIFUserMessage).Content[0].(cif.CIFToolResultPart)
+	if result.ToolCallID != testcompat.DroidCallID || result.Content != testcompat.DroidToolResult {
+		t.Fatalf("custom result relationship changed: %#v", result)
+	}
+	if len(request.Tools) != 1 || request.Tools[0].Name != testcompat.DroidToolName {
+		t.Fatalf("custom tool definition = %#v", request.Tools)
+	}
+}
+
 func TestCompatibilityFixtureIngestionMatrix(t *testing.T) {
 	parsers := []struct {
 		name  string

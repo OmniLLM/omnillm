@@ -8,14 +8,19 @@ import (
 )
 
 const (
-	Model            = "compatibility-model"
-	SystemPrompt     = "Preserve tool relationships across every dialect."
-	InitialPrompt    = "Inspect README.md and report the result."
-	AssistantPrelude = "I will inspect it."
-	FinalPrompt      = "Give the final answer."
-	FinalAnswer      = "The compatibility fixture completed."
-	LargeResultSize  = 128 * 1024
-	ToolErrorText    = "synthetic tool failure sentinel"
+	Model                      = "compatibility-model"
+	SystemPrompt               = "Preserve tool relationships across every dialect."
+	InitialPrompt              = "Inspect README.md and report the result."
+	AssistantPrelude           = "I will inspect it."
+	FinalPrompt                = "Give the final answer."
+	FinalAnswer                = "The compatibility fixture completed."
+	LargeResultSize            = 128 * 1024
+	ToolErrorText              = "synthetic tool failure sentinel"
+	MinimumSequentialToolCalls = 5
+	DroidCallID                = "call_apply_patch"
+	DroidToolName              = "ApplyPatch"
+	DroidRawInput              = "*** Update File: settings.json\n@@\n- old\n+ new"
+	DroidToolResult            = "Error: synthetic patch failure"
 )
 
 type ToolExchange struct {
@@ -38,7 +43,7 @@ func SemanticScenarios() []Scenario {
 	return []Scenario{
 		{Name: "plain", FinalText: FinalAnswer},
 		{Name: "one-tool-cycle", Prelude: AssistantPrelude, Exchanges: []ToolExchange{exchange(1, `README content`)}},
-		{Name: "three-sequential-tool-cycles", Prelude: AssistantPrelude, Exchanges: []ToolExchange{exchange(1, "first"), exchange(2, "second"), exchange(3, "third")}},
+		{Name: "five-sequential-tool-cycles", Prelude: AssistantPrelude, Exchanges: []ToolExchange{exchange(1, "first"), exchange(2, "second"), exchange(3, "third"), exchange(4, "fourth"), exchange(5, "fifth")}},
 		{Name: "parallel-interleaved-calls", Prelude: "Checking both files.", Exchanges: []ToolExchange{exchange(1, "README"), exchange(2, "go.mod")}},
 		{Name: "mixed-text-and-calls", Prelude: AssistantPrelude, Exchanges: []ToolExchange{exchange(1, "mixed")}, FinalText: FinalAnswer},
 		{Name: "empty-arguments", Exchanges: []ToolExchange{{ID: "call_empty", Name: "List", Arguments: map[string]interface{}{}, Result: "[]"}}},
@@ -51,7 +56,14 @@ func SemanticScenarios() []Scenario {
 	}
 }
 
-func AgenticScenario() Scenario { return SemanticScenarios()[2] }
+func AgenticScenario() Scenario {
+	for _, scenario := range SemanticScenarios() {
+		if scenario.Name == "five-sequential-tool-cycles" {
+			return scenario
+		}
+	}
+	panic("five-sequential-tool-cycles scenario is missing")
+}
 
 func exchange(index int, result string) ToolExchange {
 	return ToolExchange{
@@ -140,6 +152,28 @@ func ResponsesRequest(s Scenario, stream bool) json.RawMessage {
 	}
 	input = append(input, map[string]interface{}{"type": "message", "role": "user", "content": []interface{}{map[string]interface{}{"type": "input_text", "text": FinalPrompt}}})
 	return marshal(map[string]interface{}{"model": Model, "stream": stream, "instructions": SystemPrompt, "input": input, "tools": []interface{}{map[string]interface{}{"type": "function", "name": "Read", "description": "Read a file", "parameters": schema()}}})
+}
+
+func DroidCustomToolResponsesRequest(stream bool) json.RawMessage {
+	input := []interface{}{
+		map[string]interface{}{"type": "message", "role": "user", "content": InitialPrompt},
+		map[string]interface{}{"type": "message", "role": "assistant", "content": AssistantPrelude},
+		map[string]interface{}{"type": "custom_tool_call", "call_id": DroidCallID, "name": DroidToolName, "input": DroidRawInput},
+		map[string]interface{}{"type": "custom_tool_call_output", "call_id": DroidCallID, "output": DroidToolResult},
+		map[string]interface{}{"type": "message", "role": "user", "content": FinalPrompt},
+	}
+	tool := map[string]interface{}{
+		"type":        "custom",
+		"name":        DroidToolName,
+		"description": "Apply a patch",
+		"format":      map[string]interface{}{"type": "text"},
+	}
+	return marshal(map[string]interface{}{
+		"model":  Model,
+		"stream": stream,
+		"input":  input,
+		"tools":  []interface{}{tool},
+	})
 }
 
 func Response(s Scenario) *cif.CanonicalResponse {

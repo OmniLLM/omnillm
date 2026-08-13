@@ -167,6 +167,51 @@ func TestMarshalCIFContentPart_ToolCall(t *testing.T) {
 	}
 }
 
+func TestMarshalCIFContentPart_CustomToolCall(t *testing.T) {
+	rawInput := "printf 'a b\\n'"
+	part := CIFToolCallPart{
+		Type:          "tool_call",
+		ToolCallID:    "call_exec",
+		ToolName:      "exec",
+		ToolArguments: map[string]interface{}{"input": rawInput},
+		ToolKind:      CIFToolKindCustom,
+		RawInput:      &rawInput,
+		Namespace:     "functions",
+	}
+	encoded, err := MarshalCIFContentPart(part)
+	if err != nil {
+		t.Fatalf("marshal custom tool call: %v", err)
+	}
+	var decoded ContentPartJSON
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("decode custom tool call: %v", err)
+	}
+	if decoded.ToolKind != CIFToolKindCustom || decoded.RawInput == nil || *decoded.RawInput != rawInput || decoded.Namespace != "functions" {
+		t.Fatalf("custom tool metadata changed: %#v", decoded)
+	}
+}
+
+func TestMarshalCIFContentPart_CustomToolResult(t *testing.T) {
+	output := []interface{}{map[string]interface{}{"type": "input_text", "text": "ok"}}
+	encoded, err := MarshalCIFContentPart(CIFToolResultPart{
+		Type:         "tool_result",
+		ToolCallID:   "call_exec",
+		Content:      `[{"type":"input_text","text":"ok"}]`,
+		ToolKind:     CIFToolKindCustom,
+		CustomOutput: output,
+	})
+	if err != nil {
+		t.Fatalf("marshal custom tool result: %v", err)
+	}
+	var decoded ContentPartJSON
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("decode custom tool result: %v", err)
+	}
+	if decoded.ToolKind != CIFToolKindCustom || decoded.CustomOutput == nil {
+		t.Fatalf("custom output metadata changed: %#v", decoded)
+	}
+}
+
 func TestMarshalCIFContentPart_Image(t *testing.T) {
 	url := "https://example.com/pic.jpg"
 	p := CIFImagePart{Type: "image", MediaType: "image/jpeg", URL: &url}
