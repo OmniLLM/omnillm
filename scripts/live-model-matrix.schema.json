@@ -87,6 +87,21 @@
               "cancellation": { "$ref": "#/$defs/support" }
             }
           },
+          "scenarioOverrides": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "model_availability": { "$ref": "#/$defs/support" },
+              "plain": { "$ref": "#/$defs/support" },
+              "stream": { "$ref": "#/$defs/support" },
+              "tool_replay": { "$ref": "#/$defs/support" },
+              "repeated_tools": { "$ref": "#/$defs/support" },
+              "parallel_tools": { "$ref": "#/$defs/support" },
+              "large_result": { "$ref": "#/$defs/support" },
+              "long_stream": { "$ref": "#/$defs/support" },
+              "cancellation": { "$ref": "#/$defs/support" }
+            }
+          },
           "provision": {
             "type": "object",
             "additionalProperties": false,

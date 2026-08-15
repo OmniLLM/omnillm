@@ -72,6 +72,9 @@ func (p *GitHubCopilotProvider) IsResponsesOnlyModel(model string) bool {
 	if normalized == "" {
 		return false
 	}
+	if isKnownResponsesOnlyModelKey(normalized) {
+		return true
+	}
 	shape, ok := p.lookupShape(normalized)
 	return ok && shape == shapeResponses
 }

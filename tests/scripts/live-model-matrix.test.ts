@@ -7,6 +7,32 @@ import {
   sanitizeFailure,
 } from "../../scripts/test-live-model-matrix"
 
+const copilotGrokRow = {
+  id: "copilot-grok",
+  provider: "github-copilot",
+  model: "grok-4.5",
+  shapes: { chat: true, messages: true, responses: true },
+  credentials: [{ env: "LIVE_GITHUB_TOKEN" }],
+  capabilities: {
+    tools: true,
+    parallelTools: true,
+    largeResults: true,
+    longStream: true,
+    cancellation: true,
+  },
+  scenarioOverrides: {
+    parallel_tools: { notApplicable: "account-specific behavior" },
+  },
+  provision: {
+    path: "/api/admin/providers/auth-and-create/github-copilot",
+    body: {
+      method: "token",
+      token: { $env: "LIVE_GITHUB_TOKEN" },
+    },
+    activate: true,
+  },
+}
+
 const validRow = {
   id: "example",
   provider: "google",
@@ -39,6 +65,12 @@ describe("live model matrix manifest", () => {
       notApplicable: "not supported",
     })
     expect(manifest.rows[0]?.credentials).toEqual([{ env: "LIVE_KEY" }])
+  })
+
+  test("accepts GitHub Copilot Grok provisioning by environment reference", () => {
+    const manifest = parseManifest({ version: 1, rows: [copilotGrokRow] })
+
+    expect(manifest.rows[0]).toEqual(copilotGrokRow)
   })
 
   test("rejects duplicate row identifiers", () => {

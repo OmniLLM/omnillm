@@ -54,6 +54,37 @@
         "longStream": true,
         "cancellation": true
       }
+    },
+    {
+      "id": "github-copilot-grok-example",
+      "provider": "github-copilot",
+      "model": "grok-4.5",
+      "shapes": {
+        "chat": true,
+        "messages": true,
+        "responses": true
+      },
+      "credentials": [{ "env": "OMNILLM_LIVE_GITHUB_TOKEN" }],
+      "capabilities": {
+        "tools": true,
+        "parallelTools": true,
+        "largeResults": true,
+        "longStream": true,
+        "cancellation": true
+      },
+      "scenarioOverrides": {
+        "parallel_tools": {
+          "notApplicable": "Declare a scenario override when an advertised capability is not reliable for this exact model/account"
+        }
+      },
+      "provision": {
+        "path": "/api/admin/providers/auth-and-create/github-copilot",
+        "body": {
+          "method": "token",
+          "token": { "$env": "OMNILLM_LIVE_GITHUB_TOKEN" }
+        },
+        "activate": true
+      }
     }
   ]
 }

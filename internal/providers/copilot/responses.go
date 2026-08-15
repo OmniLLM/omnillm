@@ -102,6 +102,7 @@ func (a *CopilotAdapter) buildResponsesPayload(request *cif.CanonicalRequest, st
 	}
 
 	if len(request.Tools) > 0 {
+		payload["parallel_tool_calls"] = true
 		tools := make([]map[string]any, 0, len(request.Tools))
 		for _, tool := range request.Tools {
 			item := map[string]any{
@@ -133,12 +134,31 @@ func (a *CopilotAdapter) buildResponsesPayload(request *cif.CanonicalRequest, st
 					payload["tool_choice"] = tc
 				}
 			} else {
-				payload["tool_choice"] = tc
+				payload["tool_choice"] = normalizeResponsesToolChoice(tc)
 			}
 		}
 	}
 
 	return payload
+}
+
+func normalizeResponsesToolChoice(toolChoice any) any {
+	choice, ok := toolChoice.(map[string]interface{})
+	if !ok || choice["type"] != "function" {
+		return toolChoice
+	}
+	function, ok := choice["function"].(map[string]interface{})
+	if !ok {
+		return toolChoice
+	}
+	name, _ := function["name"].(string)
+	if name == "" {
+		return toolChoice
+	}
+	return map[string]interface{}{
+		"type": "function",
+		"name": name,
+	}
 }
 
 // cifMessagesToResponsesInput converts CIF messages to the Responses API input array.

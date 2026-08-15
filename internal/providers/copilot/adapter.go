@@ -48,7 +48,8 @@ func (a *CopilotAdapter) Execute(ctx context.Context, request *cif.CanonicalRequ
 	if request != nil {
 		model = a.RemapModel(request.Model)
 	}
-	switch a.selectShape(model, request) {
+	shape := a.selectShape(model, request)
+	switch shape {
 	case shapeResponses:
 		return a.executeResponses(ctx, request)
 	default:
