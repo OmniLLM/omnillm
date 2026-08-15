@@ -56,9 +56,18 @@ func copilotModelUsesMaxCompletionTokens(model string) bool {
 }
 
 func (a *CopilotAdapter) convertCIFToOpenAI(request *cif.CanonicalRequest, toolNameMapper *copilotToolNameMapper) map[string]interface{} {
+	convertedMessages := a.convertCIFMessagesToOpenAI(request.Messages, toolNameMapper)
+	messages := make([]map[string]interface{}, 0, len(convertedMessages)+1)
+	if request.SystemPrompt != nil && strings.TrimSpace(*request.SystemPrompt) != "" {
+		messages = append(messages, map[string]interface{}{
+			"role":    "system",
+			"content": *request.SystemPrompt,
+		})
+	}
+	messages = append(messages, convertedMessages...)
 	payload := map[string]interface{}{
 		"model":    a.RemapModel(request.Model),
-		"messages": a.convertCIFMessagesToOpenAI(request.Messages, toolNameMapper),
+		"messages": messages,
 		"stream":   request.Stream,
 	}
 
@@ -87,6 +96,7 @@ func (a *CopilotAdapter) convertCIFToOpenAI(request *cif.CanonicalRequest, toolN
 	}
 
 	if len(request.Tools) > 0 {
+		payload["parallel_tool_calls"] = true
 		var tools []map[string]interface{}
 		for _, tool := range request.Tools {
 			openaiTool := map[string]interface{}{

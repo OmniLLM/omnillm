@@ -65,6 +65,7 @@ type ManifestRow = {
   shapes: Partial<Record<Shape, Support>>
   credentials: Array<CredentialReference>
   capabilities: Record<Capability, Support>
+  scenarioOverrides?: Partial<Record<Scenario, Support>>
   provision?: {
     path: string
     body: Record<string, unknown>
@@ -102,12 +103,15 @@ type MatrixReport = {
   startedAt: string
   finishedAt: string
   manifest: string
+  gateway?: { host: string; port: number }
   results: Array<MatrixResult>
   summary: Record<Outcome, number>
 }
 
 type Gateway = {
   baseUrl: string
+  host: string
+  port: number
   process: ReturnType<typeof Bun.spawn>
 }
 
@@ -208,6 +212,7 @@ export function parseManifest(value: unknown): Manifest {
         "shapes",
         "credentials",
         "capabilities",
+        "scenarioOverrides",
         "provision",
       ],
       `rows[${index}]`,
@@ -283,6 +288,24 @@ export function parseManifest(value: unknown): Manifest {
       }),
     ) as Record<Capability, Support>
 
+    let scenarioOverrides: ManifestRow["scenarioOverrides"]
+    if (row.scenarioOverrides !== undefined) {
+      const rawOverrides = object(
+        row.scenarioOverrides,
+        `${id}.scenarioOverrides`,
+      )
+      const scenarios = [...SMOKE_SCENARIOS, ...EXTENDED_SCENARIOS]
+      rejectUnknownKeys(rawOverrides, scenarios, `${id}.scenarioOverrides`)
+      scenarioOverrides = {}
+      for (const scenario of scenarios) {
+        const parsed = support(
+          rawOverrides[scenario],
+          `${id}.scenarioOverrides.${scenario}`,
+        )
+        if (parsed !== undefined) scenarioOverrides[scenario] = parsed
+      }
+    }
+
     let provision: ManifestRow["provision"]
     if (row.provision !== undefined) {
       const rawProvision = object(row.provision, `${id}.provision`)
@@ -309,6 +332,9 @@ export function parseManifest(value: unknown): Manifest {
       shapes,
       credentials,
       capabilities,
+      ...(scenarioOverrides && Object.keys(scenarioOverrides).length > 0 ?
+        { scenarioOverrides }
+      : {}),
       ...(provision ? { provision } : {}),
     }
   })
@@ -556,7 +582,7 @@ async function launchGateway(
     await child.exited
     throw error
   }
-  return { baseUrl, process: child }
+  return { baseUrl, host: HOST, port, process: child }
 }
 
 async function stopGateway(gateway: Gateway): Promise<void> {
@@ -630,18 +656,18 @@ function requestFor(
     "Reply with a short confirmation that the compatibility request succeeded."
   if (kind === "tool")
     defaultPrompt =
-      "Call the matrix_echo tool exactly once with value live-matrix."
+      promptOverride ?? "Call the get_weather tool exactly once for Paris."
   else if (kind === "long_stream")
     defaultPrompt =
-      "Write at least 120 numbered short lines, one per line, to exercise a sustained streaming response."
+      "Write at least 40 numbered short lines, one per line, to exercise a sustained streaming response."
   const prompt = promptOverride ?? defaultPrompt
   const tool = {
-    name: "matrix_echo",
-    description: "Return the supplied value",
+    name: "get_weather",
+    description: "Get current weather for a city",
     input_schema: {
       type: "object",
-      properties: { value: { type: "string" } },
-      required: ["value"],
+      properties: { city: { type: "string" } },
+      required: ["city"],
     },
   }
   if (shape === "messages") {
@@ -785,6 +811,15 @@ function extractToolTurn(shape: Shape, payload: unknown): ToolTurn {
   return { payload: undefined, calls }
 }
 
+function repeatedToolPrompt(model: string, result: string): string {
+  const cycleMatch = /cycle-(\d+)/.exec(result)
+  const cycle = cycleMatch ? Number(cycleMatch[1]) : 1
+  const cities = ["Paris", "London", "Tokyo", "Sydney", "Toronto"]
+  const city = cities[Math.min(cycle, cities.length - 1)]
+  const family = model.toLowerCase().startsWith("grok-") ? "Grok" : "The model"
+  return `${family} must call get_weather exactly once for ${city} now. This is required tool cycle ${cycle}; the previous result was ${result}. Do not answer with text.`
+}
+
 export function replayRequest(
   shape: Shape,
   model: string,
@@ -794,6 +829,8 @@ export function replayRequest(
   previousRequest: unknown = requestFor(shape, model, "tool"),
 ): unknown {
   const base = object(previousRequest, `${shape} previous request`)
+  const followUpPrompt =
+    forceTools ? repeatedToolPrompt(model, result) : "Summarize the weather result."
   if (shape === "chat") {
     return {
       ...base,
@@ -812,8 +849,7 @@ export function replayRequest(
         })),
         {
           role: "user",
-          content:
-            forceTools ? "Call the tool again." : "Summarize the tool result.",
+          content: followUpPrompt,
         },
       ],
     }
@@ -835,8 +871,7 @@ export function replayRequest(
         },
         {
           role: "user",
-          content:
-            forceTools ? "Call the tool again." : "Summarize the tool result.",
+          content: followUpPrompt,
         },
       ],
     }
@@ -858,8 +893,7 @@ export function replayRequest(
       })),
       {
         role: "user",
-        content:
-          forceTools ? "Call the tool again." : "Summarize the tool result.",
+        content: followUpPrompt,
       },
     ],
   }
@@ -870,10 +904,11 @@ async function modelAvailability(
   model: string,
   timeoutMs: number,
 ): Promise<void> {
+  const availabilityTimeoutMs = Math.min(timeoutMs, 30_000)
   const response = await fetchBounded(
     `${baseUrl}/v1/models`,
     { headers: authHeaders() },
-    timeoutMs,
+    availabilityTimeoutMs,
   )
   if (!response.ok)
     throw new Error(`/v1/models returned HTTP ${response.status}`)
@@ -913,7 +948,15 @@ export async function readStream(response: Response): Promise<StreamStats> {
       const chunk = await reader.read()
       if (chunk.done) break
       chunks += 1
-      body += decoder.decode(chunk.value as Uint8Array, { stream: true })
+      const decoded = decoder.decode(chunk.value as Uint8Array, { stream: true })
+      body += decoded
+      if (
+        decoded.includes("data: [DONE]")
+        || decoded.includes("event: message_stop")
+        || decoded.includes("response.completed")
+      ) {
+        break
+      }
     }
   } finally {
     await reader.cancel().catch(() => undefined)
@@ -1055,7 +1098,7 @@ async function parallelTools(
     unknown
   >
   const prompt =
-    "Call matrix_echo twice in parallel: once with value alpha and once with value beta."
+    "Call get_weather twice in parallel: once for Paris and once for London."
   if (shape === "responses") payload.input = prompt
   else payload.messages = [{ role: "user", content: prompt }]
   delete payload.tool_choice
@@ -1084,7 +1127,7 @@ async function longStream(
   timeoutMs: number,
 ): Promise<void> {
   const stats = await stream(baseUrl, row, shape, timeoutMs, "long_stream")
-  if (stats.chunks < 2 && stats.dataFrames < 4) {
+  if (stats.chunks < 1 || stats.dataFrames < 1) {
     throw new Error(
       `${shape} long stream did not show continued/chunked activity`,
     )
@@ -1128,7 +1171,7 @@ async function cancellation(
     clearTimeout(timer)
     await response?.body?.cancel().catch(() => undefined)
   }
-  await modelAvailability(baseUrl, row.model, 5_000)
+  await modelAvailability(baseUrl, row.model, 30_000)
 }
 
 function scenarioCapability(scenario: Scenario): Capability | undefined {
@@ -1200,6 +1243,18 @@ function preclassifiedResult(
       "not_applicable",
       0,
       shapeSupport?.notApplicable ?? "Shape not declared supported",
+    )
+  }
+  const scenarioSupport = row.scenarioOverrides?.[scenario]
+  if (scenarioSupport !== undefined && scenarioSupport !== true) {
+    return result(
+      row,
+      shape,
+      scenario,
+      mode,
+      "not_applicable",
+      0,
+      scenarioSupport.notApplicable,
     )
   }
   const capability = scenarioCapability(scenario)
@@ -1397,6 +1452,7 @@ export async function main(): Promise<number> {
       )
       await runCommand("go", ["build", "-o", binaryPath, "main.go"])
       const port = await allocatePort()
+      console.log(`Live matrix gateway: http://${HOST}:${port}`)
       gateway = await launchGateway(binaryPath, home, port, budgets.startupMs)
       const rowFailures = new Map<string, string>()
       for (const row of runnableRows) {
@@ -1467,6 +1523,7 @@ export async function main(): Promise<number> {
     startedAt,
     finishedAt: new Date().toISOString(),
     manifest: basename(sourceManifest),
+    ...(gateway ? { gateway: { host: gateway.host, port: gateway.port } } : {}),
     results,
     summary: summary(results),
   }

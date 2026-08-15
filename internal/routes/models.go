@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"net/http"
 	"omnillm/internal/database"
 	"omnillm/internal/registry"
@@ -12,6 +13,8 @@ import (
 )
 
 var modelMetadataService = modelsmeta.DefaultService
+
+const modelMetadataLookupBudget = 5 * time.Second
 
 func SetupModelRoutes(router *gin.RouterGroup) {
 	router.GET("/models", handleModels)
@@ -57,6 +60,9 @@ func handleModels(c *gin.Context) {
 
 	seen := make(map[string]struct{})
 
+	metadataCtx, cancelMetadata := context.WithTimeout(c.Request.Context(), modelMetadataLookupBudget)
+	defer cancelMetadata()
+
 	for _, provider := range activeProviders {
 		modelsResponse, err := loadProviderModels(provider, false)
 		if err != nil {
@@ -80,8 +86,10 @@ func handleModels(c *gin.Context) {
 			seen[model.ID] = struct{}{}
 
 			// Enrich context/output limits from models.dev when the provider
-			// didn't supply them or models.dev has better data.
-			meta := modelMetadataService.LookupModel(c.Request.Context(), model.ID)
+			// didn't supply them or models.dev has better data. Metadata enrichment
+			// shares one bounded budget for the complete listing and remains
+			// best-effort when the external catalog is unavailable.
+			meta := modelMetadataService.LookupModel(metadataCtx, model.ID)
 
 			maxTokens := model.MaxTokens
 			outputTokens := model.OutputTokens
