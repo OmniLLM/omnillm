@@ -13,7 +13,9 @@
     "avgLatency": "Avg latency",
     "avgLatencySubtext": "Wall-clock latency across successful and failed requests",
     "errors": "Errors",
-    "errorsSubtext": "Requests recorded with a status code ≥ 400"
+    "errorsSubtext": "Requests recorded with a status code ≥ 400",
+    "promptCache": "Provider prompt cache (hit / miss)",
+    "cacheWrites": "Cache write tokens"
   },
   "filters": {
     "quickRange": "Quick range",
@@ -32,7 +34,8 @@
     "allProviders": "All providers",
     "allClients": "All clients",
     "rowsPerPage": "Rows per page",
-    "maxRows": "Max rows"
+    "maxRows": "Max rows",
+    "promptCache": "Provider prompt cache"
   },
   "table": {
     "model": "model",
@@ -48,8 +51,17 @@
     "latency": "latency",
     "status": "status",
     "stream": "stream",
+    "promptCache": "prompt cache",
+    "cacheRead": "cache read",
+    "cacheWrite": "cache write",
     "noData": "No data yet.",
     "noRecords": "No metering records yet."
+  },
+  "cache": {
+    "hit": "Hit",
+    "miss": "Miss",
+    "unknown": "Unknown",
+    "readTokens": "read tokens"
   },
   "pagination": {
     "page": "Page {{current}} of {{total}}",

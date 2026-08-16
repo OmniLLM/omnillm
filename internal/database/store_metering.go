@@ -26,12 +26,13 @@ func (db *Database) InsertMeteringRecord(r MeteringRecord) error {
 
 // MeteringFilter holds optional filters for metering queries.
 type MeteringFilter struct {
-	ModelID    string
-	ProviderID string
-	Client     string
-	APIShape   string
-	Since      time.Time
-	Until      time.Time
+	ModelID           string
+	ProviderID        string
+	Client            string
+	APIShape          string
+	PromptCacheStatus PromptCacheStatus
+	Since             time.Time
+	Until             time.Time
 }
 
 // ListMeteringRecords returns paginated request_logs rows newest-first.
@@ -76,6 +77,7 @@ func (db *Database) ListMeteringRecords(f MeteringFilter, limit, offset int) ([]
 			return nil, 0, fmt.Errorf("metering scan: %w", err)
 		}
 		r.IsStream = isStream == 1
+		r.PromptCacheStatus = DerivePromptCacheStatus(r.CacheReadInputTokens)
 		r.CreatedAt = parseTime(createdAt)
 		records = append(records, r)
 	}
@@ -84,12 +86,19 @@ func (db *Database) ListMeteringRecords(f MeteringFilter, limit, offset int) ([]
 
 // MeteringStats holds aggregate usage numbers.
 type MeteringStats struct {
-	TotalRequests int64   `json:"total_requests"`
-	TotalInput    int64   `json:"total_input_tokens"`
-	TotalOutput   int64   `json:"total_output_tokens"`
-	TotalTokens   int64   `json:"total_tokens"`
-	AvgLatencyMS  float64 `json:"avg_latency_ms"`
-	ErrorCount    int64   `json:"error_count"`
+	TotalRequests      int64   `json:"total_requests"`
+	TotalInput         int64   `json:"total_input_tokens"`
+	TotalOutput        int64   `json:"total_output_tokens"`
+	TotalTokens        int64   `json:"total_tokens"`
+	CacheReadTokens    int64   `json:"cache_read_input_tokens"`
+	CacheWriteTokens   int64   `json:"cache_write_input_tokens"`
+	CacheWrite5mTokens int64   `json:"cache_write_5m_input_tokens"`
+	CacheWrite1hTokens int64   `json:"cache_write_1h_input_tokens"`
+	CacheHits          int64   `json:"prompt_cache_hits"`
+	CacheMisses        int64   `json:"prompt_cache_misses"`
+	CacheUnknown       int64   `json:"prompt_cache_unknown"`
+	AvgLatencyMS       float64 `json:"avg_latency_ms"`
+	ErrorCount         int64   `json:"error_count"`
 }
 
 // GetMeteringStats returns aggregate stats for the given filter window.
@@ -100,15 +109,39 @@ func (db *Database) GetMeteringStats(f MeteringFilter) (MeteringStats, error) {
 		COALESCE(SUM(input_tokens),  0),
 		COALESCE(SUM(output_tokens), 0),
 		COALESCE(SUM(total_tokens),  0),
+		COALESCE(SUM(cache_read_input_tokens), 0),
+		COALESCE(SUM(cache_write_input_tokens), 0),
+		COALESCE(SUM(cache_write_5m_input_tokens), 0),
+		COALESCE(SUM(cache_write_1h_input_tokens), 0),
+		COALESCE(SUM(CASE WHEN cache_read_input_tokens > 0 THEN 1 ELSE 0 END), 0),
+		COALESCE(SUM(CASE WHEN cache_read_input_tokens = 0 THEN 1 ELSE 0 END), 0),
+		COALESCE(SUM(CASE WHEN cache_read_input_tokens IS NULL THEN 1 ELSE 0 END), 0),
 		COALESCE(AVG(latency_ms),    0),
 		COALESCE(SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END), 0)
 		FROM request_logs` + where
 	var s MeteringStats
 	err := db.db.QueryRow(sql, args...).Scan(
-		&s.TotalRequests, &s.TotalInput, &s.TotalOutput,
-		&s.TotalTokens, &s.AvgLatencyMS, &s.ErrorCount,
+		&s.TotalRequests, &s.TotalInput, &s.TotalOutput, &s.TotalTokens,
+		&s.CacheReadTokens, &s.CacheWriteTokens, &s.CacheWrite5mTokens, &s.CacheWrite1hTokens,
+		&s.CacheHits, &s.CacheMisses, &s.CacheUnknown, &s.AvgLatencyMS, &s.ErrorCount,
 	)
 	return s, err
+}
+
+type CacheBreakdown struct {
+	CacheReadTokens  int64 `json:"cache_read_input_tokens"`
+	CacheWriteTokens int64 `json:"cache_write_input_tokens"`
+	CacheHits        int64 `json:"prompt_cache_hits"`
+	CacheMisses      int64 `json:"prompt_cache_misses"`
+	CacheUnknown     int64 `json:"prompt_cache_unknown"`
+}
+
+func cacheBreakdownSQL() string {
+	return `COALESCE(SUM(cache_read_input_tokens), 0),
+		COALESCE(SUM(cache_write_input_tokens), 0),
+		COALESCE(SUM(CASE WHEN cache_read_input_tokens > 0 THEN 1 ELSE 0 END), 0),
+		COALESCE(SUM(CASE WHEN cache_read_input_tokens = 0 THEN 1 ELSE 0 END), 0),
+		COALESCE(SUM(CASE WHEN cache_read_input_tokens IS NULL THEN 1 ELSE 0 END), 0)`
 }
 
 // ModelBreakdown holds per-model aggregate usage.
@@ -119,6 +152,7 @@ type ModelBreakdown struct {
 	OutputTokens int64   `json:"output_tokens"`
 	TotalTokens  int64   `json:"total_tokens"`
 	AvgLatencyMS float64 `json:"avg_latency_ms"`
+	CacheBreakdown
 }
 
 // GetMeteringByModel returns per-model breakdown for the given filter window.
@@ -129,6 +163,7 @@ func (db *Database) GetMeteringByModel(f MeteringFilter) ([]ModelBreakdown, erro
 		COALESCE(SUM(input_tokens),  0),
 		COALESCE(SUM(output_tokens), 0),
 		COALESCE(SUM(total_tokens),  0),
+		` + cacheBreakdownSQL() + `,
 		COALESCE(AVG(latency_ms),    0)
 		FROM request_logs` + where +
 		` GROUP BY model_id ORDER BY SUM(total_tokens) DESC`
@@ -140,7 +175,9 @@ func (db *Database) GetMeteringByModel(f MeteringFilter) ([]ModelBreakdown, erro
 	var result []ModelBreakdown
 	for rows.Next() {
 		var b ModelBreakdown
-		if err := rows.Scan(&b.ModelID, &b.Requests, &b.InputTokens, &b.OutputTokens, &b.TotalTokens, &b.AvgLatencyMS); err != nil {
+		if err := rows.Scan(&b.ModelID, &b.Requests, &b.InputTokens, &b.OutputTokens, &b.TotalTokens,
+			&b.CacheReadTokens, &b.CacheWriteTokens, &b.CacheHits, &b.CacheMisses, &b.CacheUnknown,
+			&b.AvgLatencyMS); err != nil {
 			return nil, err
 		}
 		result = append(result, b)
@@ -156,6 +193,7 @@ type ProviderBreakdown struct {
 	OutputTokens int64   `json:"output_tokens"`
 	TotalTokens  int64   `json:"total_tokens"`
 	AvgLatencyMS float64 `json:"avg_latency_ms"`
+	CacheBreakdown
 }
 
 // GetMeteringByProvider returns per-provider breakdown for the given filter window.
@@ -166,6 +204,7 @@ func (db *Database) GetMeteringByProvider(f MeteringFilter) ([]ProviderBreakdown
 		COALESCE(SUM(input_tokens),  0),
 		COALESCE(SUM(output_tokens), 0),
 		COALESCE(SUM(total_tokens),  0),
+		` + cacheBreakdownSQL() + `,
 		COALESCE(AVG(latency_ms),    0)
 		FROM request_logs` + where +
 		` GROUP BY provider_id ORDER BY SUM(total_tokens) DESC`
@@ -177,7 +216,9 @@ func (db *Database) GetMeteringByProvider(f MeteringFilter) ([]ProviderBreakdown
 	var result []ProviderBreakdown
 	for rows.Next() {
 		var b ProviderBreakdown
-		if err := rows.Scan(&b.ProviderID, &b.Requests, &b.InputTokens, &b.OutputTokens, &b.TotalTokens, &b.AvgLatencyMS); err != nil {
+		if err := rows.Scan(&b.ProviderID, &b.Requests, &b.InputTokens, &b.OutputTokens, &b.TotalTokens,
+			&b.CacheReadTokens, &b.CacheWriteTokens, &b.CacheHits, &b.CacheMisses, &b.CacheUnknown,
+			&b.AvgLatencyMS); err != nil {
 			return nil, err
 		}
 		result = append(result, b)
@@ -193,6 +234,7 @@ type ClientBreakdown struct {
 	OutputTokens int64   `json:"output_tokens"`
 	TotalTokens  int64   `json:"total_tokens"`
 	AvgLatencyMS float64 `json:"avg_latency_ms"`
+	CacheBreakdown
 }
 
 // GetMeteringByClient returns per-client breakdown for the given filter window.
@@ -203,6 +245,7 @@ func (db *Database) GetMeteringByClient(f MeteringFilter) ([]ClientBreakdown, er
 		COALESCE(SUM(input_tokens),  0),
 		COALESCE(SUM(output_tokens), 0),
 		COALESCE(SUM(total_tokens),  0),
+		` + cacheBreakdownSQL() + `,
 		COALESCE(AVG(latency_ms),    0)
 		FROM request_logs` + where +
 		` GROUP BY client ORDER BY SUM(total_tokens) DESC`
@@ -214,7 +257,9 @@ func (db *Database) GetMeteringByClient(f MeteringFilter) ([]ClientBreakdown, er
 	var result []ClientBreakdown
 	for rows.Next() {
 		var b ClientBreakdown
-		if err := rows.Scan(&b.Client, &b.Requests, &b.InputTokens, &b.OutputTokens, &b.TotalTokens, &b.AvgLatencyMS); err != nil {
+		if err := rows.Scan(&b.Client, &b.Requests, &b.InputTokens, &b.OutputTokens, &b.TotalTokens,
+			&b.CacheReadTokens, &b.CacheWriteTokens, &b.CacheHits, &b.CacheMisses, &b.CacheUnknown,
+			&b.AvgLatencyMS); err != nil {
 			return nil, err
 		}
 		result = append(result, b)
@@ -242,6 +287,14 @@ func meteringWhere(f MeteringFilter) (string, []any) {
 	if f.APIShape != "" {
 		clauses = append(clauses, "api_shape = ?")
 		args = append(args, f.APIShape)
+	}
+	switch f.PromptCacheStatus {
+	case PromptCacheHit:
+		clauses = append(clauses, "cache_read_input_tokens > 0")
+	case PromptCacheMiss:
+		clauses = append(clauses, "cache_read_input_tokens = 0")
+	case PromptCacheUnknown:
+		clauses = append(clauses, "cache_read_input_tokens IS NULL")
 	}
 	if !f.Since.IsZero() {
 		clauses = append(clauses, "created_at >= ?")

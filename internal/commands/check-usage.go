@@ -33,6 +33,7 @@ func addUsageFlags(cmd *cobra.Command) {
 	cmd.Flags().String("model-id", "", "Filter by model ID")
 	cmd.Flags().String("client", "", "Filter by client")
 	cmd.Flags().String("api-shape", "", "Filter by API shape (openai or anthropic)")
+	cmd.Flags().String("prompt-cache-status", "", "Filter by provider prompt-cache status (hit, miss, or unknown)")
 	cmd.Flags().String("since", "", "Filter from RFC3339 timestamp")
 	cmd.Flags().String("until", "", "Filter until RFC3339 timestamp")
 	cmd.Flags().String("breakdown", "provider", "Breakdown to show when not using JSON: provider/providers, model/models, client/clients, or none")
@@ -77,6 +78,11 @@ func runUsage(cmd *cobra.Command, args []string) error {
 	summary.AddRow("Input tokens", fmt.Sprint(stats["total_input_tokens"]))
 	summary.AddRow("Output tokens", fmt.Sprint(stats["total_output_tokens"]))
 	summary.AddRow("Total tokens", fmt.Sprint(stats["total_tokens"]))
+	summary.AddRow("Cache read tokens", fmt.Sprint(stats["cache_read_input_tokens"]))
+	summary.AddRow("Cache write tokens", fmt.Sprint(stats["cache_write_input_tokens"]))
+	summary.AddRow("Prompt cache hits", fmt.Sprint(stats["prompt_cache_hits"]))
+	summary.AddRow("Prompt cache misses", fmt.Sprint(stats["prompt_cache_misses"]))
+	summary.AddRow("Prompt cache unknown", fmt.Sprint(stats["prompt_cache_unknown"]))
 	summary.AddRow("Average latency ms", fmt.Sprint(stats["avg_latency_ms"]))
 	summary.AddRow("Errors", fmt.Sprint(stats["error_count"]))
 	if err := summary.Render(out); err != nil {
@@ -124,7 +130,7 @@ func runUsage(cmd *cobra.Command, args []string) error {
 
 func usageQuery(cmd *cobra.Command) string {
 	params := url.Values{}
-	for _, name := range []string{"provider-id", "model-id", "client", "api-shape", "since", "until"} {
+	for _, name := range []string{"provider-id", "model-id", "client", "api-shape", "prompt-cache-status", "since", "until"} {
 		value, _ := cmd.Flags().GetString(name)
 		if value != "" {
 			params.Set(strings.ReplaceAll(name, "-", "_"), value)
@@ -137,7 +143,7 @@ func usageQuery(cmd *cobra.Command) string {
 }
 
 func activeUsageFilters(cmd *cobra.Command) [][2]string {
-	filters := make([][2]string, 0, 6)
+	filters := make([][2]string, 0, 7)
 	for _, entry := range []struct {
 		flag  string
 		label string
@@ -146,6 +152,7 @@ func activeUsageFilters(cmd *cobra.Command) [][2]string {
 		{flag: "model-id", label: "Model"},
 		{flag: "client", label: "Client"},
 		{flag: "api-shape", label: "API shape"},
+		{flag: "prompt-cache-status", label: "Prompt cache"},
 		{flag: "since", label: "Since"},
 		{flag: "until", label: "Until"},
 	} {
@@ -194,7 +201,7 @@ func usageBreakdownTable(breakdown string) *Table {
 		"client":    "CLIENT",
 		"clients":   "CLIENT",
 	}[breakdown]
-	t := NewTable(labelHeader, "REQUESTS", "TOKENS", "AVG LATENCY MS")
+	t := NewTable(labelHeader, "REQUESTS", "TOKENS", "CACHE READ", "CACHE WRITE", "HIT/MISS/?", "AVG LATENCY MS")
 	return t
 }
 
@@ -215,6 +222,9 @@ func addUsageBreakdownRow(table *Table, breakdown string, row map[string]any) {
 		label,
 		fmt.Sprint(row["requests"]),
 		fmt.Sprint(row["total_tokens"]),
+		fmt.Sprint(row["cache_read_input_tokens"]),
+		fmt.Sprint(row["cache_write_input_tokens"]),
+		fmt.Sprintf("%v/%v/%v", row["prompt_cache_hits"], row["prompt_cache_misses"], row["prompt_cache_unknown"]),
 		fmt.Sprint(row["avg_latency_ms"]),
 	)
 }
