@@ -60,10 +60,30 @@ type OpenAIFunctionCall struct {
 	Arguments string `json:"arguments"`
 }
 
+type OpenAIPromptTokensDetails struct {
+	CachedTokens int `json:"cached_tokens"`
+}
+
 type OpenAIUsage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+	PromptTokens        int                        `json:"prompt_tokens"`
+	CompletionTokens    int                        `json:"completion_tokens"`
+	TotalTokens         int                        `json:"total_tokens"`
+	PromptTokensDetails *OpenAIPromptTokensDetails `json:"prompt_tokens_details,omitempty"`
+}
+
+func openAIUsage(usage *cif.CIFUsage) *OpenAIUsage {
+	if usage == nil {
+		return nil
+	}
+	result := &OpenAIUsage{
+		PromptTokens:     usage.InputTokens,
+		CompletionTokens: usage.OutputTokens,
+		TotalTokens:      usage.InputTokens + usage.OutputTokens,
+	}
+	if usage.CacheReadInputTokens != nil {
+		result.PromptTokensDetails = &OpenAIPromptTokensDetails{CachedTokens: *usage.CacheReadInputTokens}
+	}
+	return result
 }
 
 // SerializeToOpenAI converts a CIF response to OpenAI format
@@ -126,11 +146,7 @@ func SerializeToOpenAI(response *cif.CanonicalResponse) (*OpenAIResponse, error)
 	}
 
 	if response.Usage != nil {
-		openaiResp.Usage = &OpenAIUsage{
-			PromptTokens:     response.Usage.InputTokens,
-			CompletionTokens: response.Usage.OutputTokens,
-			TotalTokens:      response.Usage.InputTokens + response.Usage.OutputTokens,
-		}
+		openaiResp.Usage = openAIUsage(response.Usage)
 	}
 
 	log.Debug().
@@ -294,11 +310,7 @@ func ConvertCIFEventToOpenAISSE(event cif.CIFStreamEvent, state *OpenAIStreamSta
 				"created": state.Created,
 				"model":   state.Model,
 				"choices": []interface{}{},
-				"usage": map[string]interface{}{
-					"prompt_tokens":     e.Usage.InputTokens,
-					"completion_tokens": e.Usage.OutputTokens,
-					"total_tokens":      e.Usage.InputTokens + e.Usage.OutputTokens,
-				},
+				"usage":   openAIUsage(e.Usage),
 			}
 			usageSSE, err := formatSSEData(usageChunk)
 			if err != nil {

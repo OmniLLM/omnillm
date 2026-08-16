@@ -21,6 +21,29 @@ func TestGetInstanceID(t *testing.T) {
 	}
 }
 
+func TestPromptCacheModeResolution(t *testing.T) {
+	for name, tc := range map[string]struct {
+		baseURL string
+		config  map[string]interface{}
+		want    string
+	}{
+		"official auto": {baseURL: "https://api.openai.com/v1", want: PromptCacheModeOpenAINative},
+		"custom auto":   {baseURL: "https://example.test/v1", want: PromptCacheModeDisabled},
+		"custom inline": {baseURL: "https://example.test/v1", config: map[string]interface{}{"prompt_cache_mode": PromptCacheModeAnthropicInline}, want: PromptCacheModeAnthropicInline},
+	} {
+		t.Run(name, func(t *testing.T) {
+			provider := NewProvider("test", "Test")
+			provider.baseURL = tc.baseURL
+			provider.config = tc.config
+			provider.configLoaded = true
+			got := string(provider.GetAdapter().(*Adapter).promptCacheMode())
+			if got != tc.want {
+				t.Fatalf("prompt cache mode = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestNormalizeBaseURL(t *testing.T) {
 	tests := []struct {
 		raw  string

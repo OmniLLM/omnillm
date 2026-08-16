@@ -16,17 +16,18 @@ type AnthropicMessage struct {
 }
 
 type AnthropicContentBlock struct {
-	Type      string                 `json:"type"`
-	Text      string                 `json:"text,omitempty"`
-	Thinking  string                 `json:"thinking,omitempty"`
-	Signature string                 `json:"signature,omitempty"`
-	Source    *AnthropicImageSource  `json:"source,omitempty"`
-	ID        string                 `json:"id,omitempty"`
-	ToolUseID string                 `json:"tool_use_id,omitempty"`
-	Name      string                 `json:"name,omitempty"`
-	Input     map[string]interface{} `json:"input,omitempty"`
-	Content   interface{}            `json:"content,omitempty"`
-	IsError   *bool                  `json:"is_error,omitempty"`
+	Type         string                 `json:"type"`
+	Text         string                 `json:"text,omitempty"`
+	Thinking     string                 `json:"thinking,omitempty"`
+	Signature    string                 `json:"signature,omitempty"`
+	Source       *AnthropicImageSource  `json:"source,omitempty"`
+	ID           string                 `json:"id,omitempty"`
+	ToolUseID    string                 `json:"tool_use_id,omitempty"`
+	Name         string                 `json:"name,omitempty"`
+	Input        map[string]interface{} `json:"input,omitempty"`
+	Content      interface{}            `json:"content,omitempty"`
+	IsError      *bool                  `json:"is_error,omitempty"`
+	CacheControl *cif.CIFCacheControl   `json:"cache_control,omitempty"`
 }
 
 type AnthropicImageSource struct {
@@ -36,23 +37,25 @@ type AnthropicImageSource struct {
 }
 
 type AnthropicTool struct {
-	Name        string                 `json:"name"`
-	Description string                 `json:"description,omitempty"`
-	InputSchema map[string]interface{} `json:"input_schema"`
+	Name         string                 `json:"name"`
+	Description  string                 `json:"description,omitempty"`
+	InputSchema  map[string]interface{} `json:"input_schema"`
+	CacheControl *cif.CIFCacheControl   `json:"cache_control,omitempty"`
 }
 
 type AnthropicMessagesRequest struct {
-	Model       string             `json:"model"`
-	System      interface{}        `json:"system,omitempty"`
-	Messages    []AnthropicMessage `json:"messages"`
-	Tools       []AnthropicTool    `json:"tools,omitempty"`
-	ToolChoice  interface{}        `json:"tool_choice,omitempty"`
-	Temperature *float64           `json:"temperature,omitempty"`
-	TopP        *float64           `json:"top_p,omitempty"`
-	MaxTokens   *int               `json:"max_tokens,omitempty"`
-	Stop        []string           `json:"stop_sequences,omitempty"`
-	Stream      *bool              `json:"stream,omitempty"`
-	Metadata    *struct {
+	Model        string               `json:"model"`
+	System       interface{}          `json:"system,omitempty"`
+	CacheControl *cif.CIFCacheControl `json:"cache_control,omitempty"`
+	Messages     []AnthropicMessage   `json:"messages"`
+	Tools        []AnthropicTool      `json:"tools,omitempty"`
+	ToolChoice   interface{}          `json:"tool_choice,omitempty"`
+	Temperature  *float64             `json:"temperature,omitempty"`
+	TopP         *float64             `json:"top_p,omitempty"`
+	MaxTokens    *int                 `json:"max_tokens,omitempty"`
+	Stop         []string             `json:"stop_sequences,omitempty"`
+	Stream       *bool                `json:"stream,omitempty"`
+	Metadata     *struct {
 		UserID string `json:"user_id,omitempty"`
 	} `json:"metadata,omitempty"`
 }
@@ -72,11 +75,15 @@ func ParseAnthropicMessages(raw json.RawMessage) (*cif.CanonicalRequest, error) 
 		Stop:        req.Stop,
 		Stream:      req.Stream != nil && *req.Stream,
 	}
-
-	systemParts := make([]string, 0, 2)
-	if systemPrompt := normalizeAnthropicSystem(req.System); systemPrompt != nil {
-		systemParts = append(systemParts, *systemPrompt)
+	if req.CacheControl != nil {
+		canonical.PromptCache = &cif.CIFPromptCacheRequest{Automatic: req.CacheControl}
 	}
+
+	systemBlocks, err := normalizeAnthropicSystem(req.System)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert system: %w", err)
+	}
+	canonical.System = systemBlocks
 	if req.Metadata != nil && req.Metadata.UserID != "" {
 		canonical.UserID = &req.Metadata.UserID
 	}
@@ -87,16 +94,12 @@ func ParseAnthropicMessages(raw json.RawMessage) (*cif.CanonicalRequest, error) 
 	toolCallNamesByID := make(map[string]string)
 
 	for _, msg := range req.Messages {
-		// Workaround for Claude Code v2.1.154+ ("Lean System Prompt") regression:
-		// it emits role:"system" entries inside the messages[] array, which the
-		// Anthropic Messages spec disallows (messages may only be user/assistant;
-		// system must be a top-level field). Hoist any such entries into the
-		// top-level system prompt instead of failing the request.
-		// See https://github.com/anthropics/claude-code/issues/63457
 		if msg.Role == "system" {
-			if text := extractAnthropicSystemText(msg.Content); text != "" {
-				systemParts = append(systemParts, text)
+			blocks, err := normalizeAnthropicSystem(msg.Content)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert system message: %w", err)
 			}
+			canonical.Messages = append(canonical.Messages, cif.CIFSystemMessage{Role: "system", Content: blocks})
 			continue
 		}
 
@@ -105,11 +108,6 @@ func ParseAnthropicMessages(raw json.RawMessage) (*cif.CanonicalRequest, error) 
 			return nil, fmt.Errorf("failed to convert message: %w", err)
 		}
 		canonical.Messages = append(canonical.Messages, cifMsg)
-	}
-
-	if len(systemParts) > 0 {
-		merged := strings.Join(systemParts, "\n\n")
-		canonical.SystemPrompt = &merged
 	}
 
 	for _, tool := range req.Tools {
@@ -121,11 +119,15 @@ func ParseAnthropicMessages(raw json.RawMessage) (*cif.CanonicalRequest, error) 
 			Name:             tool.Name,
 			Description:      description,
 			ParametersSchema: normalizeSchema(tool.InputSchema),
+			CacheControl:     tool.CacheControl,
 		}
 		canonical.Tools = append(canonical.Tools, cifTool)
 	}
 
 	canonical.ToolChoice = normalizeAnthropicToolChoice(req.ToolChoice)
+	if err := cif.ValidatePromptCache(canonical); err != nil {
+		return nil, err
+	}
 
 	log.Debug().
 		Str("model", canonical.Model).
@@ -205,6 +207,14 @@ func anthropicBlockFromMap(m map[string]interface{}) AnthropicContentBlock {
 	block.Name, _ = m["name"].(string)
 	block.Content = m["content"]
 	block.Input, _ = m["input"].(map[string]interface{})
+	if rawControl, present := m["cache_control"]; present {
+		cacheControl, ok := rawControl.(map[string]interface{})
+		if !ok {
+			block.CacheControl = &cif.CIFCacheControl{}
+		} else {
+			block.CacheControl = cacheControlFromMap(cacheControl)
+		}
+	}
 
 	if srcRaw, ok := m["source"].(map[string]interface{}); ok {
 		src := &AnthropicImageSource{}
@@ -225,15 +235,17 @@ func convertAnthropicContentBlock(block AnthropicContentBlock, toolCallNamesByID
 	switch block.Type {
 	case "text":
 		return cif.CIFTextPart{
-			Type: "text",
-			Text: block.Text,
+			Type:         "text",
+			Text:         block.Text,
+			CacheControl: block.CacheControl,
 		}, nil
 
 	case "image":
 		if block.Source != nil {
 			part := cif.CIFImagePart{
-				Type:      "image",
-				MediaType: block.Source.MediaType,
+				Type:         "image",
+				MediaType:    block.Source.MediaType,
+				CacheControl: block.CacheControl,
 			}
 			if block.Source.Type == "base64" {
 				part.Data = &block.Source.Data
@@ -244,8 +256,9 @@ func convertAnthropicContentBlock(block AnthropicContentBlock, toolCallNamesByID
 
 	case "thinking":
 		part := cif.CIFThinkingPart{
-			Type:     "thinking",
-			Thinking: block.Thinking,
+			Type:         "thinking",
+			Thinking:     block.Thinking,
+			CacheControl: block.CacheControl,
 		}
 		if block.Signature != "" {
 			signature := block.Signature
@@ -270,6 +283,7 @@ func convertAnthropicContentBlock(block AnthropicContentBlock, toolCallNamesByID
 			ToolCallID:    toolCallID,
 			ToolName:      block.Name,
 			ToolArguments: input,
+			CacheControl:  block.CacheControl,
 		}, nil
 
 	case "tool_result":
@@ -285,11 +299,12 @@ func convertAnthropicContentBlock(block AnthropicContentBlock, toolCallNamesByID
 			toolName = toolCallNamesByID[toolCallID]
 		}
 		return cif.CIFToolResultPart{
-			Type:       "tool_result",
-			ToolCallID: toolCallID,
-			ToolName:   toolName,
-			Content:    normalizeAnthropicToolResultContent(block.Content),
-			IsError:    block.IsError,
+			Type:         "tool_result",
+			ToolCallID:   toolCallID,
+			ToolName:     toolName,
+			Content:      normalizeAnthropicToolResultContent(block.Content),
+			IsError:      block.IsError,
+			CacheControl: block.CacheControl,
 		}, nil
 
 	default:
@@ -297,62 +312,56 @@ func convertAnthropicContentBlock(block AnthropicContentBlock, toolCallNamesByID
 	}
 }
 
-func normalizeAnthropicSystem(system interface{}) *string {
+func normalizeAnthropicSystem(system interface{}) ([]cif.CIFSystemBlock, error) {
 	switch value := system.(type) {
 	case string:
-		if value == "" {
-			return nil
-		}
-		return &value
+		return cif.SystemBlocksFromText(value), nil
 	case []interface{}:
-		parts := make([]string, 0, len(value))
-		for _, rawPart := range value {
+		blocks := make([]cif.CIFSystemBlock, 0, len(value))
+		for index, rawPart := range value {
 			partMap, ok := rawPart.(map[string]interface{})
 			if !ok {
-				continue
+				return nil, fmt.Errorf("system[%d] must be an object", index)
 			}
 			if partType, _ := partMap["type"].(string); partType != "text" {
-				continue
+				return nil, fmt.Errorf("system[%d].type must be \"text\"", index)
 			}
-			if text, ok := partMap["text"].(string); ok {
-				parts = append(parts, text)
+			text, ok := partMap["text"].(string)
+			if !ok {
+				return nil, fmt.Errorf("system[%d].text must be a string", index)
 			}
+			block := cif.CIFSystemBlock{Type: "text", Text: text}
+			if control, ok := partMap["cache_control"].(map[string]interface{}); ok {
+				block.CacheControl = cacheControlFromMap(control)
+			} else if partMap["cache_control"] != nil {
+				return nil, fmt.Errorf("system[%d].cache_control must be an object", index)
+			}
+			blocks = append(blocks, block)
 		}
-		if len(parts) == 0 {
-			return nil
-		}
-		result := strings.Join(parts, "\n\n")
-		return &result
+		return blocks, nil
+	case nil:
+		return nil, nil
 	default:
-		return nil
+		return nil, fmt.Errorf("system must be a string or array of text blocks")
 	}
 }
 
-// extractAnthropicSystemText pulls the text out of a message whose role is
-// "system". The content may be a plain string or an array of content blocks
-// (Claude Code emits text blocks). Non-text blocks are ignored.
-func extractAnthropicSystemText(content interface{}) string {
-	switch value := content.(type) {
-	case string:
-		return value
-	case []interface{}:
-		parts := make([]string, 0, len(value))
-		for _, rawPart := range value {
-			partMap, ok := rawPart.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			if partType, _ := partMap["type"].(string); partType != "text" {
-				continue
-			}
-			if text, ok := partMap["text"].(string); ok && text != "" {
-				parts = append(parts, text)
-			}
+func cacheControlFromMap(value map[string]interface{}) *cif.CIFCacheControl {
+	control := &cif.CIFCacheControl{}
+	if rawType, present := value["type"]; present {
+		if typed, ok := rawType.(string); ok {
+			control.Type = typed
 		}
-		return strings.Join(parts, "\n\n")
-	default:
-		return ""
 	}
+	if rawTTL, present := value["ttl"]; present {
+		ttl, ok := rawTTL.(string)
+		if !ok {
+			ttl = "invalid"
+		}
+		typedTTL := cif.CIFCacheTTL(ttl)
+		control.TTL = &typedTTL
+	}
+	return control
 }
 
 func normalizeAnthropicToolChoice(choice interface{}) interface{} {

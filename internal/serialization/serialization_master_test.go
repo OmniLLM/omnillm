@@ -151,6 +151,40 @@ func TestSerializeToResponses_SerializesMessageAndFunctionCallOutput(t *testing.
 	}
 }
 
+func TestCacheUsageSerializationParity(t *testing.T) {
+	read, write, write5m, write1h := 40, 30, 20, 10
+	usage := &cif.CIFUsage{
+		InputTokens: 100, OutputTokens: 5, UncachedInputTokens: intPtr(30),
+		CacheReadInputTokens: &read, CacheWriteInputTokens: &write,
+		CacheWrite5mInputTokens: &write5m, CacheWrite1hInputTokens: &write1h,
+	}
+	response := &cif.CanonicalResponse{ID: "cache", Model: "model", StopReason: cif.StopReasonEndTurn, Usage: usage}
+
+	anthropic, err := SerializeToAnthropic(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if anthropic.Usage.InputTokens != 30 || *anthropic.Usage.CacheReadInputTokens != 40 || *anthropic.Usage.CacheCreationInputTokens != 30 || anthropic.Usage.CacheCreation.Ephemeral1hInputTokens != 10 {
+		t.Fatalf("anthropic usage = %#v", anthropic.Usage)
+	}
+	chat, err := SerializeToOpenAI(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if chat.Usage.PromptTokens != 100 || chat.Usage.PromptTokensDetails == nil || chat.Usage.PromptTokensDetails.CachedTokens != 40 {
+		t.Fatalf("chat usage = %#v", chat.Usage)
+	}
+	responses, err := SerializeToResponses(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if responses.Usage.InputTokens != 100 || responses.Usage.InputTokensDetails == nil || responses.Usage.InputTokensDetails.CachedTokens != 40 {
+		t.Fatalf("responses usage = %#v", responses.Usage)
+	}
+}
+
+func intPtr(value int) *int { return &value }
+
 func TestConvertCIFEventToResponsesSSE_IncludesTotalTokensInCompletedUsage(t *testing.T) {
 	state := CreateResponsesStreamState()
 

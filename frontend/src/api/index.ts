@@ -21,6 +21,7 @@ export interface Provider {
     deployments?: Array<string>
     models?: Array<string>
     apiFormat?: string
+    promptCacheMode?: "auto" | "disabled" | "openai_native" | "anthropic_inline"
   }
 }
 

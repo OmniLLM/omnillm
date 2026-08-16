@@ -137,8 +137,8 @@ func TestConvertCIFToOpenAI_PrependsSystemPrompt(t *testing.T) {
 	systemPrompt := "Follow the project instructions."
 
 	payload := adapter.convertCIFToOpenAI(&cif.CanonicalRequest{
-		Model:        "grok-4.5",
-		SystemPrompt: &systemPrompt,
+		Model:  "grok-4.5",
+		System: cif.SystemBlocksFromText(systemPrompt),
 		Messages: []cif.CIFMessage{
 			cif.CIFUserMessage{Role: "user", Content: []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: "ping"}}},
 		},

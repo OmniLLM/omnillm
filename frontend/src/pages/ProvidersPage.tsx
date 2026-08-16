@@ -258,6 +258,49 @@ function normalizeOpenAICompatibleAPIFormat(
   return ""
 }
 
+type OpenAICompatiblePromptCacheMode =
+  | "auto"
+  | "disabled"
+  | "openai_native"
+  | "anthropic_inline"
+
+const OPENAI_COMPATIBLE_PROMPT_CACHE_OPTIONS: Array<{
+  value: OpenAICompatiblePromptCacheMode
+  label: string
+}> = [
+  { value: "auto", label: "Auto" },
+  { value: "disabled", label: "Disabled" },
+  { value: "openai_native", label: "OpenAI native" },
+  { value: "anthropic_inline", label: "Anthropic inline" },
+]
+
+function OpenAICompatiblePromptCacheControl({
+  value,
+  onChange,
+  disabled = false,
+}: {
+  value: OpenAICompatiblePromptCacheMode
+  onChange: (next: OpenAICompatiblePromptCacheMode) => void
+  disabled?: boolean
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(event) =>
+        onChange(event.target.value as OpenAICompatiblePromptCacheMode)
+      }
+      disabled={disabled}
+      style={addFlowControlStyle}
+    >
+      {OPENAI_COMPATIBLE_PROMPT_CACHE_OPTIONS.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  )
+}
+
 function OpenAICompatibleAPIFormatControl({
   value,
   onChange,
@@ -1006,6 +1049,10 @@ function _ModelsDialog({
   const [apiFormat, setApiFormat] = useState<OpenAICompatibleAPIFormat>(
     normalizeOpenAICompatibleAPIFormat(provider.config?.apiFormat),
   )
+  const [promptCacheMode, setPromptCacheMode] =
+    useState<OpenAICompatiblePromptCacheMode>(
+      provider.config?.promptCacheMode || "auto",
+    )
 
   useEffect(() => {
     if (provider.type === "azure-openai") {
@@ -1018,6 +1065,7 @@ function _ModelsDialog({
       setApiFormat(
         normalizeOpenAICompatibleAPIFormat(provider.config?.apiFormat),
       )
+      setPromptCacheMode(provider.config?.promptCacheMode || "auto")
     }
   }, [provider])
 
@@ -1047,6 +1095,7 @@ function _ModelsDialog({
       setApiFormat(
         normalizeOpenAICompatibleAPIFormat(provider.config?.apiFormat),
       )
+      setPromptCacheMode(provider.config?.promptCacheMode || "auto")
     }
   }
 
@@ -1188,6 +1237,28 @@ function _ModelsDialog({
     } catch (e) {
       setApiFormat(previousFormat)
       setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setConfigLoading(false)
+    }
+  }
+
+  const handleUpdatePromptCacheMode = async (
+    nextMode: OpenAICompatiblePromptCacheMode,
+  ) => {
+    if (provider.type !== "openai-compatible" || nextMode === promptCacheMode) {
+      return
+    }
+    const previousMode = promptCacheMode
+    setConfigLoading(true)
+    setError(null)
+    setPromptCacheMode(nextMode)
+    try {
+      await updateProviderConfig(provider.id, { promptCacheMode: nextMode })
+      onModelsChanged?.()
+      await load()
+    } catch (error) {
+      setPromptCacheMode(previousMode)
+      setError(error instanceof Error ? error.message : String(error))
     } finally {
       setConfigLoading(false)
     }
@@ -1506,6 +1577,30 @@ function _ModelsDialog({
                           <code>/v1/responses</code>, and{" "}
                           <code>/v1/chat/completions</code> otherwise.
                         </div>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 600,
+                            color: "#10b981",
+                            marginTop: 8,
+                          }}
+                        >
+                          Prompt caching
+                        </div>
+                        <OpenAICompatiblePromptCacheControl
+                          value={promptCacheMode}
+                          onChange={handleUpdatePromptCacheMode}
+                          disabled={configLoading}
+                        />
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: "var(--color-text-tertiary)",
+                          }}
+                        >
+                          Auto uses native OpenAI controls for official OpenAI
+                          and disables request controls for custom endpoints.
+                        </div>
                       </div>
                       <div
                         style={{
@@ -1747,6 +1842,10 @@ function ModelsMenuItem({
   const [apiFormat, setApiFormat] = useState<OpenAICompatibleAPIFormat>(
     normalizeOpenAICompatibleAPIFormat(provider.config?.apiFormat),
   )
+  const [promptCacheMode, setPromptCacheMode] =
+    useState<OpenAICompatiblePromptCacheMode>(
+      provider.config?.promptCacheMode || "auto",
+    )
   const deployments = new Set(
     azureMappings.map((mapping) => mapping.deployment),
   )
@@ -1764,6 +1863,7 @@ function ModelsMenuItem({
       setApiFormat(
         normalizeOpenAICompatibleAPIFormat(provider.config?.apiFormat),
       )
+      setPromptCacheMode(provider.config?.promptCacheMode || "auto")
     }
   }, [provider])
 
@@ -1793,6 +1893,7 @@ function ModelsMenuItem({
       setApiFormat(
         normalizeOpenAICompatibleAPIFormat(provider.config?.apiFormat),
       )
+      setPromptCacheMode(provider.config?.promptCacheMode || "auto")
     }
   }
 
@@ -1949,6 +2050,28 @@ function ModelsMenuItem({
     } catch (e) {
       setApiFormat(previousFormat)
       setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setConfigLoading(false)
+    }
+  }
+
+  const handleUpdatePromptCacheMode = async (
+    nextMode: OpenAICompatiblePromptCacheMode,
+  ) => {
+    if (provider.type !== "openai-compatible" || nextMode === promptCacheMode) {
+      return
+    }
+    const previousMode = promptCacheMode
+    setConfigLoading(true)
+    setError(null)
+    setPromptCacheMode(nextMode)
+    try {
+      await updateProviderConfig(provider.id, { promptCacheMode: nextMode })
+      onModelsChanged?.()
+      await load()
+    } catch (error) {
+      setPromptCacheMode(previousMode)
+      setError(error instanceof Error ? error.message : String(error))
     } finally {
       setConfigLoading(false)
     }
@@ -2222,6 +2345,30 @@ function ModelsMenuItem({
                           <code>/v1/messages</code> or{" "}
                           <code>/v1/responses</code>, and{" "}
                           <code>/v1/chat/completions</code> otherwise.
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 600,
+                            color: "#10b981",
+                            marginTop: 8,
+                          }}
+                        >
+                          Prompt caching
+                        </div>
+                        <OpenAICompatiblePromptCacheControl
+                          value={promptCacheMode}
+                          onChange={handleUpdatePromptCacheMode}
+                          disabled={configLoading}
+                        />
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: "var(--color-text-tertiary)",
+                          }}
+                        >
+                          Auto uses native OpenAI controls for official OpenAI
+                          and disables request controls for custom endpoints.
                         </div>
                       </div>
                       <div
@@ -4425,6 +4572,8 @@ function AddFlowOpenAICompatibleForm({
   const [models, setModels] = useState<Array<string>>([])
   const [newModel, setNewModel] = useState("")
   const [apiFormat, setApiFormat] = useState<OpenAICompatibleAPIFormat>("")
+  const [promptCacheMode, setPromptCacheMode] =
+    useState<OpenAICompatiblePromptCacheMode>("auto")
 
   const addModel = () => {
     const raw = newModel.trim()
@@ -4454,6 +4603,7 @@ function AddFlowOpenAICompatibleForm({
       endpoint: endpoint.trim(),
       apiKey: apiKey.trim(),
       ...(apiFormat ? { apiFormat } : {}),
+      promptCacheMode,
       ...(models.length > 0 ? { models: JSON.stringify(models) } : {}),
     })
   }
@@ -4481,6 +4631,13 @@ function AddFlowOpenAICompatibleForm({
         <OpenAICompatibleAPIFormatControl
           value={apiFormat}
           onChange={setApiFormat}
+          disabled={submitting}
+        />
+      </FormRow>
+      <FormRow label="Prompt caching">
+        <OpenAICompatiblePromptCacheControl
+          value={promptCacheMode}
+          onChange={setPromptCacheMode}
           disabled={submitting}
         />
       </FormRow>

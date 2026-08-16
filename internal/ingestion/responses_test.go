@@ -66,8 +66,8 @@ func TestParseResponsesPayload_TranslatesInstructionsMessagesAndTools(t *testing
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if req.SystemPrompt == nil || *req.SystemPrompt != "Be terse." {
-		t.Fatalf("unexpected system prompt: %v", req.SystemPrompt)
+	if cif.PlainSystemText(req.System) != "Be terse." {
+		t.Fatalf("unexpected system prompt: %v", req.System)
 	}
 	if !req.Stream {
 		t.Fatal("expected stream=true")
@@ -162,8 +162,8 @@ func TestParseResponsesPayload_AcceptsDeveloperRole(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected first message to be system, got %T", req.Messages[0])
 	}
-	if systemMsg.Content != "You are a coding assistant." {
-		t.Fatalf("unexpected system content: %q", systemMsg.Content)
+	if cif.PlainSystemText(systemMsg.Content) != "You are a coding assistant." {
+		t.Fatalf("unexpected system content: %#v", systemMsg.Content)
 	}
 	userMsg, ok := req.Messages[1].(cif.CIFUserMessage)
 	if !ok {

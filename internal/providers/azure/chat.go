@@ -83,10 +83,10 @@ func BuildOpenAIPayload(model string, messages []map[string]interface{}, request
 // ExecuteOpenAI executes a non-streaming OpenAI-compatible chat completion for Azure.
 func ExecuteOpenAI(ctx context.Context, url string, headers map[string]string, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
 	messages := shared.CIFMessagesToOpenAI(request.Messages)
-	if request.SystemPrompt != nil && strings.TrimSpace(*request.SystemPrompt) != "" {
+	if system := cif.PlainSystemText(request.System); strings.TrimSpace(system) != "" {
 		messages = append([]map[string]interface{}{{
 			"role":    "system",
-			"content": *request.SystemPrompt,
+			"content": system,
 		}}, messages...)
 	}
 
@@ -128,10 +128,10 @@ func ExecuteOpenAI(ctx context.Context, url string, headers map[string]string, r
 // StreamOpenAI executes a streaming OpenAI-compatible chat completion for Azure.
 func StreamOpenAI(ctx context.Context, url string, headers map[string]string, request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
 	messages := shared.CIFMessagesToOpenAI(request.Messages)
-	if request.SystemPrompt != nil && strings.TrimSpace(*request.SystemPrompt) != "" {
+	if system := cif.PlainSystemText(request.System); strings.TrimSpace(system) != "" {
 		messages = append([]map[string]interface{}{{
 			"role":    "system",
-			"content": *request.SystemPrompt,
+			"content": system,
 		}}, messages...)
 	}
 

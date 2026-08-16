@@ -10,14 +10,16 @@ import (
 func (db *Database) InsertMeteringRecord(r MeteringRecord) error {
 	_, err := db.db.Exec(
 		`INSERT INTO request_logs
-				(request_id, model_id, model_used, provider_id, client, api_shape,
-				 input_tokens, output_tokens, total_tokens,
-				 latency_ms, is_stream, status_code, error_message, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			(request_id, model_id, model_used, provider_id, client, api_shape,
+			 input_tokens, uncached_input_tokens, cache_read_input_tokens,
+			 cache_write_input_tokens, cache_write_5m_input_tokens, cache_write_1h_input_tokens,
+			 output_tokens, total_tokens, latency_ms, is_stream, status_code, error_message, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.RequestID, r.ModelID, r.ModelUsed, r.ProviderID, r.Client, r.APIShape,
-		r.InputTokens, r.OutputTokens, r.TotalTokens,
-		r.LatencyMS, boolToInt(r.IsStream), r.StatusCode, r.ErrorMessage,
-		r.CreatedAt.UTC().Format(time.RFC3339),
+		r.InputTokens, r.UncachedInputTokens, r.CacheReadInputTokens,
+		r.CacheWriteInputTokens, r.CacheWrite5mInputTokens, r.CacheWrite1hInputTokens,
+		r.OutputTokens, r.TotalTokens, r.LatencyMS, boolToInt(r.IsStream),
+		r.StatusCode, r.ErrorMessage, r.CreatedAt.UTC().Format(time.RFC3339),
 	)
 	return err
 }
@@ -45,7 +47,9 @@ func (db *Database) ListMeteringRecords(f MeteringFilter, limit, offset int) ([]
 
 	// rows
 	querySQL := `SELECT id, request_id, model_id, model_used, provider_id, client, api_shape,
-		input_tokens, output_tokens, total_tokens, latency_ms, is_stream,
+		input_tokens, uncached_input_tokens, cache_read_input_tokens,
+		cache_write_input_tokens, cache_write_5m_input_tokens, cache_write_1h_input_tokens,
+		output_tokens, total_tokens, latency_ms, is_stream,
 		status_code, error_message, created_at
 		FROM request_logs` + where +
 		` ORDER BY id DESC LIMIT ? OFFSET ?`
@@ -64,7 +68,9 @@ func (db *Database) ListMeteringRecords(f MeteringFilter, limit, offset int) ([]
 		var createdAt string
 		if err := rows.Scan(
 			&r.ID, &r.RequestID, &r.ModelID, &r.ModelUsed, &r.ProviderID, &r.Client, &r.APIShape,
-			&r.InputTokens, &r.OutputTokens, &r.TotalTokens, &r.LatencyMS, &isStream,
+			&r.InputTokens, &r.UncachedInputTokens, &r.CacheReadInputTokens,
+			&r.CacheWriteInputTokens, &r.CacheWrite5mInputTokens, &r.CacheWrite1hInputTokens,
+			&r.OutputTokens, &r.TotalTokens, &r.LatencyMS, &isStream,
 			&r.StatusCode, &r.ErrorMessage, &createdAt,
 		); err != nil {
 			return nil, 0, fmt.Errorf("metering scan: %w", err)

@@ -48,8 +48,8 @@ func TestParseOpenAI_SystemMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if req.SystemPrompt == nil || *req.SystemPrompt != "You are helpful." {
-		t.Fatalf("expected system prompt to be preserved, got %v", req.SystemPrompt)
+	if cif.PlainSystemText(req.System) != "You are helpful." {
+		t.Fatalf("expected system prompt to be preserved, got %v", req.System)
 	}
 	if len(req.Messages) != 1 {
 		t.Fatalf("expected 1 non-system message, got %d", len(req.Messages))
@@ -422,16 +422,15 @@ func TestParseAnthropic_SystemPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if req.SystemPrompt == nil || *req.SystemPrompt != "You are a pirate." {
-		t.Errorf("unexpected system prompt: %v", req.SystemPrompt)
+	if cif.PlainSystemText(req.System) != "You are a pirate." {
+		t.Errorf("unexpected system prompt: %v", req.System)
 	}
 }
 
-// TestParseAnthropic_HoistsSystemRoleMessage covers the Claude Code v2.1.154+
-// regression where a role:"system" entry is emitted inside messages[] instead
-// of the top-level system field. We hoist it into the system prompt rather than
-// failing. See https://github.com/anthropics/claude-code/issues/63457
-func TestParseAnthropic_HoistsSystemRoleMessage(t *testing.T) {
+// TestParseAnthropic_PreservesSystemRoleMessage covers clients that place a
+// supported mid-conversation role:"system" entry inside messages[]. Keeping it
+// in order avoids invalidating the stable top-level cache prefix.
+func TestParseAnthropic_PreservesSystemRoleMessage(t *testing.T) {
 	payload := map[string]interface{}{
 		"model":  "claude-3-5-sonnet-20241022",
 		"system": "Top-level system.",
@@ -454,14 +453,77 @@ func TestParseAnthropic_HoistsSystemRoleMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if req.SystemPrompt == nil || *req.SystemPrompt != "Top-level system.\n\nAgent instructions." {
-		t.Errorf("unexpected system prompt: %v", req.SystemPrompt)
+	if cif.PlainSystemText(req.System) != "Top-level system." {
+		t.Errorf("unexpected top-level system prompt: %v", req.System)
 	}
-	if len(req.Messages) != 1 {
-		t.Fatalf("expected system message to be hoisted out, got %d messages", len(req.Messages))
+	if len(req.Messages) != 2 {
+		t.Fatalf("expected ordered system and user messages, got %d", len(req.Messages))
 	}
-	if _, ok := req.Messages[0].(cif.CIFUserMessage); !ok {
-		t.Errorf("expected remaining message to be a user message, got %T", req.Messages[0])
+	systemMessage, ok := req.Messages[0].(cif.CIFSystemMessage)
+	if !ok || cif.PlainSystemText(systemMessage.Content) != "Agent instructions." {
+		t.Fatalf("expected preserved system message, got %#v", req.Messages[0])
+	}
+	if _, ok := req.Messages[1].(cif.CIFUserMessage); !ok {
+		t.Errorf("expected final message to be a user message, got %T", req.Messages[1])
+	}
+}
+
+func TestParseAnthropicPromptCacheControls(t *testing.T) {
+	payload := map[string]interface{}{
+		"model":         "claude-opus-5",
+		"cache_control": map[string]interface{}{"type": "ephemeral"},
+		"system": []interface{}{
+			map[string]interface{}{"type": "text", "text": "stable", "cache_control": map[string]interface{}{"type": "ephemeral", "ttl": "1h"}},
+		},
+		"messages": []interface{}{
+			map[string]interface{}{"role": "user", "content": []interface{}{
+				map[string]interface{}{"type": "text", "text": "question", "cache_control": map[string]interface{}{"type": "ephemeral"}},
+			}},
+		},
+		"tools": []interface{}{
+			map[string]interface{}{"name": "Read", "input_schema": map[string]interface{}{"type": "object"}, "cache_control": map[string]interface{}{"type": "ephemeral", "ttl": "5m"}},
+		},
+	}
+	req, err := ParseAnthropicMessages(mustRaw(t, payload))
+	if err != nil {
+		t.Fatalf("parse prompt cache controls: %v", err)
+	}
+	if req.PromptCache == nil || req.PromptCache.Automatic == nil {
+		t.Fatal("top-level automatic cache control was not preserved")
+	}
+	if len(req.System) != 1 || req.System[0].CacheControl == nil || req.System[0].CacheControl.TTL == nil || *req.System[0].CacheControl.TTL != cif.CIFCacheTTL1h {
+		t.Fatalf("system cache control changed: %#v", req.System)
+	}
+	user := req.Messages[0].(cif.CIFUserMessage)
+	text := user.Content[0].(cif.CIFTextPart)
+	if text.CacheControl == nil || req.Tools[0].CacheControl == nil {
+		t.Fatalf("message/tool cache controls were lost: %#v %#v", text, req.Tools[0])
+	}
+}
+
+func TestParseAnthropicPromptCacheRejectsInvalidAndExcessControls(t *testing.T) {
+	for name, payload := range map[string]map[string]interface{}{
+		"malformed control": {
+			"model": "claude-opus-5", "messages": []interface{}{map[string]interface{}{"role": "user", "content": []interface{}{map[string]interface{}{"type": "text", "text": "x", "cache_control": "invalid"}}}},
+		},
+		"invalid ttl": {
+			"model": "claude-opus-5", "messages": []interface{}{map[string]interface{}{"role": "user", "content": []interface{}{map[string]interface{}{"type": "text", "text": "x", "cache_control": map[string]interface{}{"type": "ephemeral", "ttl": "2h"}}}}},
+		},
+		"fifth breakpoint": {
+			"model": "claude-opus-5", "system": []interface{}{
+				map[string]interface{}{"type": "text", "text": "1", "cache_control": map[string]interface{}{"type": "ephemeral"}},
+				map[string]interface{}{"type": "text", "text": "2", "cache_control": map[string]interface{}{"type": "ephemeral"}},
+				map[string]interface{}{"type": "text", "text": "3", "cache_control": map[string]interface{}{"type": "ephemeral"}},
+				map[string]interface{}{"type": "text", "text": "4", "cache_control": map[string]interface{}{"type": "ephemeral"}},
+				map[string]interface{}{"type": "text", "text": "5", "cache_control": map[string]interface{}{"type": "ephemeral"}},
+			}, "messages": []interface{}{map[string]interface{}{"role": "user", "content": "x"}},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := ParseAnthropicMessages(mustRaw(t, payload)); err == nil {
+				t.Fatal("expected invalid prompt cache request to fail")
+			}
+		})
 	}
 }
 

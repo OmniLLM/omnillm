@@ -40,10 +40,45 @@ type ResponsesContentBlock struct {
 	Annotations []any  `json:"annotations,omitempty"`
 }
 
+type ResponsesInputTokensDetails struct {
+	CachedTokens int `json:"cached_tokens"`
+}
+
 type ResponsesUsage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
-	TotalTokens  int `json:"total_tokens"`
+	InputTokens        int                          `json:"input_tokens"`
+	OutputTokens       int                          `json:"output_tokens"`
+	TotalTokens        int                          `json:"total_tokens"`
+	InputTokensDetails *ResponsesInputTokensDetails `json:"input_tokens_details,omitempty"`
+}
+
+func responsesUsage(usage *cif.CIFUsage) *ResponsesUsage {
+	if usage == nil {
+		return nil
+	}
+	result := &ResponsesUsage{
+		InputTokens:  usage.InputTokens,
+		OutputTokens: usage.OutputTokens,
+		TotalTokens:  usage.InputTokens + usage.OutputTokens,
+	}
+	if usage.CacheReadInputTokens != nil {
+		result.InputTokensDetails = &ResponsesInputTokensDetails{CachedTokens: *usage.CacheReadInputTokens}
+	}
+	return result
+}
+
+func responsesUsageMap(usage *cif.CIFUsage) map[string]interface{} {
+	if usage == nil {
+		return nil
+	}
+	result := map[string]interface{}{
+		"input_tokens":  usage.InputTokens,
+		"output_tokens": usage.OutputTokens,
+		"total_tokens":  usage.InputTokens + usage.OutputTokens,
+	}
+	if usage.CacheReadInputTokens != nil {
+		result["input_tokens_details"] = map[string]interface{}{"cached_tokens": *usage.CacheReadInputTokens}
+	}
+	return result
 }
 
 func SerializeToResponses(response *cif.CanonicalResponse) (*ResponsesResponse, error) {
@@ -124,11 +159,7 @@ func SerializeToResponses(response *cif.CanonicalResponse) (*ResponsesResponse, 
 	}
 
 	if response.Usage != nil {
-		resp.Usage = &ResponsesUsage{
-			InputTokens:  response.Usage.InputTokens,
-			OutputTokens: response.Usage.OutputTokens,
-			TotalTokens:  response.Usage.InputTokens + response.Usage.OutputTokens,
-		}
+		resp.Usage = responsesUsage(response.Usage)
 	}
 
 	return resp, nil
@@ -456,11 +487,7 @@ func ConvertCIFEventToResponsesSSE(event cif.CIFStreamEvent, state *ResponsesStr
 			},
 		}
 		if e.Usage != nil {
-			completedResp["response"].(map[string]interface{})["usage"] = map[string]interface{}{
-				"input_tokens":  e.Usage.InputTokens,
-				"output_tokens": e.Usage.OutputTokens,
-				"total_tokens":  e.Usage.InputTokens + e.Usage.OutputTokens,
-			}
+			completedResp["response"].(map[string]interface{})["usage"] = responsesUsageMap(e.Usage)
 		}
 		events = append(events, completedResp)
 	}

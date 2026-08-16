@@ -53,8 +53,8 @@ func BuildResponsesPayload(request *cif.CanonicalRequest, model string) map[stri
 		"store":             false,
 	}
 
-	if request.SystemPrompt != nil && *request.SystemPrompt != "" {
-		payload["instructions"] = *request.SystemPrompt
+	if system := cif.PlainSystemText(request.System); system != "" {
+		payload["instructions"] = system
 	}
 
 	// o-series and gpt-5+ reasoning models do not support temperature.
@@ -97,7 +97,7 @@ func CIFMessagesToResponsesInput(messages []cif.CIFMessage) []map[string]interfa
 				"type": "message",
 				"role": "system",
 				"content": []map[string]interface{}{
-					{"type": "input_text", "text": m.Content},
+					{"type": "input_text", "text": cif.PlainSystemText(m.Content)},
 				},
 			})
 		case cif.CIFUserMessage:

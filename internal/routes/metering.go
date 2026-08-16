@@ -36,27 +36,42 @@ func recordUsage(
 	errMsg string,
 ) {
 	inputTokens := 0
+	var uncachedInputTokens *int
+	var cacheReadInputTokens *int
+	var cacheWriteInputTokens *int
+	var cacheWrite5mInputTokens *int
+	var cacheWrite1hInputTokens *int
 	outputTokens := 0
 	if usage != nil {
 		inputTokens = usage.InputTokens
+		uncachedInputTokens = usage.UncachedInputTokens
+		cacheReadInputTokens = usage.CacheReadInputTokens
+		cacheWriteInputTokens = usage.CacheWriteInputTokens
+		cacheWrite5mInputTokens = usage.CacheWrite5mInputTokens
+		cacheWrite1hInputTokens = usage.CacheWrite1hInputTokens
 		outputTokens = usage.OutputTokens
 	}
 
 	rec := database.MeteringRecord{
-		RequestID:    requestID,
-		ModelID:      modelID,
-		ModelUsed:    modelUsed,
-		ProviderID:   providerID,
-		Client:       client,
-		APIShape:     apiShape,
-		InputTokens:  inputTokens,
-		OutputTokens: outputTokens,
-		TotalTokens:  inputTokens + outputTokens,
-		LatencyMS:    latencyMS,
-		IsStream:     isStream,
-		StatusCode:   statusCode,
-		ErrorMessage: errMsg,
-		CreatedAt:    time.Now().UTC(),
+		RequestID:               requestID,
+		ModelID:                 modelID,
+		ModelUsed:               modelUsed,
+		ProviderID:              providerID,
+		Client:                  client,
+		APIShape:                apiShape,
+		InputTokens:             inputTokens,
+		UncachedInputTokens:     uncachedInputTokens,
+		CacheReadInputTokens:    cacheReadInputTokens,
+		CacheWriteInputTokens:   cacheWriteInputTokens,
+		CacheWrite5mInputTokens: cacheWrite5mInputTokens,
+		CacheWrite1hInputTokens: cacheWrite1hInputTokens,
+		OutputTokens:            outputTokens,
+		TotalTokens:             inputTokens + outputTokens,
+		LatencyMS:               latencyMS,
+		IsStream:                isStream,
+		StatusCode:              statusCode,
+		ErrorMessage:            errMsg,
+		CreatedAt:               time.Now().UTC(),
 	}
 
 	database.EnqueueMeteringRecord(rec)

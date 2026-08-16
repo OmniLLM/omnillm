@@ -12,6 +12,31 @@ func mustRawM(t *testing.T, v any) json.RawMessage {
 	return b
 }
 
+func TestParseOpenAIPromptCacheNativeControls(t *testing.T) {
+	for name, parse := range map[string]func(json.RawMessage) (*cif.CanonicalRequest, error){
+		"chat":      ParseOpenAIChatCompletions,
+		"responses": ParseResponsesPayload,
+	} {
+		t.Run(name, func(t *testing.T) {
+			payload := map[string]interface{}{
+				"model": "gpt-5", "prompt_cache_key": "conversation-a", "prompt_cache_retention": "24h",
+			}
+			if name == "chat" {
+				payload["messages"] = []interface{}{map[string]interface{}{"role": "user", "content": "hello"}}
+			} else {
+				payload["input"] = "hello"
+			}
+			req, err := parse(mustRawM(t, payload))
+			if err != nil {
+				t.Fatalf("parse native controls: %v", err)
+			}
+			if req.PromptCache == nil || req.PromptCache.Key == nil || *req.PromptCache.Key != "conversation-a" || req.PromptCache.Retention == nil || *req.PromptCache.Retention != "24h" {
+				t.Fatalf("native controls changed: %#v", req.PromptCache)
+			}
+		})
+	}
+}
+
 func TestParseOpenAI_TreatsDeveloperMessagesAsSystemPrompt(t *testing.T) {
 	payload := map[string]interface{}{
 		"model": "gpt-4o",
@@ -25,8 +50,8 @@ func TestParseOpenAI_TreatsDeveloperMessagesAsSystemPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if req.SystemPrompt == nil || *req.SystemPrompt != "You are a coding assistant." {
-		t.Fatalf("unexpected system prompt: %v", req.SystemPrompt)
+	if cif.PlainSystemText(req.System) != "You are a coding assistant." {
+		t.Fatalf("unexpected system prompt: %v", req.System)
 	}
 	if len(req.Messages) != 1 || req.Messages[0].GetRole() != "user" {
 		t.Fatalf("expected only user message to remain, got %+v", req.Messages)
@@ -68,8 +93,8 @@ func TestParseOpenAI_MergesSystemMessagesAndNormalizesToolChoice(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if req.SystemPrompt == nil || *req.SystemPrompt != "You are helpful.\n\nBe concise." {
-		t.Fatalf("unexpected system prompt: %v", req.SystemPrompt)
+	if cif.PlainSystemText(req.System) != "You are helpful.\n\nBe concise." {
+		t.Fatalf("unexpected system prompt: %v", req.System)
 	}
 	if len(req.Messages) != 1 || req.Messages[0].GetRole() != "user" {
 		t.Fatalf("expected only the user message to remain, got %+v", req.Messages)
@@ -235,8 +260,8 @@ func TestParseAnthropic_NormalizesSystemMetadataAndToolChoice(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if req.SystemPrompt == nil || *req.SystemPrompt != "You are helpful.\n\nBe concise." {
-		t.Fatalf("unexpected system prompt: %v", req.SystemPrompt)
+	if cif.PlainSystemText(req.System) != "You are helpful.\n\nBe concise." {
+		t.Fatalf("unexpected system prompt: %v", req.System)
 	}
 	if req.UserID == nil || *req.UserID != "user123" {
 		t.Fatalf("unexpected user id: %v", req.UserID)
@@ -257,7 +282,7 @@ func TestParseAnthropic_RejectsMalformedContentBlock(t *testing.T) {
 		"model": "claude-3-5-sonnet-20241022",
 		"messages": []interface{}{
 			map[string]interface{}{
-				"role": "assistant",
+				"role":    "assistant",
 				"content": []interface{}{"not-a-map"},
 			},
 		},

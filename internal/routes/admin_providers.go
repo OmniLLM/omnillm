@@ -1202,12 +1202,19 @@ func handleUpdateProviderConfig(c *gin.Context) {
 	}
 	if provider.GetID() == "openai-compatible" {
 		normalizedConfig = mergeOpenAICompatibleConfig(previousConfig, config, normalizedConfig)
+		if mode, _ := normalizedConfig["prompt_cache_mode"].(string); mode == openaicompatprovider.PromptCacheModeAnthropicInline && strings.EqualFold(strings.TrimSuffix(provider.GetBaseURL(), "/v1"), "https://api.openai.com") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "anthropic_inline prompt cache mode is not valid for api.openai.com"})
+			return
+		}
 	}
 
 	configStore := database.NewProviderConfigStore()
 	if err := configStore.Save(providerID, normalizedConfig); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to persist provider config"})
 		return
+	}
+	if compatible, ok := provider.(*openaicompatprovider.Provider); ok {
+		compatible.ApplyConfig(normalizedConfig)
 	}
 
 	if provider.GetID() == "azure-openai" {

@@ -56,7 +56,8 @@ type AuthOptions struct {
 	Region              string `json:"region,omitempty"`
 	Plan                string `json:"plan,omitempty"`
 	Endpoint            string `json:"endpoint,omitempty"`
-	APIFormat           string `json:"apiFormat,omitempty"`   // e.g. "anthropic" for Alibaba Anthropic-compatible endpoint
+	APIFormat           string `json:"apiFormat,omitempty"` // OpenAI-compatible upstream API shape
+	PromptCacheMode     string `json:"prompt_cache_mode,omitempty"`
 	Models              string `json:"models,omitempty"`      // JSON-encoded []string, used by openai-compatible
 	Deployments         string `json:"deployments,omitempty"` // JSON-encoded []string, used by azure-openai
 	APIVersion          string `json:"apiVersion,omitempty"`  // e.g. "2024-02-01", used by azure-openai
@@ -74,9 +75,10 @@ func (a *AuthOptions) UnmarshalJSON(data []byte) error {
 	}
 	// camelCase → snake_case / canonical aliases.
 	aliases := map[string]string{
-		"clientId":     "client_id",
-		"clientSecret": "client_secret",
-		"githubToken":  "github_token",
+		"clientId":        "client_id",
+		"clientSecret":    "client_secret",
+		"githubToken":     "github_token",
+		"promptCacheMode": "prompt_cache_mode",
 	}
 	for camel, canonical := range aliases {
 		if v, ok := raw[camel]; ok {

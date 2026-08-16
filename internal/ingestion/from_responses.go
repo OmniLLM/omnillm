@@ -12,18 +12,20 @@ import (
 // Responses API types
 
 type ResponsesPayload struct {
-	Model              string          `json:"model"`
-	Input              any             `json:"input"` // string or []InputItem
-	Instructions       *string         `json:"instructions,omitempty"`
-	Stream             *bool           `json:"stream,omitempty"`
-	Temperature        *float64        `json:"temperature,omitempty"`
-	TopP               *float64        `json:"top_p,omitempty"`
-	MaxOutputTokens    *int            `json:"max_output_tokens,omitempty"`
-	Tools              []ResponsesTool `json:"tools,omitempty"`
-	ToolChoice         any             `json:"tool_choice,omitempty"`
-	PreviousResponseID *string         `json:"previous_response_id,omitempty"`
-	Store              *bool           `json:"store,omitempty"`
-	Text               *ResponsesText  `json:"text,omitempty"`
+	Model                string          `json:"model"`
+	Input                any             `json:"input"` // string or []InputItem
+	Instructions         *string         `json:"instructions,omitempty"`
+	Stream               *bool           `json:"stream,omitempty"`
+	Temperature          *float64        `json:"temperature,omitempty"`
+	TopP                 *float64        `json:"top_p,omitempty"`
+	MaxOutputTokens      *int            `json:"max_output_tokens,omitempty"`
+	Tools                []ResponsesTool `json:"tools,omitempty"`
+	ToolChoice           any             `json:"tool_choice,omitempty"`
+	PreviousResponseID   *string         `json:"previous_response_id,omitempty"`
+	PromptCacheKey       *string         `json:"prompt_cache_key,omitempty"`
+	PromptCacheRetention *string         `json:"prompt_cache_retention,omitempty"`
+	Store                *bool           `json:"store,omitempty"`
+	Text                 *ResponsesText  `json:"text,omitempty"`
 }
 
 // ResponsesText holds the text.format structured output configuration.
@@ -89,13 +91,19 @@ func ParseResponsesPayload(raw json.RawMessage) (*cif.CanonicalRequest, error) {
 	if req.PreviousResponseID != nil && *req.PreviousResponseID != "" {
 		canonical.PreviousResponseID = req.PreviousResponseID
 	}
+	if req.PromptCacheKey != nil || req.PromptCacheRetention != nil {
+		canonical.PromptCache = &cif.CIFPromptCacheRequest{
+			Key:       req.PromptCacheKey,
+			Retention: req.PromptCacheRetention,
+		}
+	}
 
 	if req.Text != nil && req.Text.Format != nil {
 		canonical.ResponseFormat = translateResponsesTextFormat(req.Text.Format)
 	}
 
 	if req.Instructions != nil && *req.Instructions != "" {
-		canonical.SystemPrompt = req.Instructions
+		canonical.System = cif.SystemBlocksFromText(*req.Instructions)
 	}
 
 	messages, err := translateResponsesInput(req.Input)
@@ -167,7 +175,7 @@ func translateResponsesInput(input interface{}) ([]cif.CIFMessage, error) {
 					flushAssistant()
 					messages = append(messages, cif.CIFSystemMessage{
 						Role:    "system",
-						Content: extractInputText(inputItem.Content),
+						Content: cif.SystemBlocksFromText(extractInputText(inputItem.Content)),
 					})
 				case "user":
 					flushAssistant()

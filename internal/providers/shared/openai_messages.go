@@ -108,7 +108,7 @@ func CIFMessagesToOpenAI(messages []cif.CIFMessage) []map[string]interface{} {
 		case cif.CIFSystemMessage:
 			result = append(result, map[string]interface{}{
 				"role":    "system",
-				"content": m.Content,
+				"content": cif.PlainSystemText(m.Content),
 			})
 		case cif.CIFUserMessage:
 			openaiMsg := map[string]interface{}{"role": "user"}
@@ -238,7 +238,14 @@ func OpenAIRespToCIF(resp map[string]interface{}) *cif.CanonicalResponse {
 	if usage, ok := resp["usage"].(map[string]interface{}); ok {
 		pt, _ := usage["prompt_tokens"].(float64)
 		ct, _ := usage["completion_tokens"].(float64)
-		result.Usage = &cif.CIFUsage{InputTokens: int(pt), OutputTokens: int(ct)}
+		var cached *int
+		if details, ok := usage["prompt_tokens_details"].(map[string]interface{}); ok {
+			if value, ok := details["cached_tokens"].(float64); ok {
+				cachedValue := int(value)
+				cached = &cachedValue
+			}
+		}
+		result.Usage = cif.UsageFromTotal(int(pt), int(ct), cached)
 	}
 
 	return result

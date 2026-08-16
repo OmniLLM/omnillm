@@ -31,11 +31,11 @@ type Config struct {
 	IncludeUserID bool
 }
 
-// DefaultConfig returns production defaults (enabled, 30m TTL, 50k entries).
+// DefaultConfig returns production defaults (enabled, 5m TTL, 50k entries).
 func DefaultConfig() Config {
 	return Config{
 		Enabled:       true,
-		TTL:           30 * time.Minute,
+		TTL:           5 * time.Minute,
 		MaxEntries:    50_000,
 		IncludeUserID: true,
 	}
@@ -65,7 +65,7 @@ func NewCache(cfg Config) *Cache {
 		cfg.MaxEntries = 50_000
 	}
 	if cfg.TTL <= 0 {
-		cfg.TTL = 30 * time.Minute
+		cfg.TTL = 5 * time.Minute
 	}
 	return &Cache{
 		cfg:   cfg,
@@ -96,11 +96,159 @@ func (c *Cache) Stats() (hits, misses uint64, size int) {
 // instance — which is exactly what we want, since they share the cacheable
 // prefix. Affinity only re-orders candidates, so a collision never harms
 // correctness.
+func promptCachePrefix(request *cif.CanonicalRequest, requestedModel string, includeUserID bool) ([]byte, bool) {
+	if request.PromptCache == nil && !requestHasBreakpoint(request) {
+		return nil, false
+	}
+	prefix := struct {
+		Model       string                     `json:"model"`
+		UserID      *string                    `json:"userId,omitempty"`
+		Tools       []cif.CIFTool              `json:"tools,omitempty"`
+		System      []cif.CIFSystemBlock       `json:"system,omitempty"`
+		Messages    []cif.CIFMessage           `json:"messages,omitempty"`
+		PromptCache *cif.CIFPromptCacheRequest `json:"promptCache,omitempty"`
+	}{Model: requestedModel, Tools: request.Tools, System: request.System, PromptCache: request.PromptCache}
+	if includeUserID {
+		prefix.UserID = request.UserID
+	}
+	lastMessage := -1
+	if request.PromptCache != nil && request.PromptCache.Automatic != nil {
+		lastMessage = len(request.Messages) - 1
+	}
+	for index, message := range request.Messages {
+		if messageHasBreakpoint(message) {
+			lastMessage = index
+		}
+	}
+	if lastMessage >= 0 {
+		messages := append([]cif.CIFMessage(nil), request.Messages[:lastMessage+1]...)
+		messages[lastMessage] = truncateMessageAtBreakpoint(messages[lastMessage])
+		prefix.Messages = messages
+	}
+	encoded, err := json.Marshal(prefix)
+	return encoded, err == nil
+}
+
+func truncateMessageAtBreakpoint(message cif.CIFMessage) cif.CIFMessage {
+	switch typed := message.(type) {
+	case cif.CIFSystemMessage:
+		last := lastSystemBreakpoint(typed.Content)
+		if last >= 0 {
+			typed.Content = append([]cif.CIFSystemBlock(nil), typed.Content[:last+1]...)
+		}
+		return typed
+	case cif.CIFUserMessage:
+		last := lastContentBreakpoint(typed.Content)
+		if last >= 0 {
+			typed.Content = append([]cif.CIFContentPart(nil), typed.Content[:last+1]...)
+		}
+		return typed
+	case cif.CIFAssistantMessage:
+		last := lastContentBreakpoint(typed.Content)
+		if last >= 0 {
+			typed.Content = append([]cif.CIFContentPart(nil), typed.Content[:last+1]...)
+		}
+		return typed
+	default:
+		return message
+	}
+}
+
+func lastSystemBreakpoint(blocks []cif.CIFSystemBlock) int {
+	last := -1
+	for index, block := range blocks {
+		if block.CacheControl != nil {
+			last = index
+		}
+	}
+	return last
+}
+
+func lastContentBreakpoint(parts []cif.CIFContentPart) int {
+	last := -1
+	for index, part := range parts {
+		if partsHaveBreakpoint([]cif.CIFContentPart{part}) {
+			last = index
+		}
+	}
+	return last
+}
+
+func requestHasBreakpoint(request *cif.CanonicalRequest) bool {
+	for _, tool := range request.Tools {
+		if tool.CacheControl != nil {
+			return true
+		}
+	}
+	for _, block := range request.System {
+		if block.CacheControl != nil {
+			return true
+		}
+	}
+	for _, message := range request.Messages {
+		if messageHasBreakpoint(message) {
+			return true
+		}
+	}
+	return false
+}
+
+func messageHasBreakpoint(message cif.CIFMessage) bool {
+	switch typed := message.(type) {
+	case cif.CIFSystemMessage:
+		for _, block := range typed.Content {
+			if block.CacheControl != nil {
+				return true
+			}
+		}
+	case cif.CIFUserMessage:
+		return partsHaveBreakpoint(typed.Content)
+	case cif.CIFAssistantMessage:
+		return partsHaveBreakpoint(typed.Content)
+	}
+	return false
+}
+
+func partsHaveBreakpoint(parts []cif.CIFContentPart) bool {
+	for _, part := range parts {
+		switch typed := part.(type) {
+		case cif.CIFTextPart:
+			if typed.CacheControl != nil {
+				return true
+			}
+		case cif.CIFImagePart:
+			if typed.CacheControl != nil {
+				return true
+			}
+		case cif.CIFThinkingPart:
+			if typed.CacheControl != nil {
+				return true
+			}
+		case cif.CIFToolCallPart:
+			if typed.CacheControl != nil {
+				return true
+			}
+		case cif.CIFToolResultPart:
+			if typed.CacheControl != nil {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (c *Cache) key(request *cif.CanonicalRequest, requestedModel string) (string, bool) {
-	if request == nil || len(request.Messages) == 0 {
+	if request == nil {
 		return "", false
 	}
-	hasSystem := request.SystemPrompt != nil && *request.SystemPrompt != ""
+	if prefix, ok := promptCachePrefix(request, requestedModel, c.cfg.IncludeUserID); ok {
+		h := sha256.Sum256(prefix)
+		return "affinity:v2:" + hex.EncodeToString(h[:])[:32], true
+	}
+	if len(request.Messages) == 0 {
+		return "", false
+	}
+	hasSystem := cif.PlainSystemText(request.System) != ""
 
 	h := sha256.New()
 	h.Write([]byte("m:"))
@@ -111,13 +259,17 @@ func (c *Cache) key(request *cif.CanonicalRequest, requestedModel string) (strin
 	}
 	if hasSystem {
 		h.Write([]byte("|s:"))
-		h.Write([]byte(*request.SystemPrompt))
+		h.Write([]byte(cif.PlainSystemText(request.System)))
 	}
 	h.Write([]byte("|h:"))
 	if b, err := json.Marshal(request.Messages[0]); err == nil {
 		h.Write(b)
 	}
 	return "affinity:v1:" + hex.EncodeToString(h.Sum(nil))[:32], true
+}
+
+func (c *Cache) Key(request *cif.CanonicalRequest, requestedModel string) (string, bool) {
+	return c.key(request, requestedModel)
 }
 
 // Lookup returns the pinned instance ID for request's conversation prefix.

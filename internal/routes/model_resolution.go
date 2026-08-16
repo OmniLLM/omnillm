@@ -1,7 +1,9 @@
 package routes
 
 import (
+	"omnillm/internal/cif"
 	"omnillm/internal/database"
+	"omnillm/internal/lib/affinity"
 	"omnillm/internal/lib/modelrouting"
 	"omnillm/internal/lib/virtualmodelrouting"
 
@@ -69,6 +71,28 @@ func resolveRequestedModels(requestID, requestedModel string) []resolvedModelAtt
 	}
 
 	return attempts
+}
+
+func preferAffinityAttempt(attempts []resolvedModelAttempt, request *cif.CanonicalRequest, requestedModel string) []resolvedModelAttempt {
+	instance, ok := affinity.Get().Lookup(request, requestedModel)
+	if !ok || len(attempts) < 2 {
+		return attempts
+	}
+	for index, attempt := range attempts {
+		if attempt.ProviderID != instance || index == 0 {
+			continue
+		}
+		ordered := make([]resolvedModelAttempt, 0, len(attempts))
+		ordered = append(ordered, attempts[index])
+		ordered = append(ordered, attempts[:index]...)
+		ordered = append(ordered, attempts[index+1:]...)
+		return ordered
+	}
+	return attempts
+}
+
+func resolveRequestedModelsForRequest(requestID, requestedModel string, request *cif.CanonicalRequest) []resolvedModelAttempt {
+	return preferAffinityAttempt(resolveRequestedModels(requestID, requestedModel), request, requestedModel)
 }
 
 func appendProviderPrefixFallback(requestID string, attempts []resolvedModelAttempt, requestedModel string) []resolvedModelAttempt {

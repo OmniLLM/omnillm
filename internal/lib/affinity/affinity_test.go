@@ -67,6 +67,52 @@ func TestPrefixEqualsPreviousFullMessages(t *testing.T) {
 	}
 }
 
+func TestPromptCacheAffinityIgnoresSuffixAfterBreakpoint(t *testing.T) {
+	cache := newTestCache()
+	control := &cif.CIFCacheControl{Type: "ephemeral"}
+	prefix := cif.CIFUserMessage{Role: "user", Content: []cif.CIFContentPart{
+		cif.CIFTextPart{Type: "text", Text: "stable", CacheControl: control},
+	}}
+	first := &cif.CanonicalRequest{Model: "m", Messages: []cif.CIFMessage{prefix, userMsg("suffix-a")}}
+	second := &cif.CanonicalRequest{Model: "m", Messages: []cif.CIFMessage{prefix, userMsg("suffix-b")}}
+	cache.Record(first, "m", "inst-cache")
+	if got, ok := cache.Lookup(second, "m"); !ok || got != "inst-cache" {
+		t.Fatalf("varying suffix missed affinity: got=%q ok=%v", got, ok)
+	}
+}
+
+func TestPromptCacheAffinityIgnoresSuffixWithinMarkedMessage(t *testing.T) {
+	cache := newTestCache()
+	control := &cif.CIFCacheControl{Type: "ephemeral"}
+	request := func(suffix string) *cif.CanonicalRequest {
+		return &cif.CanonicalRequest{Model: "m", Messages: []cif.CIFMessage{
+			cif.CIFUserMessage{Role: "user", Content: []cif.CIFContentPart{
+				cif.CIFTextPart{Type: "text", Text: "stable", CacheControl: control},
+				cif.CIFTextPart{Type: "text", Text: suffix},
+			}},
+		}}
+	}
+	cache.Record(request("suffix-a"), "m", "inst-cache")
+	if got, ok := cache.Lookup(request("suffix-b"), "m"); !ok || got != "inst-cache" {
+		t.Fatalf("multipart varying suffix missed affinity: got=%q ok=%v", got, ok)
+	}
+}
+
+func TestPromptCacheAffinityChangesWithPrefix(t *testing.T) {
+	cache := newTestCache()
+	control := &cif.CIFCacheControl{Type: "ephemeral"}
+	first := &cif.CanonicalRequest{Model: "m", Messages: []cif.CIFMessage{
+		cif.CIFUserMessage{Role: "user", Content: []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: "stable-a", CacheControl: control}}},
+	}}
+	second := &cif.CanonicalRequest{Model: "m", Messages: []cif.CIFMessage{
+		cif.CIFUserMessage{Role: "user", Content: []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: "stable-b", CacheControl: control}}},
+	}}
+	cache.Record(first, "m", "inst-cache")
+	if _, ok := cache.Lookup(second, "m"); ok {
+		t.Fatal("changed cacheable prefix unexpectedly hit affinity")
+	}
+}
+
 func TestDisabledNoOp(t *testing.T) {
 	c := NewCache(Config{Enabled: false, TTL: time.Minute, MaxEntries: 10})
 	req := &cif.CanonicalRequest{Model: "m", Messages: []cif.CIFMessage{userMsg("a"), assistantMsg("b")}}

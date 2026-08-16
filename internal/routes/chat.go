@@ -147,7 +147,7 @@ func (h *chatCompletionHandler) handleChatCompletions(c *gin.Context) {
 	}
 
 	// Resolve providers for the requested model
-	attempts := resolveRequestedModels(requestIDStr, canonicalRequest.Model)
+	attempts := resolveRequestedModelsForRequest(requestIDStr, canonicalRequest.Model, canonicalRequest)
 	executor := providerdispatch.NewExecutor(providerdispatch.ApplyGitHubCopilotSingleUpstreamMode, providerdispatch.DefaultUpstreamAPI)
 	resolveFailed := false
 	lastErr := executor.TryAttempts(

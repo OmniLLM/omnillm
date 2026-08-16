@@ -120,7 +120,7 @@ func handleMessages(c *gin.Context) {
 	if log.Logger.GetLevel() <= zerolog.DebugLevel {
 		resolveStart = time.Now()
 	}
-	attempts := resolveRequestedModels(requestIDStr, canonicalRequest.Model)
+	attempts := resolveRequestedModelsForRequest(requestIDStr, canonicalRequest.Model, canonicalRequest)
 	logLatencyProbe(requestIDStr, "anthropic_resolve_requested_models", resolveStart)
 	executor := providerdispatch.NewExecutor(providerdispatch.ApplyGitHubCopilotSingleUpstreamMode, providerdispatch.DefaultUpstreamAPI)
 	resolveFailed := false
@@ -446,13 +446,15 @@ func handleCountTokens(c *gin.Context) {
 	}
 
 	totalTokens := 0
-	if canonicalRequest.SystemPrompt != nil {
-		totalTokens += estimateStringTokens(*canonicalRequest.SystemPrompt)
+	for _, block := range canonicalRequest.System {
+		totalTokens += estimateStringTokens(block.Text)
 	}
 	for _, msg := range canonicalRequest.Messages {
 		switch m := msg.(type) {
 		case cif.CIFSystemMessage:
-			totalTokens += estimateStringTokens(m.Content)
+			for _, block := range m.Content {
+				totalTokens += estimateStringTokens(block.Text)
+			}
 		case cif.CIFUserMessage:
 			for _, part := range m.Content {
 				switch p := part.(type) {

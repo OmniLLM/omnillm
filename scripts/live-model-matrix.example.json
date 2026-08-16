@@ -22,7 +22,10 @@
         "parallelTools": true,
         "largeResults": true,
         "longStream": true,
-        "cancellation": true
+        "cancellation": true,
+        "promptCaching": {
+          "notApplicable": "Declare support only when this account and model expose cache-read usage"
+        }
       },
       "provision": {
         "path": "/api/admin/providers/auth-and-create/google",
@@ -52,7 +55,10 @@
         "parallelTools": true,
         "largeResults": true,
         "longStream": true,
-        "cancellation": true
+        "cancellation": true,
+        "promptCaching": {
+          "notApplicable": "Declare support only when this account and model expose cache-read usage"
+        }
       }
     },
     {
@@ -70,7 +76,10 @@
         "parallelTools": true,
         "largeResults": true,
         "longStream": true,
-        "cancellation": true
+        "cancellation": true,
+        "promptCaching": {
+          "notApplicable": "Declare support only when this account and model expose cache-read usage"
+        }
       },
       "scenarioOverrides": {
         "parallel_tools": {

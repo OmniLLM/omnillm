@@ -31,6 +31,7 @@ const CAPABILITIES = [
   "largeResults",
   "longStream",
   "cancellation",
+  "promptCaching",
 ] as const
 const SMOKE_SCENARIOS = [
   "model_availability",
@@ -44,6 +45,7 @@ const EXTENDED_SCENARIOS = [
   "large_result",
   "long_stream",
   "cancellation",
+  "prompt_caching",
 ] as const
 
 type Shape = (typeof SHAPES)[number]
@@ -127,6 +129,7 @@ const SCENARIO_CAPABILITIES: Partial<Record<Scenario, Capability>> = {
   large_result: "largeResults",
   long_stream: "longStream",
   cancellation: "cancellation",
+  prompt_caching: "promptCaching",
 }
 
 export function sanitizeFailure(
@@ -1134,6 +1137,73 @@ async function longStream(
   }
 }
 
+export function cacheReadTokens(shape: Shape, payload: unknown): number {
+  const root = object(payload, `${shape} cache response`)
+  const usage = object(root.usage, `${shape} usage`)
+  let value: unknown
+  if (shape === "chat") {
+    value = object(usage.prompt_tokens_details, "prompt token details").cached_tokens
+  } else if (shape === "messages") {
+    value = usage.cache_read_input_tokens
+  } else {
+    value = object(usage.input_tokens_details, "input token details").cached_tokens
+  }
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    throw new Error(`${shape} response did not contain valid cache-read usage`)
+  }
+  return value
+}
+
+function promptCacheRequests(shape: Shape, model: string): [unknown, unknown] {
+  const stable = "Stable prompt-cache prefix. ".repeat(600)
+  if (shape === "messages") {
+    const base = {
+      model,
+      max_tokens: 512,
+      system: [
+        {
+          type: "text",
+          text: stable,
+          cache_control: { type: "ephemeral" },
+        },
+      ],
+    }
+    return [
+      { ...base, messages: [{ role: "user", content: "Request A" }] },
+      { ...base, messages: [{ role: "user", content: "Request B" }] },
+    ]
+  }
+  const key = `live-matrix-${model}`
+  if (shape === "responses") {
+    const base = { model, max_output_tokens: 512, prompt_cache_key: key }
+    return [
+      { ...base, input: `${stable}\nRequest A` },
+      { ...base, input: `${stable}\nRequest B` },
+    ]
+  }
+  const base = { model, max_tokens: 512, prompt_cache_key: key }
+  return [
+    { ...base, messages: [{ role: "user", content: `${stable}\nRequest A` }] },
+    { ...base, messages: [{ role: "user", content: `${stable}\nRequest B` }] },
+  ]
+}
+
+async function promptCaching(
+  baseUrl: string,
+  row: ManifestRow,
+  shape: Shape,
+  timeoutMs: number,
+): Promise<void> {
+  const [first, second] = promptCacheRequests(shape, row.model)
+  const firstResponse = await requestJSON(baseUrl, endpoint(shape), first, timeoutMs)
+  requireText(shape, firstResponse)
+  const secondResponse = await requestJSON(baseUrl, endpoint(shape), second, timeoutMs)
+  requireText(shape, secondResponse)
+  if (cacheReadTokens(shape, secondResponse) <= 0) {
+    throw new Error(`${shape} second request reported zero cache-read tokens`)
+  }
+}
+
 async function cancellation(
   baseUrl: string,
   row: ManifestRow,
@@ -1215,6 +1285,10 @@ async function executeScenario(
   }
   if (scenario === "large_result") {
     await toolReplay(baseUrl, row, shape, requestMs, "x".repeat(256 * 1024))
+    return
+  }
+  if (scenario === "prompt_caching") {
+    await promptCaching(baseUrl, row, shape, requestMs)
     return
   }
   await cancellation(baseUrl, row, shape)

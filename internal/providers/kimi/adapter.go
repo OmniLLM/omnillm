@@ -236,10 +236,10 @@ func (a *Adapter) ExecuteStream(ctx context.Context, request *cif.CanonicalReque
 func (a *Adapter) buildOpenAIPayload(request *cif.CanonicalRequest) map[string]interface{} {
 	model := a.RemapModel(request.Model)
 	messages := shared.CIFMessagesToOpenAI(request.Messages)
-	if request.SystemPrompt != nil && strings.TrimSpace(*request.SystemPrompt) != "" {
+	if system := cif.PlainSystemText(request.System); strings.TrimSpace(system) != "" {
 		messages = append([]map[string]interface{}{{
 			"role":    "system",
-			"content": *request.SystemPrompt,
+			"content": system,
 		}}, messages...)
 	}
 	if IsThinkingModel(model) {

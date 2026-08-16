@@ -340,8 +340,8 @@ func requestWithInboundShape(shape string) *cif.CanonicalRequest {
 func sampleToolLoopRequest(shape string) *cif.CanonicalRequest {
 	system := "Be terse."
 	return &cif.CanonicalRequest{
-		Model:        "gpt-4o-mini",
-		SystemPrompt: &system,
+		Model:  "gpt-4o-mini",
+		System: cif.SystemBlocksFromText(system),
 		Messages: []cif.CIFMessage{
 			cif.CIFAssistantMessage{
 				Role: "assistant",

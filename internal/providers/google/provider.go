@@ -165,10 +165,10 @@ func BuildPayload(model string, request *cif.CanonicalRequest) map[string]interf
 		"contents": contents,
 	}
 
-	if request.SystemPrompt != nil && *request.SystemPrompt != "" {
+	if system := cif.PlainSystemText(request.System); system != "" {
 		payload["systemInstruction"] = map[string]interface{}{
 			"parts": []map[string]interface{}{
-				{"text": *request.SystemPrompt},
+				{"text": system},
 			},
 		}
 	}
@@ -225,10 +225,10 @@ func Stream(ctx context.Context, token, baseURL string, request *cif.CanonicalRe
 		"contents": contents,
 	}
 
-	if request.SystemPrompt != nil && *request.SystemPrompt != "" {
+	if system := cif.PlainSystemText(request.System); system != "" {
 		geminiReq["systemInstruction"] = map[string]interface{}{
 			"parts": []map[string]interface{}{
-				{"text": *request.SystemPrompt},
+				{"text": system},
 			},
 		}
 	}

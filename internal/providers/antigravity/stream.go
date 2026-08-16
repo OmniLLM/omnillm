@@ -48,8 +48,9 @@ func ParseAntigravitySSE(ctx context.Context, body io.ReadCloser, eventCh chan c
 					FinishReason string `json:"finishReason"`
 				} `json:"candidates"`
 				UsageMetadata struct {
-					PromptTokenCount     int `json:"promptTokenCount"`
-					CandidatesTokenCount int `json:"candidatesTokenCount"`
+					PromptTokenCount        int  `json:"promptTokenCount"`
+					CandidatesTokenCount    int  `json:"candidatesTokenCount"`
+					CachedContentTokenCount *int `json:"cachedContentTokenCount"`
 				} `json:"usageMetadata"`
 			} `json:"response"`
 		}
@@ -105,10 +106,7 @@ func ParseAntigravitySSE(ctx context.Context, body io.ReadCloser, eventCh chan c
 			eventCh <- cif.CIFStreamEnd{
 				Type:       "stream_end",
 				StopReason: StopReason(candidate.FinishReason),
-				Usage: &cif.CIFUsage{
-					InputTokens:  usage.PromptTokenCount,
-					OutputTokens: usage.CandidatesTokenCount,
-				},
+				Usage:      cif.UsageFromTotal(usage.PromptTokenCount, usage.CandidatesTokenCount, usage.CachedContentTokenCount),
 			}
 			return
 		}

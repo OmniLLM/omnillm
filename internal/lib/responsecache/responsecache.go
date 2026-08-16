@@ -97,7 +97,7 @@ func Key(req *cif.CanonicalRequest) string {
 	// A struct with a fixed field order gives a stable JSON encoding.
 	keyed := struct {
 		Model          string                 `json:"model"`
-		System         *string                `json:"system,omitempty"`
+		System         []cif.CIFSystemBlock   `json:"system,omitempty"`
 		Messages       []cif.CIFMessage       `json:"messages"`
 		Tools          []cif.CIFTool          `json:"tools,omitempty"`
 		ToolChoice     cif.CIFToolChoice      `json:"toolChoice,omitempty"`
@@ -108,7 +108,7 @@ func Key(req *cif.CanonicalRequest) string {
 		ResponseFormat map[string]interface{} `json:"responseFormat,omitempty"`
 	}{
 		Model:          req.Model,
-		System:         req.SystemPrompt,
+		System:         req.System,
 		Messages:       req.Messages,
 		Tools:          req.Tools,
 		ToolChoice:     req.ToolChoice,

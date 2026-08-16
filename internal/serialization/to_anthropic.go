@@ -30,9 +30,39 @@ type AnthropicContentBlock struct {
 	Input     map[string]interface{} `json:"input,omitempty"`
 }
 
+type AnthropicCacheCreation struct {
+	Ephemeral5mInputTokens int `json:"ephemeral_5m_input_tokens,omitempty"`
+	Ephemeral1hInputTokens int `json:"ephemeral_1h_input_tokens,omitempty"`
+}
+
 type AnthropicUsage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
+	InputTokens              int                     `json:"input_tokens"`
+	OutputTokens             int                     `json:"output_tokens"`
+	CacheCreationInputTokens *int                    `json:"cache_creation_input_tokens,omitempty"`
+	CacheReadInputTokens     *int                    `json:"cache_read_input_tokens,omitempty"`
+	CacheCreation            *AnthropicCacheCreation `json:"cache_creation,omitempty"`
+}
+
+func anthropicUsage(usage *cif.CIFUsage) *AnthropicUsage {
+	if usage == nil {
+		return nil
+	}
+	result := &AnthropicUsage{
+		InputTokens:              usage.AnthropicUncachedInput(),
+		OutputTokens:             usage.OutputTokens,
+		CacheCreationInputTokens: usage.CacheWriteInputTokens,
+		CacheReadInputTokens:     usage.CacheReadInputTokens,
+	}
+	if usage.CacheWrite5mInputTokens != nil || usage.CacheWrite1hInputTokens != nil {
+		result.CacheCreation = &AnthropicCacheCreation{}
+		if usage.CacheWrite5mInputTokens != nil {
+			result.CacheCreation.Ephemeral5mInputTokens = *usage.CacheWrite5mInputTokens
+		}
+		if usage.CacheWrite1hInputTokens != nil {
+			result.CacheCreation.Ephemeral1hInputTokens = *usage.CacheWrite1hInputTokens
+		}
+	}
+	return result
 }
 
 func SerializeToAnthropic(response *cif.CanonicalResponse) (*AnthropicResponse, error) {
@@ -84,10 +114,7 @@ func SerializeToAnthropicWithSuppression(response *cif.CanonicalResponse, suppre
 	}
 
 	if response.Usage != nil {
-		anthropicResp.Usage = &AnthropicUsage{
-			InputTokens:  response.Usage.InputTokens,
-			OutputTokens: response.Usage.OutputTokens,
-		}
+		anthropicResp.Usage = anthropicUsage(response.Usage)
 	}
 
 	log.Debug().
@@ -347,14 +374,18 @@ func ConvertCIFEventToAnthropicSSE(event cif.CIFStreamEvent, state *AnthropicStr
 			},
 		}
 		if e.Usage != nil {
+			usage := anthropicUsage(e.Usage)
 			messageDelta["usage"] = map[string]interface{}{
-				"output_tokens": e.Usage.OutputTokens,
+				"output_tokens": usage.OutputTokens,
 			}
-			if e.Usage.CacheWriteInputTokens != nil {
-				messageDelta["usage"].(map[string]interface{})["cache_creation_input_tokens"] = *e.Usage.CacheWriteInputTokens
+			if usage.CacheCreationInputTokens != nil {
+				messageDelta["usage"].(map[string]interface{})["cache_creation_input_tokens"] = *usage.CacheCreationInputTokens
 			}
-			if e.Usage.CacheReadInputTokens != nil {
-				messageDelta["usage"].(map[string]interface{})["cache_read_input_tokens"] = *e.Usage.CacheReadInputTokens
+			if usage.CacheReadInputTokens != nil {
+				messageDelta["usage"].(map[string]interface{})["cache_read_input_tokens"] = *usage.CacheReadInputTokens
+			}
+			if usage.CacheCreation != nil {
+				messageDelta["usage"].(map[string]interface{})["cache_creation"] = usage.CacheCreation
 			}
 		}
 		events = append(events, messageDelta)
