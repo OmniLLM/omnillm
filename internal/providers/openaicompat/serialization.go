@@ -22,6 +22,14 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+type PromptCacheMode string
+
+const (
+	PromptCacheDisabled        PromptCacheMode = "disabled"
+	PromptCacheOpenAINative    PromptCacheMode = "openai_native"
+	PromptCacheAnthropicInline PromptCacheMode = "anthropic_inline"
+)
+
 // Config carries per-provider knobs that affect how the request is built.
 type Config struct {
 	// DefaultTemperature / DefaultTopP are used when the caller omits sampling
@@ -31,6 +39,7 @@ type Config struct {
 
 	// IncludeUsageInStream requests per-chunk usage stats (stream_options).
 	IncludeUsageInStream bool
+	PromptCacheMode      PromptCacheMode
 
 	// Extras are additional top-level JSON fields merged into the request body
 	// (e.g. {"enable_thinking": true} for Qwen3).
@@ -41,7 +50,7 @@ type Config struct {
 // model must already be the remapped provider model ID.
 // stream controls whether stream=true is set.
 func BuildChatRequest(model string, request *cif.CanonicalRequest, stream bool, cfg Config) (*ChatRequest, error) {
-	messages, err := cifMessagesToOpenAI(request)
+	messages, err := cifMessagesToOpenAI(request, cfg.PromptCacheMode == PromptCacheAnthropicInline)
 	if err != nil {
 		return nil, err
 	}
@@ -88,6 +97,9 @@ func BuildChatRequest(model string, request *cif.CanonicalRequest, stream bool, 
 			if t.Description != nil {
 				tool.Function.Description = *t.Description
 			}
+			if cfg.PromptCacheMode == PromptCacheAnthropicInline {
+				tool.CacheControl = t.CacheControl
+			}
 			cr.Tools = append(cr.Tools, tool)
 		}
 	}
@@ -95,11 +107,33 @@ func BuildChatRequest(model string, request *cif.CanonicalRequest, stream bool, 
 		cr.ToolChoice = shared.ConvertCanonicalToolChoiceToOpenAI(request.ToolChoice)
 	}
 
+	if request.PromptCache != nil {
+		switch cfg.PromptCacheMode {
+		case PromptCacheOpenAINative:
+			cr.PromptCacheKey = request.PromptCache.Key
+			cr.PromptCacheRetention = request.PromptCache.Retention
+		case PromptCacheAnthropicInline:
+			if request.PromptCache.Automatic != nil {
+				if cr.Extras == nil {
+					cr.Extras = make(map[string]interface{})
+				}
+				cr.Extras["cache_control"] = request.PromptCache.Automatic
+			}
+		}
+	}
+
 	if stream && cfg.IncludeUsageInStream {
 		cr.StreamOptions = &StreamOptions{IncludeUsage: true}
 	}
 
-	cr.Extras = cfg.Extras
+	if cfg.Extras != nil {
+		if cr.Extras == nil {
+			cr.Extras = make(map[string]interface{}, len(cfg.Extras))
+		}
+		for key, value := range cfg.Extras {
+			cr.Extras[key] = value
+		}
+	}
 	return cr, nil
 }
 
@@ -140,34 +174,54 @@ func Marshal(cr *ChatRequest) ([]byte, error) {
 
 // ─── CIF → OpenAI messages ────────────────────────────────────────────────────
 
-func cifMessagesToOpenAI(request *cif.CanonicalRequest) ([]Message, error) {
+func cifMessagesToOpenAI(request *cif.CanonicalRequest, inlineCache bool) ([]Message, error) {
 	var msgs []Message
 
-	if request.SystemPrompt != nil && strings.TrimSpace(*request.SystemPrompt) != "" {
-		msgs = append(msgs, Message{Role: "system", Content: *request.SystemPrompt})
+	if inlineCache {
+		if len(request.System) > 0 {
+			parts := make([]ContentPart, 0, len(request.System))
+			for _, block := range request.System {
+				parts = append(parts, ContentPart{Type: "text", Text: block.Text, CacheControl: block.CacheControl})
+			}
+			msgs = append(msgs, Message{Role: "system", Content: parts})
+		}
+	} else if system := cif.PlainSystemText(request.System); strings.TrimSpace(system) != "" {
+		msgs = append(msgs, Message{Role: "system", Content: system})
 	}
 
 	for _, msg := range request.Messages {
 		switch m := msg.(type) {
 		case cif.CIFSystemMessage:
-			msgs = append(msgs, Message{Role: "system", Content: m.Content})
+			if inlineCache {
+				parts := make([]ContentPart, 0, len(m.Content))
+				for _, block := range m.Content {
+					parts = append(parts, ContentPart{Type: "text", Text: block.Text, CacheControl: block.CacheControl})
+				}
+				msgs = append(msgs, Message{Role: "system", Content: parts})
+			} else {
+				msgs = append(msgs, Message{Role: "system", Content: cif.PlainSystemText(m.Content)})
+			}
 		case cif.CIFUserMessage:
-			msgs = append(msgs, cifUserMsgs(m)...)
+			msgs = append(msgs, cifUserMsgs(m, inlineCache)...)
 		case cif.CIFAssistantMessage:
-			msgs = append(msgs, cifAssistantMsg(m))
+			msgs = append(msgs, cifAssistantMsg(m, inlineCache))
 		}
 	}
 	return msgs, nil
 }
 
-func cifUserMsgs(m cif.CIFUserMessage) []Message {
+func cifUserMsgs(m cif.CIFUserMessage, inlineCache bool) []Message {
 	var userParts []ContentPart
 	var toolMsgs []Message
 
 	for _, part := range m.Content {
 		switch p := part.(type) {
 		case cif.CIFTextPart:
-			userParts = append(userParts, ContentPart{Type: "text", Text: p.Text})
+			part := ContentPart{Type: "text", Text: p.Text}
+			if inlineCache {
+				part.CacheControl = p.CacheControl
+			}
+			userParts = append(userParts, part)
 		case cif.CIFImagePart:
 			var url string
 			if p.Data != nil {
@@ -175,27 +229,35 @@ func cifUserMsgs(m cif.CIFUserMessage) []Message {
 			} else if p.URL != nil {
 				url = *p.URL
 			}
-			userParts = append(userParts, ContentPart{
+			imagePart := ContentPart{
 				Type:     "image_url",
 				ImageURL: &ImageURL{URL: url},
-			})
+			}
+			if inlineCache {
+				imagePart.CacheControl = p.CacheControl
+			}
+			userParts = append(userParts, imagePart)
 		case cif.CIFToolResultPart:
 			content := p.Content
 			if p.IsError != nil && *p.IsError && content == "" {
 				content = "Error: tool call failed"
 			}
-			toolMsgs = append(toolMsgs, Message{
+			toolMessage := Message{
 				Role:       "tool",
 				Content:    content,
 				ToolCallID: p.ToolCallID,
-			})
+			}
+			if inlineCache {
+				toolMessage.CacheControl = p.CacheControl
+			}
+			toolMsgs = append(toolMsgs, toolMessage)
 		}
 	}
 
 	var result []Message
 	result = append(result, toolMsgs...)
 	if len(userParts) > 0 {
-		if len(userParts) == 1 && userParts[0].Type == "text" {
+		if !inlineCache && len(userParts) == 1 && userParts[0].Type == "text" {
 			result = append(result, Message{Role: "user", Content: userParts[0].Text})
 		} else {
 			result = append(result, Message{Role: "user", Content: userParts})
@@ -204,32 +266,44 @@ func cifUserMsgs(m cif.CIFUserMessage) []Message {
 	return result
 }
 
-func cifAssistantMsg(m cif.CIFAssistantMessage) Message {
+func cifAssistantMsg(m cif.CIFAssistantMessage, inlineCache bool) Message {
 	msg := Message{Role: "assistant"}
 	var textBuf strings.Builder
+	var contentParts []ContentPart
 	var toolCalls []ToolCall
 	var reasoningContent string
 
 	for _, part := range m.Content {
 		switch p := part.(type) {
 		case cif.CIFTextPart:
-			textBuf.WriteString(p.Text)
+			if inlineCache {
+				contentParts = append(contentParts, ContentPart{Type: "text", Text: p.Text, CacheControl: p.CacheControl})
+			} else {
+				textBuf.WriteString(p.Text)
+			}
 		case cif.CIFThinkingPart:
 			reasoningContent = p.Thinking
 		case cif.CIFToolCallPart:
 			args, _ := json.Marshal(p.ToolArguments)
-			toolCalls = append(toolCalls, ToolCall{
+			call := ToolCall{
 				ID:   p.ToolCallID,
 				Type: "function",
 				Function: FunctionCallSpec{
 					Name:      p.ToolName,
 					Arguments: string(args),
 				},
-			})
+			}
+			if inlineCache {
+				call.CacheControl = p.CacheControl
+			}
+			toolCalls = append(toolCalls, call)
 		}
 	}
 	if textBuf.Len() > 0 {
 		msg.Content = textBuf.String()
+	}
+	if len(contentParts) > 0 {
+		msg.Content = contentParts
 	}
 	if reasoningContent != "" {
 		msg.ReasoningContent = reasoningContent
@@ -243,6 +317,18 @@ func cifAssistantMsg(m cif.CIFAssistantMessage) Message {
 // ─── Response → CIF ──────────────────────────────────────────────────────────
 
 // ParseChatResponse converts a non-streaming ChatResponse to CIF.
+func usageToCIF(usage *Usage) *cif.CIFUsage {
+	if usage == nil {
+		return nil
+	}
+	var cached *int
+	if usage.PromptTokensDetails != nil {
+		value := usage.PromptTokensDetails.CachedTokens
+		cached = &value
+	}
+	return cif.UsageFromTotal(usage.PromptTokens, usage.CompletionTokens, cached)
+}
+
 func ParseChatResponse(resp *ChatResponse) *cif.CanonicalResponse {
 	result := &cif.CanonicalResponse{
 		ID:         resp.ID,
@@ -270,10 +356,12 @@ func ParseChatResponse(resp *ChatResponse) *cif.CanonicalResponse {
 		}
 	}
 	if resp.Usage != nil {
-		result.Usage = &cif.CIFUsage{
-			InputTokens:  resp.Usage.PromptTokens,
-			OutputTokens: resp.Usage.CompletionTokens,
+		var cached *int
+		if resp.Usage.PromptTokensDetails != nil {
+			cachedValue := resp.Usage.PromptTokensDetails.CachedTokens
+			cached = &cachedValue
 		}
+		result.Usage = cif.UsageFromTotal(resp.Usage.PromptTokens, resp.Usage.CompletionTokens, cached)
 	}
 	return result
 }
@@ -321,6 +409,19 @@ func ParseSSE(ctx context.Context, body io.ReadCloser, eventCh chan cif.CIFStrea
 	var thinkingBlockOpen bool
 	const thinkingIdx = -1 // placed before text/tool blocks
 
+	var pendingStop *cif.CIFStopReason
+	var pendingUsage *cif.CIFUsage
+
+	emitEnd := func() {
+		stopReason := cif.StopReasonEndTurn
+		if pendingStop != nil {
+			stopReason = *pendingStop
+		} else if len(toolCallsSeen) > 0 {
+			stopReason = cif.StopReasonToolUse
+		}
+		eventCh <- cif.CIFStreamEnd{Type: "stream_end", StopReason: stopReason, Usage: pendingUsage}
+	}
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "data: ") {
@@ -328,11 +429,7 @@ func ParseSSE(ctx context.Context, body io.ReadCloser, eventCh chan cif.CIFStrea
 		}
 		data := strings.TrimPrefix(line, "data: ")
 		if data == "[DONE]" {
-			stopReason := cif.StopReasonEndTurn
-			if len(toolCallsSeen) > 0 {
-				stopReason = cif.StopReasonToolUse
-			}
-			eventCh <- cif.CIFStreamEnd{Type: "stream_end", StopReason: stopReason}
+			emitEnd()
 			return
 		}
 
@@ -348,7 +445,7 @@ func ParseSSE(ctx context.Context, body io.ReadCloser, eventCh chan cif.CIFStrea
 		}
 
 		if len(chunk.Choices) == 0 {
-			// Usage-only trailing chunk (stream_options.include_usage).
+			pendingUsage = usageToCIF(chunk.Usage)
 			continue
 		}
 		choice := chunk.Choices[0]
@@ -358,15 +455,11 @@ func ParseSSE(ctx context.Context, body io.ReadCloser, eventCh chan cif.CIFStrea
 			if stopReason != cif.StopReasonToolUse && len(toolCallsSeen) > 0 {
 				stopReason = cif.StopReasonToolUse
 			}
-			var usage *cif.CIFUsage
+			pendingStop = &stopReason
 			if chunk.Usage != nil {
-				usage = &cif.CIFUsage{
-					InputTokens:  chunk.Usage.PromptTokens,
-					OutputTokens: chunk.Usage.CompletionTokens,
-				}
+				pendingUsage = usageToCIF(chunk.Usage)
 			}
-			eventCh <- cif.CIFStreamEnd{Type: "stream_end", StopReason: stopReason, Usage: usage}
-			return
+			continue
 		}
 
 		delta := choice.Delta

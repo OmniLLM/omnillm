@@ -36,6 +36,7 @@ func Stream(ctx context.Context, p *Provider, request *cif.CanonicalRequest) (<-
 // Codex backend rejects.
 func buildCodexPayload(model string, request *cif.CanonicalRequest) map[string]interface{} {
 	payload := openaicompat.BuildResponsesPayload(model, request, true, openaicompat.ResponsesConfig{
+		PromptCacheMode: openaicompat.PromptCacheOpenAINative,
 		Extras: map[string]interface{}{
 			// The Codex backend is stateless for our purposes and rejects
 			// stream:false, so pin both flags explicitly.

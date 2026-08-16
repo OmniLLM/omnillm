@@ -11,14 +11,49 @@ import (
 	"testing"
 )
 
+func TestBuildChatRequest_PromptCacheModes(t *testing.T) {
+	key, retention := "session-a", "24h"
+	ttl := cif.CIFCacheTTL1h
+	control := &cif.CIFCacheControl{Type: "ephemeral", TTL: &ttl}
+	request := &cif.CanonicalRequest{
+		Model:       "gpt-5",
+		System:      []cif.CIFSystemBlock{{Type: "text", Text: "stable", CacheControl: control}},
+		Messages:    []cif.CIFMessage{cif.CIFUserMessage{Role: "user", Content: []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: "question"}}}},
+		PromptCache: &cif.CIFPromptCacheRequest{Automatic: control, Key: &key, Retention: &retention},
+	}
+
+	native, err := BuildChatRequest("gpt-5", request, false, Config{PromptCacheMode: PromptCacheOpenAINative})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if native.PromptCacheKey == nil || *native.PromptCacheKey != key || native.PromptCacheRetention == nil || *native.PromptCacheRetention != retention {
+		t.Fatalf("native controls changed: %#v", native)
+	}
+	if native.Messages[0].CacheControl != nil {
+		t.Fatalf("native mode leaked inline marker: %#v", native.Messages)
+	}
+
+	inline, err := BuildChatRequest("compatible", request, false, Config{PromptCacheMode: PromptCacheAnthropicInline})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts, ok := inline.Messages[0].Content.([]ContentPart)
+	if !ok || len(parts) != 1 || parts[0].CacheControl == nil || parts[0].CacheControl.TTL == nil || *parts[0].CacheControl.TTL != cif.CIFCacheTTL1h {
+		t.Fatalf("inline system marker changed: %#v", inline.Messages[0])
+	}
+	if inline.Extras["cache_control"] == nil {
+		t.Fatalf("automatic control missing: %#v", inline.Extras)
+	}
+}
+
 func TestBuildChatRequest_AppliesDefaultsToolsAndSystemPrompt(t *testing.T) {
 	defaultTemp := 0.3
 	defaultTopP := 0.9
 	maxTokens := 64
 	userID := "  " + strings.Repeat("u", 80) + "  "
 	request := &cif.CanonicalRequest{
-		Model:        "gpt-4o",
-		SystemPrompt: stringPtr("Be terse."),
+		Model:  "gpt-4o",
+		System: cif.SystemBlocksFromText("Be terse."),
 		Messages: []cif.CIFMessage{
 			cif.CIFUserMessage{Role: "user", Content: []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: "Hello"}}},
 		},
@@ -155,6 +190,26 @@ func TestExecute_ParsesChatResponse(t *testing.T) {
 	}
 	if len(resp.Content) != 1 {
 		t.Fatalf("unexpected content: %#v", resp.Content)
+	}
+}
+
+func TestParseSSEPreservesTrailingCacheUsage(t *testing.T) {
+	stream := strings.Join([]string{
+		`data: {"id":"chat_stream","model":"gpt-5","choices":[{"delta":{"content":"ok"},"finish_reason":""}]}`,
+		`data: {"id":"chat_stream","model":"gpt-5","choices":[{"delta":{},"finish_reason":"stop"}]}`,
+		`data: {"id":"chat_stream","model":"gpt-5","choices":[],"usage":{"prompt_tokens":100,"completion_tokens":2,"prompt_tokens_details":{"cached_tokens":80}}}`,
+		`data: [DONE]`,
+	}, "\n")
+	events := make(chan cif.CIFStreamEvent, 8)
+	go ParseSSE(context.Background(), io.NopCloser(strings.NewReader(stream)), events)
+	var end cif.CIFStreamEnd
+	for event := range events {
+		if typed, ok := event.(cif.CIFStreamEnd); ok {
+			end = typed
+		}
+	}
+	if end.Usage == nil || end.Usage.CacheReadInputTokens == nil || *end.Usage.CacheReadInputTokens != 80 || end.Usage.InputTokens != 100 {
+		t.Fatalf("stream cache usage lost: %#v", end.Usage)
 	}
 }
 

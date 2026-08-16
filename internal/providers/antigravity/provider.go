@@ -73,10 +73,10 @@ func Stream(ctx context.Context, token, baseURL, projectID string, request *cif.
 		"contents":  contents,
 	}
 
-	if request.SystemPrompt != nil && *request.SystemPrompt != "" {
+	if system := cif.PlainSystemText(request.System); system != "" {
 		geminiReq["systemInstruction"] = map[string]interface{}{
 			"parts": []map[string]interface{}{
-				{"text": *request.SystemPrompt},
+				{"text": system},
 			},
 		}
 	}
@@ -85,7 +85,7 @@ func Stream(ctx context.Context, token, baseURL, projectID string, request *cif.
 		decls := make([]map[string]interface{}, 0, len(request.Tools))
 		for _, tool := range request.Tools {
 			decl := map[string]interface{}{
-				"name":       tool.Name,
+				"name": tool.Name,
 			}
 			if params := shared.SanitizeGeminiSchema(tool.ParametersSchema); params != nil {
 				decl["parameters"] = params

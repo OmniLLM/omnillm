@@ -50,9 +50,14 @@ type copilotResponsesContentBlock struct {
 	Text string `json:"text,omitempty"`
 }
 
+type copilotResponsesInputTokensDetails struct {
+	CachedTokens int `json:"cached_tokens"`
+}
+
 type copilotResponsesUsage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
+	InputTokens        int                                 `json:"input_tokens"`
+	OutputTokens       int                                 `json:"output_tokens"`
+	InputTokensDetails *copilotResponsesInputTokensDetails `json:"input_tokens_details,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -72,8 +77,8 @@ func (a *CopilotAdapter) buildResponsesPayload(request *cif.CanonicalRequest, st
 		"stream": stream,
 	}
 
-	if request.SystemPrompt != nil && strings.TrimSpace(*request.SystemPrompt) != "" {
-		payload["instructions"] = *request.SystemPrompt
+	if system := cif.PlainSystemText(request.System); strings.TrimSpace(system) != "" {
+		payload["instructions"] = system
 	}
 
 	if !shared.IsReasoningModel(model) {
@@ -174,7 +179,7 @@ func cifMessagesToResponsesInput(request *cif.CanonicalRequest) []map[string]any
 				"type": "message",
 				"role": "system",
 				"content": []map[string]any{
-					{"type": "input_text", "text": m.Content},
+					{"type": "input_text", "text": cif.PlainSystemText(m.Content)},
 				},
 			})
 		case cif.CIFUserMessage:
@@ -398,10 +403,12 @@ func responsesUsageToCIF(usage *copilotResponsesUsage) *cif.CIFUsage {
 	if usage == nil {
 		return nil
 	}
-	return &cif.CIFUsage{
-		InputTokens:  usage.InputTokens,
-		OutputTokens: usage.OutputTokens,
+	var cached *int
+	if usage.InputTokensDetails != nil {
+		value := usage.InputTokensDetails.CachedTokens
+		cached = &value
 	}
+	return cif.UsageFromTotal(usage.InputTokens, usage.OutputTokens, cached)
 }
 
 // ---------------------------------------------------------------------------

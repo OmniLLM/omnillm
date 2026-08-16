@@ -120,6 +120,11 @@ func (p *Provider) ensureConfig() {
 	p.applyConfig(cfg)
 }
 
+func (p *Provider) ApplyConfig(config map[string]interface{}) {
+	p.applyConfig(config)
+	p.configLoaded = true
+}
+
 func (p *Provider) applyConfig(cfg map[string]interface{}) {
 	if p.config == nil {
 		p.config = make(map[string]interface{}, len(cfg))
@@ -191,6 +196,11 @@ type Adapter struct {
 const (
 	openAICompatChatCompletionsAPI = "chat.completions"
 	openAICompatResponsesAPI       = "responses"
+
+	PromptCacheModeAuto            = "auto"
+	PromptCacheModeDisabled        = "disabled"
+	PromptCacheModeOpenAINative    = "openai_native"
+	PromptCacheModeAnthropicInline = "anthropic_inline"
 )
 
 func (a *Adapter) GetProvider() types.Provider { return a.provider }
@@ -255,12 +265,13 @@ func (a *Adapter) shouldBufferAnthropicStreaming(request *cif.CanonicalRequest) 
 }
 
 func (a *Adapter) responsesConfig(_ *cif.CanonicalRequest) openaicompat.ResponsesConfig {
-	return openaicompat.ResponsesConfig{}
+	return openaicompat.ResponsesConfig{PromptCacheMode: a.promptCacheMode()}
 }
 
 func (a *Adapter) chatCompletionsConfig(_ *cif.CanonicalRequest, stream bool) openaicompat.Config {
 	return openaicompat.Config{
 		IncludeUsageInStream: stream,
+		PromptCacheMode:      a.promptCacheMode(),
 	}
 }
 
@@ -302,6 +313,25 @@ func (a *Adapter) configuredAPIFormat() string {
 		return normalizeOpenAICompatibleAPIFormat(raw)
 	}
 	return ""
+}
+
+func (a *Adapter) promptCacheMode() openaicompat.PromptCacheMode {
+	mode := PromptCacheModeAuto
+	if a.provider.config != nil {
+		if raw, ok := a.provider.config["prompt_cache_mode"].(string); ok {
+			if normalized := normalizePromptCacheMode(raw); normalized != "" {
+				mode = normalized
+			}
+		}
+	}
+	if mode == PromptCacheModeAuto {
+		if isOfficialOpenAIBaseURL(a.provider.baseURL) {
+			mode = PromptCacheModeOpenAINative
+		} else {
+			mode = PromptCacheModeDisabled
+		}
+	}
+	return openaicompat.PromptCacheMode(mode)
 }
 
 func (a *Adapter) inboundAPIShape(request *cif.CanonicalRequest) string {
@@ -382,6 +412,13 @@ func SetupProviderAuth(instanceID string, options *types.AuthOptions) (token, ba
 	if isDashScopeBaseURL(endpoint) {
 		return "", "", "", nil, fmt.Errorf("openai-compatible: DashScope endpoints must use the Alibaba provider")
 	}
+	promptCacheMode := normalizePromptCacheMode(options.PromptCacheMode)
+	if options.PromptCacheMode != "" && promptCacheMode == "" {
+		return "", "", "", nil, fmt.Errorf("openai-compatible: invalid prompt cache mode %q", options.PromptCacheMode)
+	}
+	if promptCacheMode == PromptCacheModeAnthropicInline && isOfficialOpenAIBaseURL(endpoint) {
+		return "", "", "", nil, fmt.Errorf("openai-compatible: anthropic_inline prompt cache mode is not valid for api.openai.com")
+	}
 
 	apiKey := strings.TrimSpace(options.APIKey)
 
@@ -403,6 +440,9 @@ func SetupProviderAuth(instanceID string, options *types.AuthOptions) (token, ba
 	}
 	if apiFormat := normalizeOpenAICompatibleAPIFormat(options.APIFormat); apiFormat != "" {
 		config["api_format"] = apiFormat
+	}
+	if promptCacheMode != "" {
+		config["prompt_cache_mode"] = promptCacheMode
 	}
 
 	// Parse and persist any pre-configured model IDs.
@@ -492,6 +532,21 @@ func isOfficialOpenAIBaseURL(rawURL string) bool {
 		return false
 	}
 	return strings.EqualFold(u.Hostname(), "api.openai.com")
+}
+
+func normalizePromptCacheMode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case PromptCacheModeAuto:
+		return PromptCacheModeAuto
+	case PromptCacheModeDisabled:
+		return PromptCacheModeDisabled
+	case PromptCacheModeOpenAINative:
+		return PromptCacheModeOpenAINative
+	case PromptCacheModeAnthropicInline:
+		return PromptCacheModeAnthropicInline
+	default:
+		return ""
+	}
 }
 
 func normalizeOpenAICompatibleAPIFormat(raw string) string {

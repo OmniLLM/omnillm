@@ -5,28 +5,44 @@ package cif
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 )
 
 // ─────────────────────────────────────────────────────────
 // Canonical content part types
 // ─────────────────────────────────────────────────────────
 
+type CIFCacheTTL string
+
+const (
+	CIFCacheTTL5m CIFCacheTTL = "5m"
+	CIFCacheTTL1h CIFCacheTTL = "1h"
+)
+
+type CIFCacheControl struct {
+	Type string       `json:"type"`
+	TTL  *CIFCacheTTL `json:"ttl,omitempty"`
+}
+
 type CIFTextPart struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type         string           `json:"type"`
+	Text         string           `json:"text"`
+	CacheControl *CIFCacheControl `json:"cacheControl,omitempty"`
 }
 
 type CIFImagePart struct {
-	Type      string  `json:"type"`
-	MediaType string  `json:"mediaType"`
-	Data      *string `json:"data,omitempty"` // base64 encoded bytes
-	URL       *string `json:"url,omitempty"`  // data: URI or https URL
+	Type         string           `json:"type"`
+	MediaType    string           `json:"mediaType"`
+	Data         *string          `json:"data,omitempty"` // base64 encoded bytes
+	URL          *string          `json:"url,omitempty"`  // data: URI or https URL
+	CacheControl *CIFCacheControl `json:"cacheControl,omitempty"`
 }
 
 type CIFThinkingPart struct {
-	Type      string  `json:"type"`
-	Thinking  string  `json:"thinking"`
-	Signature *string `json:"signature,omitempty"` // Antigravity thoughtSignature
+	Type         string           `json:"type"`
+	Thinking     string           `json:"thinking"`
+	Signature    *string          `json:"signature,omitempty"` // Antigravity thoughtSignature
+	CacheControl *CIFCacheControl `json:"cacheControl,omitempty"`
 }
 
 type CIFToolKind string
@@ -41,16 +57,18 @@ type CIFToolCallPart struct {
 	ToolKind      CIFToolKind            `json:"toolKind,omitempty"`
 	RawInput      *string                `json:"rawInput,omitempty"`
 	Namespace     string                 `json:"namespace,omitempty"`
+	CacheControl  *CIFCacheControl       `json:"cacheControl,omitempty"`
 }
 
 type CIFToolResultPart struct {
-	Type         string      `json:"type"`
-	ToolCallID   string      `json:"toolCallId"`
-	ToolName     string      `json:"toolName"` // name is needed by Antigravity functionResponse
-	Content      string      `json:"content"`  // serialized result text
-	IsError      *bool       `json:"isError,omitempty"`
-	ToolKind     CIFToolKind `json:"toolKind,omitempty"`
-	CustomOutput interface{} `json:"customOutput,omitempty"`
+	Type         string           `json:"type"`
+	ToolCallID   string           `json:"toolCallId"`
+	ToolName     string           `json:"toolName"` // name is needed by Antigravity functionResponse
+	Content      string           `json:"content"`  // serialized result text
+	IsError      *bool            `json:"isError,omitempty"`
+	ToolKind     CIFToolKind      `json:"toolKind,omitempty"`
+	CustomOutput interface{}      `json:"customOutput,omitempty"`
+	CacheControl *CIFCacheControl `json:"cacheControl,omitempty"`
 }
 
 type CIFContentPart interface {
@@ -67,9 +85,15 @@ func (p CIFToolResultPart) GetType() string { return "tool_result" }
 // Canonical message types
 // ─────────────────────────────────────────────────────────
 
+type CIFSystemBlock struct {
+	Type         string           `json:"type"`
+	Text         string           `json:"text"`
+	CacheControl *CIFCacheControl `json:"cacheControl,omitempty"`
+}
+
 type CIFSystemMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"` // always plain text; multiple system blocks are joined
+	Role    string           `json:"role"`
+	Content []CIFSystemBlock `json:"content"`
 }
 
 type CIFUserMessage struct {
@@ -90,6 +114,25 @@ func (m CIFSystemMessage) GetRole() string    { return "system" }
 func (m CIFUserMessage) GetRole() string      { return "user" }
 func (m CIFAssistantMessage) GetRole() string { return "assistant" }
 
+// PlainSystemText renders system blocks for providers that accept only one
+// plain string. The ordered block representation remains authoritative.
+func PlainSystemText(blocks []CIFSystemBlock) string {
+	texts := make([]string, 0, len(blocks))
+	for _, block := range blocks {
+		if block.Text != "" {
+			texts = append(texts, block.Text)
+		}
+	}
+	return strings.Join(texts, "\n\n")
+}
+
+func SystemBlocksFromText(text string) []CIFSystemBlock {
+	if text == "" {
+		return nil
+	}
+	return []CIFSystemBlock{{Type: "text", Text: text}}
+}
+
 // ─────────────────────────────────────────────────────────
 // Canonical tool definition
 // ─────────────────────────────────────────────────────────
@@ -100,11 +143,18 @@ type CIFTool struct {
 	ParametersSchema map[string]interface{} `json:"parametersSchema"` // JSON Schema object
 	ToolKind         CIFToolKind            `json:"toolKind,omitempty"`
 	Format           interface{}            `json:"format,omitempty"`
+	CacheControl     *CIFCacheControl       `json:"cacheControl,omitempty"`
 }
 
 type CIFToolChoice interface{}
 
 // Can be "none", "auto", "required", or {"type": "function", "functionName": "..."}
+
+type CIFPromptCacheRequest struct {
+	Automatic *CIFCacheControl `json:"automatic,omitempty"`
+	Key       *string          `json:"key,omitempty"`
+	Retention *string          `json:"retention,omitempty"`
+}
 
 // ─────────────────────────────────────────────────────────
 // Canonical request
@@ -114,8 +164,8 @@ type CanonicalRequest struct {
 	// Model name exactly as the caller specified it, before any provider remapping
 	Model string `json:"model"`
 
-	// System prompt, if any. Placed before messages.
-	SystemPrompt *string `json:"systemPrompt,omitempty"`
+	// Ordered system blocks, placed before messages.
+	System []CIFSystemBlock `json:"system,omitempty"`
 
 	// Ordered conversation history
 	Messages []CIFMessage `json:"messages"`
@@ -146,6 +196,9 @@ type CanonicalRequest struct {
 	// ID of a previous Responses API response; enables server-side multi-turn
 	// chaining without the caller re-sending context.
 	PreviousResponseID *string `json:"previousResponseId,omitempty"`
+
+	// Provider prompt-cache controls. These are separate from the response cache.
+	PromptCache *CIFPromptCacheRequest `json:"promptCache,omitempty"`
 
 	// Extended / provider-specific hints (type-safe escape hatch)
 	Extensions *Extensions `json:"extensions,omitempty"`
@@ -182,10 +235,13 @@ const (
 )
 
 type CIFUsage struct {
-	InputTokens           int  `json:"inputTokens"`
-	OutputTokens          int  `json:"outputTokens"`
-	CacheReadInputTokens  *int `json:"cacheReadInputTokens,omitempty"`
-	CacheWriteInputTokens *int `json:"cacheWriteInputTokens,omitempty"`
+	InputTokens             int  `json:"inputTokens"`
+	OutputTokens            int  `json:"outputTokens"`
+	UncachedInputTokens     *int `json:"uncachedInputTokens,omitempty"`
+	CacheReadInputTokens    *int `json:"cacheReadInputTokens,omitempty"`
+	CacheWriteInputTokens   *int `json:"cacheWriteInputTokens,omitempty"`
+	CacheWrite5mInputTokens *int `json:"cacheWrite5mInputTokens,omitempty"`
+	CacheWrite1hInputTokens *int `json:"cacheWrite1hInputTokens,omitempty"`
 }
 
 type CanonicalResponse struct {
@@ -300,6 +356,7 @@ type ContentPartJSON struct {
 	Content       string                 `json:"content,omitempty"`
 	IsError       *bool                  `json:"isError,omitempty"`
 	CustomOutput  interface{}            `json:"customOutput,omitempty"`
+	CacheControl  *CIFCacheControl       `json:"cacheControl,omitempty"`
 }
 
 // Custom JSON marshaling for content parts
@@ -307,21 +364,24 @@ func MarshalCIFContentPart(p CIFContentPart) ([]byte, error) {
 	switch part := p.(type) {
 	case CIFTextPart:
 		return json.Marshal(ContentPartJSON{
-			Type: "text",
-			Text: part.Text,
+			Type:         "text",
+			Text:         part.Text,
+			CacheControl: part.CacheControl,
 		})
 	case CIFImagePart:
 		return json.Marshal(ContentPartJSON{
-			Type:      "image",
-			MediaType: part.MediaType,
-			Data:      part.Data,
-			URL:       part.URL,
+			Type:         "image",
+			MediaType:    part.MediaType,
+			Data:         part.Data,
+			URL:          part.URL,
+			CacheControl: part.CacheControl,
 		})
 	case CIFThinkingPart:
 		return json.Marshal(ContentPartJSON{
-			Type:      "thinking",
-			Thinking:  part.Thinking,
-			Signature: part.Signature,
+			Type:         "thinking",
+			Thinking:     part.Thinking,
+			Signature:    part.Signature,
+			CacheControl: part.CacheControl,
 		})
 	case CIFToolCallPart:
 		return json.Marshal(ContentPartJSON{
@@ -332,6 +392,7 @@ func MarshalCIFContentPart(p CIFContentPart) ([]byte, error) {
 			ToolKind:      part.ToolKind,
 			RawInput:      part.RawInput,
 			Namespace:     part.Namespace,
+			CacheControl:  part.CacheControl,
 		})
 	case CIFToolResultPart:
 		return json.Marshal(ContentPartJSON{
@@ -342,6 +403,7 @@ func MarshalCIFContentPart(p CIFContentPart) ([]byte, error) {
 			IsError:      part.IsError,
 			ToolKind:     part.ToolKind,
 			CustomOutput: part.CustomOutput,
+			CacheControl: part.CacheControl,
 		})
 	default:
 		return nil, errors.New("unknown content part type")

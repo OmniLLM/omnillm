@@ -62,7 +62,7 @@ func handleResponses(c *gin.Context) {
 
 	// Resolve providers using the same ordered attempt pipeline as the other
 	// generation dialects so provider pinning and failover remain intact.
-	attempts := resolveRequestedModels(requestIDStr, canonicalRequest.Model)
+	attempts := resolveRequestedModelsForRequest(requestIDStr, canonicalRequest.Model, canonicalRequest)
 	executor := providerdispatch.NewExecutor(providerdispatch.ApplyGitHubCopilotSingleUpstreamMode, providerdispatch.DefaultUpstreamAPI)
 	resolveFailed := false
 	lastErr := executor.TryAttempts(

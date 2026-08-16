@@ -58,10 +58,10 @@ func copilotModelUsesMaxCompletionTokens(model string) bool {
 func (a *CopilotAdapter) convertCIFToOpenAI(request *cif.CanonicalRequest, toolNameMapper *copilotToolNameMapper) map[string]interface{} {
 	convertedMessages := a.convertCIFMessagesToOpenAI(request.Messages, toolNameMapper)
 	messages := make([]map[string]interface{}, 0, len(convertedMessages)+1)
-	if request.SystemPrompt != nil && strings.TrimSpace(*request.SystemPrompt) != "" {
+	if system := cif.PlainSystemText(request.System); strings.TrimSpace(system) != "" {
 		messages = append(messages, map[string]interface{}{
 			"role":    "system",
-			"content": *request.SystemPrompt,
+			"content": system,
 		})
 	}
 	messages = append(messages, convertedMessages...)
@@ -142,7 +142,7 @@ func (a *CopilotAdapter) convertCIFMessagesToOpenAI(messages []cif.CIFMessage, t
 		case cif.CIFSystemMessage:
 			openaiMessages = append(openaiMessages, map[string]interface{}{
 				"role":    "system",
-				"content": m.Content,
+				"content": cif.PlainSystemText(m.Content),
 			})
 
 		case cif.CIFUserMessage:
@@ -280,10 +280,14 @@ func (a *CopilotAdapter) convertOpenAIToCIF(openaiResp map[string]interface{}, t
 	if usage, ok := openaiResp["usage"].(map[string]interface{}); ok {
 		if promptTokens, ok := usage["prompt_tokens"].(float64); ok {
 			if completionTokens, ok := usage["completion_tokens"].(float64); ok {
-				response.Usage = &cif.CIFUsage{
-					InputTokens:  int(promptTokens),
-					OutputTokens: int(completionTokens),
+				var cached *int
+				if details, ok := usage["prompt_tokens_details"].(map[string]interface{}); ok {
+					if cachedTokens, ok := details["cached_tokens"].(float64); ok {
+						value := int(cachedTokens)
+						cached = &value
+					}
 				}
+				response.Usage = cif.UsageFromTotal(int(promptTokens), int(completionTokens), cached)
 			}
 		}
 	}

@@ -53,16 +53,18 @@ type OpenAIToolFunction struct {
 }
 
 type OpenAIChatCompletionRequest struct {
-	Model       string          `json:"model"`
-	Messages    []OpenAIMessage `json:"messages"`
-	Tools       []OpenAITool    `json:"tools,omitempty"`
-	ToolChoice  interface{}     `json:"tool_choice,omitempty"`
-	Temperature *float64        `json:"temperature,omitempty"`
-	TopP        *float64        `json:"top_p,omitempty"`
-	MaxTokens   *int            `json:"max_tokens,omitempty"`
-	Stop        interface{}     `json:"stop,omitempty"`
-	Stream      *bool           `json:"stream,omitempty"`
-	User        string          `json:"user,omitempty"`
+	Model                string          `json:"model"`
+	Messages             []OpenAIMessage `json:"messages"`
+	Tools                []OpenAITool    `json:"tools,omitempty"`
+	ToolChoice           interface{}     `json:"tool_choice,omitempty"`
+	Temperature          *float64        `json:"temperature,omitempty"`
+	TopP                 *float64        `json:"top_p,omitempty"`
+	MaxTokens            *int            `json:"max_tokens,omitempty"`
+	Stop                 interface{}     `json:"stop,omitempty"`
+	Stream               *bool           `json:"stream,omitempty"`
+	User                 string          `json:"user,omitempty"`
+	PromptCacheKey       *string         `json:"prompt_cache_key,omitempty"`
+	PromptCacheRetention *string         `json:"prompt_cache_retention,omitempty"`
 }
 
 // ParseOpenAIChatCompletions converts OpenAI chat completions format to CIF
@@ -83,6 +85,12 @@ func ParseOpenAIChatCompletions(raw json.RawMessage) (*cif.CanonicalRequest, err
 	if req.User != "" {
 		canonical.UserID = &req.User
 	}
+	if req.PromptCacheKey != nil || req.PromptCacheRetention != nil {
+		canonical.PromptCache = &cif.CIFPromptCacheRequest{
+			Key:       req.PromptCacheKey,
+			Retention: req.PromptCacheRetention,
+		}
+	}
 
 	if req.Stop != nil {
 		switch stop := req.Stop.(type) {
@@ -97,12 +105,12 @@ func ParseOpenAIChatCompletions(raw json.RawMessage) (*cif.CanonicalRequest, err
 		}
 	}
 
-	var systemParts []string
+	var systemBlocks []cif.CIFSystemBlock
 	var toolCallNamesByID = make(map[string]string)
 	for _, msg := range req.Messages {
 		if msg.Role == "system" || msg.Role == "developer" {
 			if text := extractOpenAIMessageText(msg.Content); text != "" {
-				systemParts = append(systemParts, text)
+				systemBlocks = append(systemBlocks, cif.CIFSystemBlock{Type: "text", Text: text})
 			}
 			continue
 		}
@@ -112,10 +120,7 @@ func ParseOpenAIChatCompletions(raw json.RawMessage) (*cif.CanonicalRequest, err
 		}
 		canonical.Messages = append(canonical.Messages, cifMsg)
 	}
-	if len(systemParts) > 0 {
-		systemPrompt := strings.Join(systemParts, "\n\n")
-		canonical.SystemPrompt = &systemPrompt
-	}
+	canonical.System = systemBlocks
 
 	if len(req.Tools) > 0 {
 		for _, tool := range req.Tools {
@@ -313,7 +318,6 @@ func inferOpenAIImageMediaType(url string) string {
 	}
 	return mediaType
 }
-
 
 func extractOpenAIMessageText(content interface{}) string {
 	switch value := content.(type) {

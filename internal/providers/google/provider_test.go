@@ -255,7 +255,7 @@ func TestBuildPayloadSystemInstruction(t *testing.T) {
 				cif.CIFTextPart{Type: "text", Text: "Hello"},
 			}},
 		},
-		SystemPrompt: ptr("You are helpful."),
+		System: cif.SystemBlocksFromText("You are helpful."),
 	}
 	payload := BuildPayload("gemini-2.5-flash", request)
 

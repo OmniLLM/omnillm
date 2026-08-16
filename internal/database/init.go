@@ -219,8 +219,13 @@ func (db *Database) createTables() error {
 			provider_id   TEXT    NOT NULL DEFAULT '',
 			client        TEXT    NOT NULL DEFAULT 'unknown',
 			api_shape     TEXT    NOT NULL DEFAULT 'openai',
-			input_tokens  INTEGER NOT NULL DEFAULT 0,
-			output_tokens INTEGER NOT NULL DEFAULT 0,
+			input_tokens          INTEGER NOT NULL DEFAULT 0,
+			uncached_input_tokens INTEGER,
+			cache_read_input_tokens INTEGER,
+			cache_write_input_tokens INTEGER,
+			cache_write_5m_input_tokens INTEGER,
+			cache_write_1h_input_tokens INTEGER,
+			output_tokens         INTEGER NOT NULL DEFAULT 0,
 			total_tokens  INTEGER NOT NULL DEFAULT 0,
 			latency_ms    INTEGER NOT NULL DEFAULT 0,
 			is_stream     INTEGER NOT NULL DEFAULT 0,
@@ -407,6 +412,14 @@ var migrations = []migration{
 		last_hit_at  DATETIME
 	)`,
 		`CREATE INDEX IF NOT EXISTS idx_response_cache_created_at ON response_cache (created_at)`}},
+	// v16: preserve provider prompt-cache metering detail.
+	{16, []string{
+		`ALTER TABLE request_logs ADD COLUMN uncached_input_tokens INTEGER`,
+		`ALTER TABLE request_logs ADD COLUMN cache_read_input_tokens INTEGER`,
+		`ALTER TABLE request_logs ADD COLUMN cache_write_input_tokens INTEGER`,
+		`ALTER TABLE request_logs ADD COLUMN cache_write_5m_input_tokens INTEGER`,
+		`ALTER TABLE request_logs ADD COLUMN cache_write_1h_input_tokens INTEGER`,
+	}},
 }
 
 // applyMigrations runs any migrations that have not yet been applied.

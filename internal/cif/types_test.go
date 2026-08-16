@@ -46,7 +46,7 @@ func TestCIFToolResultPart_GetType(t *testing.T) {
 // ─── Message GetRole ───
 
 func TestCIFSystemMessage_GetRole(t *testing.T) {
-	m := CIFSystemMessage{Role: "system", Content: "You are helpful."}
+	m := CIFSystemMessage{Role: "system", Content: SystemBlocksFromText("You are helpful.")}
 	if m.GetRole() != "system" {
 		t.Errorf("expected 'system', got %q", m.GetRole())
 	}
@@ -239,7 +239,7 @@ func TestCanonicalRequest_Fields(t *testing.T) {
 		MaxTokens:   &maxTok,
 		Stream:      true,
 		Messages: []CIFMessage{
-			CIFSystemMessage{Role: "system", Content: "Be helpful"},
+			CIFSystemMessage{Role: "system", Content: SystemBlocksFromText("Be helpful")},
 			CIFUserMessage{Role: "user", Content: []CIFContentPart{
 				CIFTextPart{Type: "text", Text: "Hello"},
 			}},
@@ -256,6 +256,75 @@ func TestCanonicalRequest_Fields(t *testing.T) {
 	}
 	if req.Messages[1].GetRole() != "user" {
 		t.Errorf("second message should be user")
+	}
+}
+
+func TestPromptCacheValidationAndUsage(t *testing.T) {
+	ttl := CIFCacheTTL1h
+	control := &CIFCacheControl{Type: "ephemeral", TTL: &ttl}
+	req := &CanonicalRequest{
+		Model:  "claude-opus-5",
+		System: []CIFSystemBlock{{Type: "text", Text: "stable", CacheControl: control}},
+		Messages: []CIFMessage{
+			CIFUserMessage{Role: "user", Content: []CIFContentPart{CIFTextPart{Type: "text", Text: "varying"}}},
+		},
+	}
+	if err := ValidatePromptCache(req); err != nil {
+		t.Fatalf("valid prompt cache rejected: %v", err)
+	}
+
+	read := 40
+	usage := UsageFromTotal(100, 5, &read)
+	if usage.UncachedInputTokens == nil || *usage.UncachedInputTokens != 60 || usage.AnthropicUncachedInput() != 60 {
+		t.Fatalf("unexpected total usage normalization: %#v", usage)
+	}
+
+	write5m, write1h := 20, 10
+	exclusive, err := UsageFromExclusiveBuckets(30, 40, 30, 5, &write5m, &write1h)
+	if err != nil {
+		t.Fatalf("exclusive usage: %v", err)
+	}
+	if exclusive.InputTokens != 100 || exclusive.AnthropicUncachedInput() != 30 {
+		t.Fatalf("unexpected exclusive usage: %#v", exclusive)
+	}
+}
+
+func TestUsageFromTotalIgnoresInvalidCachedSubset(t *testing.T) {
+	for _, cached := range []int{-1, 101} {
+		usage := UsageFromTotal(100, 5, &cached)
+		if usage.CacheReadInputTokens != nil || usage.UncachedInputTokens != nil {
+			t.Fatalf("invalid cached subset was retained: %#v", usage)
+		}
+	}
+}
+
+func TestPromptCacheRejectsFifthBreakpoint(t *testing.T) {
+	control := &CIFCacheControl{Type: "ephemeral"}
+	req := &CanonicalRequest{Model: "claude-opus-5"}
+	for i := 0; i < MaxPromptCacheBreakpoints+1; i++ {
+		req.System = append(req.System, CIFSystemBlock{Type: "text", Text: "x", CacheControl: control})
+	}
+	if err := ValidatePromptCache(req); err == nil {
+		t.Fatal("expected fifth breakpoint to fail validation")
+	}
+}
+
+func TestMarshalCIFContentPartPreservesCacheControl(t *testing.T) {
+	ttl := CIFCacheTTL5m
+	encoded, err := MarshalCIFContentPart(CIFTextPart{
+		Type: "text", Text: "stable",
+		CacheControl: &CIFCacheControl{Type: "ephemeral", TTL: &ttl},
+	})
+	if err != nil {
+		t.Fatalf("marshal cache control: %v", err)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(encoded, &payload); err != nil {
+		t.Fatalf("decode cache control: %v", err)
+	}
+	cache, ok := payload["cacheControl"].(map[string]interface{})
+	if !ok || cache["type"] != "ephemeral" || cache["ttl"] != "5m" {
+		t.Fatalf("cache control changed: %#v", payload)
 	}
 }
 

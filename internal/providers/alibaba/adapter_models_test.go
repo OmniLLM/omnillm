@@ -130,8 +130,8 @@ func TestBuildRequestToolResultTurnToolRetentionByModel(t *testing.T) {
 func TestBuildRequestNonGLMRetainsSystemRole(t *testing.T) {
 	adapter := &Adapter{provider: newTestProvider()}
 	request := &cif.CanonicalRequest{
-		Model:        "qwen3.5-plus",
-		SystemPrompt: stringPtr("Stay as system."),
+		Model:  "qwen3.5-plus",
+		System: cif.SystemBlocksFromText("Stay as system."),
 		Messages: []cif.CIFMessage{
 			cif.CIFUserMessage{Role: "user", Content: []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: "Hi"}}},
 		},

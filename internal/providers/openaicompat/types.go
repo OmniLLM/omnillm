@@ -4,22 +4,26 @@
 // importing each other.
 package openaicompat
 
+import "omnillm/internal/cif"
+
 // ─── Outbound request ─────────────────────────────────────────────────────────
 
 // ChatRequest is the JSON body sent to any OpenAI-compatible /chat/completions
 // endpoint.
 type ChatRequest struct {
-	Model         string         `json:"model"`
-	Messages      []Message      `json:"messages"`
-	Stream        bool           `json:"stream"`
-	Temperature   *float64       `json:"temperature,omitempty"`
-	TopP          *float64       `json:"top_p,omitempty"`
-	MaxTokens     *int           `json:"max_tokens,omitempty"`
-	Stop          []string       `json:"stop,omitempty"`
-	User          *string        `json:"user,omitempty"`
-	Tools         []Tool         `json:"tools,omitempty"`
-	ToolChoice    interface{}    `json:"tool_choice,omitempty"`
-	StreamOptions *StreamOptions `json:"stream_options,omitempty"`
+	Model                string         `json:"model"`
+	Messages             []Message      `json:"messages"`
+	Stream               bool           `json:"stream"`
+	Temperature          *float64       `json:"temperature,omitempty"`
+	TopP                 *float64       `json:"top_p,omitempty"`
+	MaxTokens            *int           `json:"max_tokens,omitempty"`
+	Stop                 []string       `json:"stop,omitempty"`
+	User                 *string        `json:"user,omitempty"`
+	Tools                []Tool         `json:"tools,omitempty"`
+	ToolChoice           interface{}    `json:"tool_choice,omitempty"`
+	StreamOptions        *StreamOptions `json:"stream_options,omitempty"`
+	PromptCacheKey       *string        `json:"prompt_cache_key,omitempty"`
+	PromptCacheRetention *string        `json:"prompt_cache_retention,omitempty"`
 
 	// Provider-specific extension fields — set by each provider's
 	// BuildExtra hook, marshalled into the final JSON via Extras map.
@@ -34,18 +38,20 @@ type StreamOptions struct {
 
 // Message is one conversation turn (system / user / assistant / tool).
 type Message struct {
-	Role             string     `json:"role"`
-	Content          any        `json:"content,omitempty"` // string or []ContentPart; omit nil so pure tool-call turns don't send "content":null
-	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
-	ToolCallID       string     `json:"tool_call_id,omitempty"`
-	ReasoningContent string     `json:"reasoning_content,omitempty"` // Qwen3 / o1-style
+	Role             string               `json:"role"`
+	Content          any                  `json:"content,omitempty"` // string or []ContentPart; omit nil so pure tool-call turns don't send "content":null
+	ToolCalls        []ToolCall           `json:"tool_calls,omitempty"`
+	ToolCallID       string               `json:"tool_call_id,omitempty"`
+	ReasoningContent string               `json:"reasoning_content,omitempty"` // Qwen3 / o1-style
+	CacheControl     *cif.CIFCacheControl `json:"cache_control,omitempty"`
 }
 
 // ContentPart is one element of a multipart content array.
 type ContentPart struct {
-	Type     string    `json:"type"`
-	Text     string    `json:"text,omitempty"`
-	ImageURL *ImageURL `json:"image_url,omitempty"`
+	Type         string               `json:"type"`
+	Text         string               `json:"text,omitempty"`
+	ImageURL     *ImageURL            `json:"image_url,omitempty"`
+	CacheControl *cif.CIFCacheControl `json:"cache_control,omitempty"`
 }
 
 // ImageURL wraps a base64 data-URI or HTTPS image URL.
@@ -55,8 +61,9 @@ type ImageURL struct {
 
 // Tool is an OpenAI-compatible function tool definition.
 type Tool struct {
-	Type     string       `json:"type"`
-	Function FunctionSpec `json:"function"`
+	Type         string               `json:"type"`
+	Function     FunctionSpec         `json:"function"`
+	CacheControl *cif.CIFCacheControl `json:"cache_control,omitempty"`
 }
 
 // FunctionSpec describes a callable function.
@@ -68,10 +75,11 @@ type FunctionSpec struct {
 
 // ToolCall is a model-requested function invocation in an assistant message.
 type ToolCall struct {
-	ID       string           `json:"id,omitempty"`
-	CallID   string           `json:"call_id,omitempty"`
-	Type     string           `json:"type"`
-	Function FunctionCallSpec `json:"function"`
+	ID           string               `json:"id,omitempty"`
+	CallID       string               `json:"call_id,omitempty"`
+	Type         string               `json:"type"`
+	Function     FunctionCallSpec     `json:"function"`
+	CacheControl *cif.CIFCacheControl `json:"cache_control,omitempty"`
 }
 
 // FunctionCallSpec carries the name and JSON-encoded arguments of a tool call.
@@ -97,11 +105,16 @@ type Choice struct {
 	FinishReason string  `json:"finish_reason"`
 }
 
+type PromptTokensDetails struct {
+	CachedTokens int `json:"cached_tokens"`
+}
+
 // Usage contains token-count statistics.
 type Usage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+	PromptTokens        int                  `json:"prompt_tokens"`
+	CompletionTokens    int                  `json:"completion_tokens"`
+	TotalTokens         int                  `json:"total_tokens"`
+	PromptTokensDetails *PromptTokensDetails `json:"prompt_tokens_details,omitempty"`
 }
 
 // ─── Streaming chunks ─────────────────────────────────────────────────────────

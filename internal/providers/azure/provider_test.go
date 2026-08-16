@@ -174,8 +174,8 @@ func TestBuildResponsesPayloadBasic(t *testing.T) {
 				cif.CIFTextPart{Type: "text", Text: "Hello"},
 			}},
 		},
-		SystemPrompt: ptr("You are helpful."),
-		MaxTokens:    ptr(500),
+		System:    cif.SystemBlocksFromText("You are helpful."),
+		MaxTokens: ptr(500),
 	}
 
 	payload := BuildResponsesPayload(request, "gpt-5.4")

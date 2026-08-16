@@ -17,6 +17,7 @@ import (
 type ResponsesConfig struct {
 	DefaultTemperature *float64
 	DefaultTopP        *float64
+	PromptCacheMode    PromptCacheMode
 	Extras             map[string]interface{}
 }
 
@@ -48,9 +49,14 @@ type ResponsesContentBlock struct {
 	Text string `json:"text,omitempty"`
 }
 
+type ResponsesInputTokensDetails struct {
+	CachedTokens int `json:"cached_tokens"`
+}
+
 type ResponsesUsage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
+	InputTokens        int                          `json:"input_tokens"`
+	OutputTokens       int                          `json:"output_tokens"`
+	InputTokensDetails *ResponsesInputTokensDetails `json:"input_tokens_details,omitempty"`
 }
 
 type responsesStreamState struct {
@@ -67,12 +73,22 @@ type responsesStreamState struct {
 func BuildResponsesPayload(model string, request *cif.CanonicalRequest, stream bool, cfg ResponsesConfig) map[string]interface{} {
 	payload := map[string]interface{}{
 		"model":  model,
-		"input":  CIFMessagesToResponsesInput(request),
+		"input":  cifMessagesToResponsesInput(request, cfg.PromptCacheMode == PromptCacheAnthropicInline),
 		"stream": stream,
 	}
 
-	if request.SystemPrompt != nil && strings.TrimSpace(*request.SystemPrompt) != "" {
-		payload["instructions"] = *request.SystemPrompt
+	if cfg.PromptCacheMode == PromptCacheAnthropicInline && len(request.System) > 0 {
+		blocks := make([]map[string]interface{}, 0, len(request.System))
+		for _, block := range request.System {
+			item := map[string]interface{}{"type": "text", "text": block.Text}
+			if block.CacheControl != nil {
+				item["cache_control"] = block.CacheControl
+			}
+			blocks = append(blocks, item)
+		}
+		payload["system"] = blocks
+	} else if system := cif.PlainSystemText(request.System); strings.TrimSpace(system) != "" {
+		payload["instructions"] = system
 	}
 
 	if request.Temperature != nil {
@@ -103,6 +119,9 @@ func BuildResponsesPayload(model string, request *cif.CanonicalRequest, stream b
 			if tool.Description != nil {
 				item["description"] = *tool.Description
 			}
+			if cfg.PromptCacheMode == PromptCacheAnthropicInline && tool.CacheControl != nil {
+				item["cache_control"] = tool.CacheControl
+			}
 			tools = append(tools, item)
 		}
 		payload["tools"] = tools
@@ -111,6 +130,22 @@ func BuildResponsesPayload(model string, request *cif.CanonicalRequest, stream b
 	if request.ToolChoice != nil {
 		if toolChoice := shared.ConvertCanonicalToolChoiceToOpenAI(request.ToolChoice); toolChoice != nil {
 			payload["tool_choice"] = toolChoice
+		}
+	}
+
+	if request.PromptCache != nil {
+		switch cfg.PromptCacheMode {
+		case PromptCacheOpenAINative:
+			if request.PromptCache.Key != nil {
+				payload["prompt_cache_key"] = *request.PromptCache.Key
+			}
+			if request.PromptCache.Retention != nil {
+				payload["prompt_cache_retention"] = *request.PromptCache.Retention
+			}
+		case PromptCacheAnthropicInline:
+			if request.PromptCache.Automatic != nil {
+				payload["cache_control"] = request.PromptCache.Automatic
+			}
 		}
 	}
 
@@ -127,6 +162,10 @@ func BuildResponsesPayload(model string, request *cif.CanonicalRequest, stream b
 }
 
 func CIFMessagesToResponsesInput(request *cif.CanonicalRequest) []map[string]interface{} {
+	return cifMessagesToResponsesInput(request, false)
+}
+
+func cifMessagesToResponsesInput(request *cif.CanonicalRequest, inlineCache bool) []map[string]interface{} {
 	if request == nil {
 		return nil
 	}
@@ -135,24 +174,30 @@ func CIFMessagesToResponsesInput(request *cif.CanonicalRequest) []map[string]int
 	for _, message := range request.Messages {
 		switch m := message.(type) {
 		case cif.CIFSystemMessage:
+			content := make([]map[string]interface{}, 0, len(m.Content))
+			for _, block := range m.Content {
+				item := map[string]interface{}{"type": "input_text", "text": block.Text}
+				if inlineCache && block.CacheControl != nil {
+					item["cache_control"] = block.CacheControl
+				}
+				content = append(content, item)
+			}
 			input = append(input, map[string]interface{}{
-				"type": "message",
-				"role": "system",
-				"content": []map[string]interface{}{
-					{"type": "input_text", "text": m.Content},
-				},
+				"type":    "message",
+				"role":    "system",
+				"content": content,
 			})
 		case cif.CIFUserMessage:
-			input = append(input, responsesUserMessageItems(m)...)
+			input = append(input, responsesUserMessageItems(m, inlineCache)...)
 		case cif.CIFAssistantMessage:
-			input = append(input, responsesAssistantMessageItems(m)...)
+			input = append(input, responsesAssistantMessageItems(m, inlineCache)...)
 		}
 	}
 
 	return input
 }
 
-func responsesUserMessageItems(message cif.CIFUserMessage) []map[string]interface{} {
+func responsesUserMessageItems(message cif.CIFUserMessage, inlineCache bool) []map[string]interface{} {
 	var items []map[string]interface{}
 	var content []map[string]interface{}
 
@@ -171,10 +216,14 @@ func responsesUserMessageItems(message cif.CIFUserMessage) []map[string]interfac
 	for _, part := range message.Content {
 		switch p := part.(type) {
 		case cif.CIFTextPart:
-			content = append(content, map[string]interface{}{
+			item := map[string]interface{}{
 				"type": "input_text",
 				"text": p.Text,
-			})
+			}
+			if inlineCache && p.CacheControl != nil {
+				item["cache_control"] = p.CacheControl
+			}
+			content = append(content, item)
 		case cif.CIFImagePart:
 			imageURL := responsesImageURL(p)
 			if imageURL == "" {
@@ -190,11 +239,15 @@ func responsesUserMessageItems(message cif.CIFUserMessage) []map[string]interfac
 			if p.IsError != nil && *p.IsError && output == "" {
 				output = "Error: tool call failed"
 			}
-			items = append(items, map[string]interface{}{
+			item := map[string]interface{}{
 				"type":    "function_call_output",
 				"call_id": p.ToolCallID,
 				"output":  output,
-			})
+			}
+			if inlineCache && p.CacheControl != nil {
+				item["cache_control"] = p.CacheControl
+			}
+			items = append(items, item)
 		}
 	}
 
@@ -202,7 +255,7 @@ func responsesUserMessageItems(message cif.CIFUserMessage) []map[string]interfac
 	return items
 }
 
-func responsesAssistantMessageItems(message cif.CIFAssistantMessage) []map[string]interface{} {
+func responsesAssistantMessageItems(message cif.CIFAssistantMessage, inlineCache bool) []map[string]interface{} {
 	var items []map[string]interface{}
 	var content []map[string]interface{}
 
@@ -221,10 +274,14 @@ func responsesAssistantMessageItems(message cif.CIFAssistantMessage) []map[strin
 	for _, part := range message.Content {
 		switch p := part.(type) {
 		case cif.CIFTextPart:
-			content = append(content, map[string]interface{}{
+			item := map[string]interface{}{
 				"type": "output_text",
 				"text": p.Text,
-			})
+			}
+			if inlineCache && p.CacheControl != nil {
+				item["cache_control"] = p.CacheControl
+			}
+			content = append(content, item)
 		case cif.CIFThinkingPart:
 			content = append(content, map[string]interface{}{
 				"type": "output_text",
@@ -233,12 +290,16 @@ func responsesAssistantMessageItems(message cif.CIFAssistantMessage) []map[strin
 		case cif.CIFToolCallPart:
 			flushContent()
 			argsBytes, _ := json.Marshal(p.ToolArguments)
-			items = append(items, map[string]interface{}{
+			item := map[string]interface{}{
 				"type":      "function_call",
 				"call_id":   p.ToolCallID,
 				"name":      p.ToolName,
 				"arguments": string(argsBytes),
-			})
+			}
+			if inlineCache && p.CacheControl != nil {
+				item["cache_control"] = p.CacheControl
+			}
+			items = append(items, item)
 		}
 	}
 
@@ -332,10 +393,12 @@ func responsesUsageToCIF(usage *ResponsesUsage) *cif.CIFUsage {
 	if usage == nil {
 		return nil
 	}
-	return &cif.CIFUsage{
-		InputTokens:  usage.InputTokens,
-		OutputTokens: usage.OutputTokens,
+	var cached *int
+	if usage.InputTokensDetails != nil {
+		cachedValue := usage.InputTokensDetails.CachedTokens
+		cached = &cachedValue
 	}
+	return cif.UsageFromTotal(usage.InputTokens, usage.OutputTokens, cached)
 }
 
 func ExecuteResponses(ctx context.Context, url string, headers map[string]string, payload map[string]interface{}) (*cif.CanonicalResponse, error) {

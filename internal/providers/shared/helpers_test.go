@@ -9,7 +9,7 @@ import (
 func TestCIFMessagesToOpenAI_ConvertsMixedMessageTypes(t *testing.T) {
 	toolErr := true
 	messages := []cif.CIFMessage{
-		cif.CIFSystemMessage{Role: "system", Content: "Be terse."},
+		cif.CIFSystemMessage{Role: "system", Content: cif.SystemBlocksFromText("Be terse.")},
 		cif.CIFUserMessage{Role: "user", Content: []cif.CIFContentPart{
 			cif.CIFTextPart{Type: "text", Text: "Hello"},
 		}},

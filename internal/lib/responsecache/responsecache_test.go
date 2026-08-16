@@ -11,8 +11,8 @@ func f64(v float64) *float64 { return &v }
 func baseReq() *cif.CanonicalRequest {
 	sys := "you are helpful"
 	return &cif.CanonicalRequest{
-		Model:       "gpt-x",
-		SystemPrompt: &sys,
+		Model:  "gpt-x",
+		System: cif.SystemBlocksFromText(sys),
 		Messages: []cif.CIFMessage{
 			cif.CIFUserMessage{Role: "user", Content: []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: "hi"}}},
 		},
@@ -101,13 +101,13 @@ func TestKeyIgnoresTransport(t *testing.T) {
 
 func TestParseBypass(t *testing.T) {
 	cases := map[string]BypassMode{
-		"":        BypassNone,
-		"bypass":  BypassRead,
-		"REFRESH": BypassRead,
+		"":         BypassNone,
+		"bypass":   BypassRead,
+		"REFRESH":  BypassRead,
 		"no-cache": BypassRead,
-		"off":     BypassAll,
-		"disable": BypassAll,
-		"garbage": BypassNone,
+		"off":      BypassAll,
+		"disable":  BypassAll,
+		"garbage":  BypassNone,
 	}
 	for in, want := range cases {
 		if got := ParseBypass(in); got != want {

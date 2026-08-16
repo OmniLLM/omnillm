@@ -47,8 +47,9 @@ func ParseGeminiSSE(ctx context.Context, body io.ReadCloser, eventCh chan cif.CI
 				FinishReason string `json:"finishReason"`
 			} `json:"candidates"`
 			UsageMetadata struct {
-				PromptTokenCount     int `json:"promptTokenCount"`
-				CandidatesTokenCount int `json:"candidatesTokenCount"`
+				PromptTokenCount        int  `json:"promptTokenCount"`
+				CandidatesTokenCount    int  `json:"candidatesTokenCount"`
+				CachedContentTokenCount *int `json:"cachedContentTokenCount"`
 			} `json:"usageMetadata"`
 		}
 
@@ -103,10 +104,7 @@ func ParseGeminiSSE(ctx context.Context, body io.ReadCloser, eventCh chan cif.CI
 			eventCh <- cif.CIFStreamEnd{
 				Type:       "stream_end",
 				StopReason: StopReason(candidate.FinishReason),
-				Usage: &cif.CIFUsage{
-					InputTokens:  usage.PromptTokenCount,
-					OutputTokens: usage.CandidatesTokenCount,
-				},
+				Usage:      cif.UsageFromTotal(usage.PromptTokenCount, usage.CandidatesTokenCount, usage.CachedContentTokenCount),
 			}
 			return
 		}

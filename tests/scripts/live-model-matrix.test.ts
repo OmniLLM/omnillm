@@ -19,6 +19,7 @@ const copilotGrokRow = {
     largeResults: true,
     longStream: true,
     cancellation: true,
+    promptCaching: { notApplicable: "cache usage unavailable" },
   },
   scenarioOverrides: {
     parallel_tools: { notApplicable: "account-specific behavior" },
@@ -49,6 +50,7 @@ const validRow = {
     largeResults: true,
     longStream: true,
     cancellation: true,
+    promptCaching: { notApplicable: "cache usage unavailable" },
   },
   provision: {
     path: "/api/admin/providers/auth-and-create/google",

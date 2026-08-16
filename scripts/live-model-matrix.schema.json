@@ -77,14 +77,16 @@
               "parallelTools",
               "largeResults",
               "longStream",
-              "cancellation"
+              "cancellation",
+              "promptCaching"
             ],
             "properties": {
               "tools": { "$ref": "#/$defs/support" },
               "parallelTools": { "$ref": "#/$defs/support" },
               "largeResults": { "$ref": "#/$defs/support" },
               "longStream": { "$ref": "#/$defs/support" },
-              "cancellation": { "$ref": "#/$defs/support" }
+              "cancellation": { "$ref": "#/$defs/support" },
+              "promptCaching": { "$ref": "#/$defs/support" }
             }
           },
           "scenarioOverrides": {
@@ -99,7 +101,8 @@
               "parallel_tools": { "$ref": "#/$defs/support" },
               "large_result": { "$ref": "#/$defs/support" },
               "long_stream": { "$ref": "#/$defs/support" },
-              "cancellation": { "$ref": "#/$defs/support" }
+              "cancellation": { "$ref": "#/$defs/support" },
+              "prompt_caching": { "$ref": "#/$defs/support" }
             }
           },
           "provision": {

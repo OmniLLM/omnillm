@@ -10,8 +10,8 @@ import (
 func TestBuildRequestGLMMergesLeadingSystemIntoFirstUser(t *testing.T) {
 	adapter := &Adapter{provider: NewProvider("alibaba-test", "Alibaba")}
 	request := &cif.CanonicalRequest{
-		Model:        "glm-5.1",
-		SystemPrompt: stringPtr("Follow the system instructions."),
+		Model:  "glm-5.1",
+		System: cif.SystemBlocksFromText("Follow the system instructions."),
 		Messages: []cif.CIFMessage{
 			cif.CIFUserMessage{Role: "user", Content: []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: "Hello"}}},
 		},
@@ -40,8 +40,8 @@ func TestBuildRequestGLMMergesLeadingSystemIntoFirstUser(t *testing.T) {
 func TestBuildRequestGLMWithToolsKeepsToolQuirksAndRemovesSystemRole(t *testing.T) {
 	adapter := &Adapter{provider: NewProvider("alibaba-test", "Alibaba")}
 	request := &cif.CanonicalRequest{
-		Model:        "glm-5.1",
-		SystemPrompt: stringPtr("Use tools carefully."),
+		Model:  "glm-5.1",
+		System: cif.SystemBlocksFromText("Use tools carefully."),
 		Tools: []cif.CIFTool{{
 			Name:             "lookup",
 			ParametersSchema: map[string]interface{}{"type": "object"},
@@ -93,8 +93,8 @@ func TestBuildRequestGLMWithToolsKeepsToolQuirksAndRemovesSystemRole(t *testing.
 func TestBuildRequestGLMSynthesizesUserMessageWhenNoUserTurnExists(t *testing.T) {
 	adapter := &Adapter{provider: NewProvider("alibaba-test", "Alibaba")}
 	request := &cif.CanonicalRequest{
-		Model:        "glm-5.1",
-		SystemPrompt: stringPtr("Keep responses concise."),
+		Model:  "glm-5.1",
+		System: cif.SystemBlocksFromText("Keep responses concise."),
 		Messages: []cif.CIFMessage{
 			cif.CIFAssistantMessage{Role: "assistant", Content: []cif.CIFContentPart{cif.CIFToolCallPart{Type: "tool_call", ToolCallID: "call_1", ToolName: "lookup", ToolArguments: map[string]interface{}{"q": "status"}}}},
 		},

@@ -93,6 +93,9 @@ func normalizeProviderConfigForFrontend(providerType string, config map[string]i
 				normalized["apiFormat"] = normalizedFormat
 			}
 		}
+		if mode, ok := firstStringValue(config, "promptCacheMode", "prompt_cache_mode"); ok {
+			normalized["promptCacheMode"] = mode
+		}
 		if models := stringSliceValue(config["models"]); len(models) > 0 {
 			normalized["models"] = models
 		}
@@ -162,6 +165,12 @@ func normalizeProviderConfigForStorage(providerType string, config map[string]in
 		if apiFormat, ok := firstStringValue(config, "apiFormat", "api_format"); ok {
 			if normalizedFormat := normalizeOpenAICompatibleAPIFormatConfig(apiFormat); normalizedFormat != "" {
 				normalized["api_format"] = normalizedFormat
+			}
+		}
+		if mode, ok := firstStringValue(config, "promptCacheMode", "prompt_cache_mode"); ok {
+			switch mode {
+			case "auto", "disabled", "openai_native", "anthropic_inline":
+				normalized["prompt_cache_mode"] = mode
 			}
 		}
 		return normalized
@@ -349,6 +358,22 @@ func mergeOpenAICompatibleAPIFormat(merged, incomingConfig map[string]interface{
 	delete(merged, "api_format")
 }
 
+func mergeOpenAICompatiblePromptCacheMode(merged, incomingConfig map[string]interface{}) {
+	_, hasCamel := incomingConfig["promptCacheMode"]
+	_, hasSnake := incomingConfig["prompt_cache_mode"]
+	if !hasCamel && !hasSnake {
+		return
+	}
+	if mode, ok := firstStringValue(incomingConfig, "promptCacheMode", "prompt_cache_mode"); ok {
+		switch mode {
+		case "auto", "disabled", "openai_native", "anthropic_inline":
+			merged["prompt_cache_mode"] = mode
+			return
+		}
+	}
+	delete(merged, "prompt_cache_mode")
+}
+
 func cloneConfigMap(config map[string]interface{}) map[string]interface{} {
 	if len(config) == 0 {
 		return map[string]interface{}{}
@@ -376,6 +401,7 @@ func mergeOpenAICompatibleConfig(previousConfig, incomingConfig, normalizedConfi
 	}
 
 	mergeOpenAICompatibleAPIFormat(merged, incomingConfig)
+	mergeOpenAICompatiblePromptCacheMode(merged, incomingConfig)
 
 	return merged
 }
