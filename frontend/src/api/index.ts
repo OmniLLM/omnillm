@@ -519,6 +519,8 @@ export const getProviderUsage = (id: string) =>
 
 // ─── Metering ─────────────────────────────────────────────────────────────────
 
+export type PromptCacheStatus = "hit" | "miss" | "unknown"
+
 export interface MeteringRecord {
   id: number
   request_id: string
@@ -528,6 +530,12 @@ export interface MeteringRecord {
   client: string
   api_shape: string
   input_tokens: number
+  uncached_input_tokens?: number | null
+  cache_read_input_tokens?: number | null
+  cache_write_input_tokens?: number | null
+  cache_write_5m_input_tokens?: number | null
+  cache_write_1h_input_tokens?: number | null
+  prompt_cache_status: PromptCacheStatus
   output_tokens: number
   total_tokens: number
   latency_ms: number
@@ -542,6 +550,13 @@ export interface MeteringStats {
   total_input_tokens: number
   total_output_tokens: number
   total_tokens: number
+  cache_read_input_tokens: number
+  cache_write_input_tokens: number
+  cache_write_5m_input_tokens: number
+  cache_write_1h_input_tokens: number
+  prompt_cache_hits: number
+  prompt_cache_misses: number
+  prompt_cache_unknown: number
   avg_latency_ms: number
   error_count: number
 }
@@ -554,6 +569,11 @@ export interface MeteringBreakdownItem {
   input_tokens: number
   output_tokens: number
   total_tokens: number
+  cache_read_input_tokens: number
+  cache_write_input_tokens: number
+  prompt_cache_hits: number
+  prompt_cache_misses: number
+  prompt_cache_unknown: number
   avg_latency_ms: number
 }
 
@@ -569,6 +589,7 @@ export interface MeteringQuery {
   provider_id?: string
   client?: string
   api_shape?: string
+  prompt_cache_status?: PromptCacheStatus
   since?: string
   until?: string
   page?: number

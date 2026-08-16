@@ -13,7 +13,9 @@
     "avgLatency": "平均延迟",
     "avgLatencySubtext": "成功和失败请求的端到端延迟",
     "errors": "错误数",
-    "errorsSubtext": "状态码 ≥ 400 的请求"
+    "errorsSubtext": "状态码 ≥ 400 的请求",
+    "promptCache": "提供者提示缓存（命中 / 未命中）",
+    "cacheWrites": "缓存写入令牌"
   },
   "filters": {
     "since": "开始时间",
@@ -26,7 +28,8 @@
     "allProviders": "全部提供者",
     "allClients": "全部客户端",
     "rowsPerPage": "每页行数",
-    "maxRows": "最大行数"
+    "maxRows": "最大行数",
+    "promptCache": "提供者提示缓存"
   },
   "table": {
     "model": "模型",
@@ -42,8 +45,17 @@
     "latency": "延迟",
     "status": "状态",
     "stream": "流式",
+    "promptCache": "提示缓存",
+    "cacheRead": "缓存读取",
+    "cacheWrite": "缓存写入",
     "noData": "暂无数据。",
     "noRecords": "暂无计量记录。"
+  },
+  "cache": {
+    "hit": "命中",
+    "miss": "未命中",
+    "unknown": "未知",
+    "readTokens": "读取令牌"
   },
   "pagination": {
     "page": "第 {{current}} 页，共 {{total}} 页",

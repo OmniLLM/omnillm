@@ -14,6 +14,7 @@ import {
   type MeteringQuery,
   type MeteringRecord,
   type MeteringStats,
+  type PromptCacheStatus,
 } from "@/api"
 import { SearchableSelect } from "@/components/SearchableSelect"
 
@@ -592,6 +593,9 @@ export function MeteringPage({
   const [providerId, setProviderId] = useState("")
   const [client, setClient] = useState("")
   const [apiShape, setAPIShape] = useState("")
+  const [promptCacheStatus, setPromptCacheStatus] = useState<
+    PromptCacheStatus | ""
+  >("")
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
   const [maxRows, setMaxRows] = useState(500)
@@ -622,6 +626,7 @@ export function MeteringPage({
       provider_id: providerId || undefined,
       client: client || undefined,
       api_shape: apiShape || undefined,
+      prompt_cache_status: promptCacheStatus || undefined,
       page,
       page_size: pageSize,
     }),
@@ -632,6 +637,7 @@ export function MeteringPage({
       page,
       pageSize,
       providerId,
+      promptCacheStatus,
       reloadKey,
       since,
       until,
@@ -784,6 +790,9 @@ export function MeteringPage({
     { key: "provider_id", label: t("table.provider") },
     { key: "client", label: t("table.client") },
     { key: "api_shape", label: t("table.shape") },
+    { key: "prompt_cache_status", label: t("table.promptCache") },
+    { key: "cache_read_input_tokens", label: t("table.cacheRead") },
+    { key: "cache_write_input_tokens", label: t("table.cacheWrite") },
     { key: "input_tokens", label: t("table.input") },
     { key: "output_tokens", label: t("table.output") },
     { key: "total_tokens", label: t("table.total") },
@@ -1048,6 +1057,24 @@ export function MeteringPage({
                 <option value="responses">responses</option>
               </select>
             </label>
+            <label style={fieldStyle}>
+              <span style={labelStyle}>{t("filters.promptCache")}</span>
+              <select
+                className="sys-select"
+                value={promptCacheStatus}
+                onChange={(event) => {
+                  setPromptCacheStatus(
+                    event.target.value as PromptCacheStatus | "",
+                  )
+                  setPage(1)
+                }}
+              >
+                <option value="">{t("filters.all")}</option>
+                <option value="hit">{t("cache.hit")}</option>
+                <option value="miss">{t("cache.miss")}</option>
+                <option value="unknown">{t("cache.unknown")}</option>
+              </select>
+            </label>
           </div>
         </div>
       </Card>
@@ -1070,6 +1097,18 @@ export function MeteringPage({
           value={formatNumber(stats?.total_tokens ?? 0)}
           accent="var(--color-green)"
           subtext={`${formatNumber(stats?.total_input_tokens ?? 0)} in / ${formatNumber(stats?.total_output_tokens ?? 0)} out`}
+        />
+        <StatCard
+          label={t("stats.promptCache")}
+          value={`${formatNumber(stats?.prompt_cache_hits ?? 0)} / ${formatNumber(stats?.prompt_cache_misses ?? 0)}`}
+          accent="var(--color-purple)"
+          subtext={`${formatNumber(stats?.prompt_cache_unknown ?? 0)} ${t("cache.unknown")} · ${formatNumber(stats?.cache_read_input_tokens ?? 0)} ${t("cache.readTokens")}`}
+        />
+        <StatCard
+          label={t("stats.cacheWrites")}
+          value={formatNumber(stats?.cache_write_input_tokens ?? 0)}
+          accent="var(--color-teal)"
+          subtext={`${formatNumber(stats?.cache_write_5m_input_tokens ?? 0)} 5m / ${formatNumber(stats?.cache_write_1h_input_tokens ?? 0)} 1h`}
         />
         <StatCard
           label={t("stats.avgLatency")}
@@ -1217,7 +1256,7 @@ export function MeteringPage({
           <table
             style={{
               width: "100%",
-              minWidth: 1280,
+              minWidth: 1560,
               borderCollapse: "collapse",
             }}
           >
@@ -1261,7 +1300,7 @@ export function MeteringPage({
               {!loading && logItems.length === 0 && (
                 <tr>
                   <td
-                    colSpan={11}
+                    colSpan={14}
                     style={{
                       padding: "28px 16px",
                       textAlign: "center",
@@ -1298,6 +1337,19 @@ export function MeteringPage({
                     {row.client || "—"}
                   </td>
                   <td style={cellStyle}>{row.api_shape}</td>
+                  <td style={cellStyle}>
+                    {t(`cache.${row.prompt_cache_status}`)}
+                  </td>
+                  <td style={cellStyle}>
+                    {typeof row.cache_read_input_tokens !== "number" ?
+                      "—"
+                    : formatNumber(row.cache_read_input_tokens)}
+                  </td>
+                  <td style={cellStyle}>
+                    {typeof row.cache_write_input_tokens !== "number" ?
+                      "—"
+                    : formatNumber(row.cache_write_input_tokens)}
+                  </td>
                   <td style={cellStyle}>{formatNumber(row.input_tokens)}</td>
                   <td style={cellStyle}>{formatNumber(row.output_tokens)}</td>
                   <td style={cellStyle}>{formatNumber(row.total_tokens)}</td>

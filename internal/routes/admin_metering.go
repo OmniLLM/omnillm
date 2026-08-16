@@ -23,10 +23,11 @@ func SetupMeteringRoutes(router *gin.RouterGroup) {
 // parseMeteringFilter reads common query params shared by all metering endpoints.
 func parseMeteringFilter(c *gin.Context) database.MeteringFilter {
 	f := database.MeteringFilter{
-		ModelID:    c.Query("model_id"),
-		ProviderID: c.Query("provider_id"),
-		Client:     c.Query("client"),
-		APIShape:   c.Query("api_shape"),
+		ModelID:           c.Query("model_id"),
+		ProviderID:        c.Query("provider_id"),
+		Client:            c.Query("client"),
+		APIShape:          c.Query("api_shape"),
+		PromptCacheStatus: database.PromptCacheStatus(c.Query("prompt_cache_status")),
 	}
 	if s := c.Query("since"); s != "" {
 		if ts, err := time.Parse(time.RFC3339, s); err == nil {
