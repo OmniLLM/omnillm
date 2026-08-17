@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 
 	"omnillm/internal/cif"
@@ -106,6 +107,95 @@ func TestCompatibilityAgenticRouteMatrix(t *testing.T) {
 			}
 			assertCompatibilityExchanges(t, request.Messages, scenario.Exchanges)
 		})
+	}
+}
+
+func TestCompatibilityStructuredResponsesRoute(t *testing.T) {
+	scenario := testcompat.AgenticScenario()
+	var captured *cif.CanonicalRequest
+	registerStubProvider(t, testcompat.Model, func(_ context.Context, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+		captured = request
+		return &cif.CanonicalResponse{ID: "structured-responses-route", Model: request.Model, Content: []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: testcompat.FinalAnswer}}, StopReason: cif.StopReasonEndTurn}, nil
+	}, nil)
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	resp := postJSON(t, srv.URL+"/v1/responses", string(testcompat.StructuredResponsesRequest(scenario, false)), nil)
+	body := readBody(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", resp.StatusCode, body)
+	}
+	if captured == nil {
+		t.Fatal("provider did not receive structured-output request")
+	}
+
+	calls := 0
+	results := 0
+	nextExchange := 0
+	for _, message := range captured.Messages {
+		switch typed := message.(type) {
+		case cif.CIFAssistantMessage:
+			for _, part := range typed.Content {
+				call, ok := part.(cif.CIFToolCallPart)
+				if !ok {
+					continue
+				}
+				if nextExchange >= len(scenario.Exchanges) || call.ToolCallID != scenario.Exchanges[nextExchange].ID {
+					t.Fatalf("tool call order changed at %d: %#v", nextExchange, call)
+				}
+				calls++
+			}
+		case cif.CIFUserMessage:
+			for _, part := range typed.Content {
+				result, ok := part.(cif.CIFToolResultPart)
+				if !ok {
+					continue
+				}
+				if nextExchange >= len(scenario.Exchanges) || result.ToolCallID != scenario.Exchanges[nextExchange].ID {
+					t.Fatalf("tool result order changed at %d: %#v", nextExchange, result)
+				}
+				wantOutput := testcompat.StructuredResponsesOutput(nextExchange + 1)
+				if !reflect.DeepEqual(result.RawOutput, wantOutput) {
+					t.Fatalf("structured result %s changed: %#v", result.ToolCallID, result.RawOutput)
+				}
+				encoded, _ := json.Marshal(wantOutput)
+				if result.Content != string(encoded) {
+					t.Fatalf("structured fallback %s changed: %q", result.ToolCallID, result.Content)
+				}
+				results++
+				nextExchange++
+			}
+		}
+	}
+	if calls != testcompat.MinimumSequentialToolCalls || results != testcompat.MinimumSequentialToolCalls || nextExchange != len(scenario.Exchanges) {
+		t.Fatalf("calls=%d results=%d exchanges=%d", calls, results, nextExchange)
+	}
+	if !strings.Contains(body, testcompat.FinalAnswer) {
+		t.Fatalf("terminal response missing: %s", body)
+	}
+}
+
+func TestCompatibilityStructuredResponsesRouteRejectsMalformedOutput(t *testing.T) {
+	registerStubProvider(t, testcompat.Model, func(_ context.Context, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+		t.Fatalf("provider received malformed request: %#v", request)
+		return nil, nil
+	}, nil)
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	body := `{"model":"compatibility-model","input":[{"type":"function_call_output","call_id":"call_bad","output":[{"type":"input_text"}]}]}`
+	resp := postJSON(t, srv.URL+"/v1/responses", body, nil)
+	responseBody := readBody(t, resp)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status %d: %s", resp.StatusCode, responseBody)
+	}
+	var envelope map[string]interface{}
+	if err := json.Unmarshal([]byte(responseBody), &envelope); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	errorObject, ok := envelope["error"].(map[string]interface{})
+	if !ok || errorObject["type"] != "invalid_request_error" {
+		t.Fatalf("unexpected error envelope: %#v", envelope)
 	}
 }
 

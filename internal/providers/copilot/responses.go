@@ -241,10 +241,14 @@ func responsesUserItems(message cif.CIFUserMessage) []map[string]any {
 				})
 				continue
 			}
+			output := p.RawOutput
+			if output == nil {
+				output = out
+			}
 			items = append(items, map[string]any{
 				"type":    "function_call_output",
 				"call_id": p.ToolCallID,
-				"output":  out,
+				"output":  output,
 			})
 		}
 	}

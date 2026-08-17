@@ -1,6 +1,7 @@
 package copilot
 
 import (
+	"reflect"
 	"testing"
 
 	"omnillm/internal/cif"
@@ -28,6 +29,28 @@ func TestCopilotResponsesPayloadPreservesCodexToolName(t *testing.T) {
 	}
 	if _, hasParameters := tools[0]["parameters"]; hasParameters {
 		t.Fatalf("custom tool unexpectedly has function parameters: %#v", tools[0])
+	}
+}
+
+func TestCopilotResponsesPayloadPreservesStructuredFunctionOutput(t *testing.T) {
+	provider := NewGitHubCopilotProvider("compat-structured-output", "")
+	adapter := &CopilotAdapter{provider: provider}
+	output := []interface{}{map[string]interface{}{"type": "input_text", "text": "ok"}}
+	payload := adapter.buildResponsesPayload(&cif.CanonicalRequest{
+		Model: "gpt-5.6-sol",
+		Messages: []cif.CIFMessage{
+			cif.CIFUserMessage{Role: "user", Content: []cif.CIFContentPart{
+				cif.CIFToolResultPart{Type: "tool_result", ToolCallID: "call_1", Content: `[{"type":"input_text","text":"ok"}]`, RawOutput: output},
+			}},
+		},
+	}, false)
+
+	input := payload["input"].([]map[string]any)
+	if len(input) != 1 || input[0]["type"] != "function_call_output" {
+		t.Fatalf("Copilot Responses input = %#v", input)
+	}
+	if !reflect.DeepEqual(input[0]["output"], output) {
+		t.Fatalf("structured output changed: %#v", input[0]["output"])
 	}
 }
 

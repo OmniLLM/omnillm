@@ -2,6 +2,7 @@ package cif
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 )
 
@@ -209,6 +210,47 @@ func TestMarshalCIFContentPart_CustomToolResult(t *testing.T) {
 	}
 	if decoded.ToolKind != CIFToolKindCustom || decoded.CustomOutput == nil {
 		t.Fatalf("custom output metadata changed: %#v", decoded)
+	}
+}
+
+func TestMarshalCIFContentPart_FunctionToolResultRawOutput(t *testing.T) {
+	output := []interface{}{
+		map[string]interface{}{"type": "input_text", "text": "ok"},
+		map[string]interface{}{"type": "input_file", "file_id": "file_123"},
+	}
+	encoded, err := MarshalCIFContentPart(CIFToolResultPart{
+		Type:       "tool_result",
+		ToolCallID: "call_read",
+		Content:    `[{"type":"input_text","text":"ok"},{"type":"input_file","file_id":"file_123"}]`,
+		RawOutput:  output,
+	})
+	if err != nil {
+		t.Fatalf("marshal function tool result: %v", err)
+	}
+	var decoded CIFToolResultPart
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("decode function tool result: %v", err)
+	}
+	if decoded.ToolCallID != "call_read" || decoded.Content != `[{"type":"input_text","text":"ok"},{"type":"input_file","file_id":"file_123"}]` || !reflect.DeepEqual(decoded.RawOutput, output) {
+		t.Fatalf("function tool result changed: %#v", decoded)
+	}
+}
+
+func TestMarshalCIFContentPart_StringToolResultOmitsRawOutput(t *testing.T) {
+	encoded, err := MarshalCIFContentPart(CIFToolResultPart{
+		Type:       "tool_result",
+		ToolCallID: "call_read",
+		Content:    "ok",
+	})
+	if err != nil {
+		t.Fatalf("marshal string tool result: %v", err)
+	}
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("decode string tool result: %v", err)
+	}
+	if _, exists := decoded["rawOutput"]; exists {
+		t.Fatalf("legacy string result acquired raw output: %#v", decoded)
 	}
 }
 

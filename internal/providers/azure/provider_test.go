@@ -6,12 +6,14 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"reflect"
+	"strings"
+	"testing"
+
 	"omnillm/internal/cif"
 	"omnillm/internal/database"
 	"omnillm/internal/providers/types"
-	"os"
-	"strings"
-	"testing"
 )
 
 func TestMain(m *testing.M) {
@@ -282,6 +284,30 @@ func TestCIFMessagesToResponsesInputToolResult(t *testing.T) {
 	}
 	if input[0]["output"] != "tool result text" {
 		t.Errorf("output = %v", input[0]["output"])
+	}
+}
+
+func TestCIFMessagesToResponsesInputStructuredToolResult(t *testing.T) {
+	output := []interface{}{
+		map[string]interface{}{"type": "input_text", "text": "ok"},
+		map[string]interface{}{"type": "input_file", "file_id": "file_123"},
+	}
+	messages := []cif.CIFMessage{
+		cif.CIFUserMessage{Content: []cif.CIFContentPart{
+			cif.CIFToolResultPart{
+				Type:       "tool_result",
+				ToolCallID: "call_abc",
+				Content:    `[{"type":"input_text","text":"ok"},{"type":"input_file","file_id":"file_123"}]`,
+				RawOutput:  output,
+			},
+		}},
+	}
+	input := CIFMessagesToResponsesInput(messages)
+	if len(input) != 1 {
+		t.Fatalf("expected 1 input, got %d", len(input))
+	}
+	if !reflect.DeepEqual(input[0]["output"], output) {
+		t.Fatalf("structured output changed: %#v", input[0]["output"])
 	}
 }
 

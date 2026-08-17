@@ -119,10 +119,14 @@ func CIFMessagesToResponsesInput(messages []cif.CIFMessage) []map[string]interfa
 						textBlocks = nil
 					}
 					callID := ToolCallID(p.ToolCallID)
+					output := p.RawOutput
+					if output == nil {
+						output = p.Content
+					}
 					input = append(input, map[string]interface{}{
 						"type":    "function_call_output",
 						"call_id": callID,
-						"output":  p.Content,
+						"output":  output,
 					})
 				}
 			}

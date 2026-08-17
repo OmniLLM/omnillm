@@ -239,10 +239,14 @@ func responsesUserMessageItems(message cif.CIFUserMessage, inlineCache bool) []m
 			if p.IsError != nil && *p.IsError && output == "" {
 				output = "Error: tool call failed"
 			}
+			wireOutput := p.RawOutput
+			if wireOutput == nil {
+				wireOutput = output
+			}
 			item := map[string]interface{}{
 				"type":    "function_call_output",
 				"call_id": p.ToolCallID,
-				"output":  output,
+				"output":  wireOutput,
 			}
 			if inlineCache && p.CacheControl != nil {
 				item["cache_control"] = p.CacheControl

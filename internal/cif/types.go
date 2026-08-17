@@ -67,6 +67,7 @@ type CIFToolResultPart struct {
 	Content      string           `json:"content"`  // serialized result text
 	IsError      *bool            `json:"isError,omitempty"`
 	ToolKind     CIFToolKind      `json:"toolKind,omitempty"`
+	RawOutput    interface{}      `json:"rawOutput,omitempty"`
 	CustomOutput interface{}      `json:"customOutput,omitempty"`
 	CacheControl *CIFCacheControl `json:"cacheControl,omitempty"`
 }
@@ -355,6 +356,7 @@ type ContentPartJSON struct {
 	Namespace     string                 `json:"namespace,omitempty"`
 	Content       string                 `json:"content,omitempty"`
 	IsError       *bool                  `json:"isError,omitempty"`
+	RawOutput     interface{}            `json:"rawOutput,omitempty"`
 	CustomOutput  interface{}            `json:"customOutput,omitempty"`
 	CacheControl  *CIFCacheControl       `json:"cacheControl,omitempty"`
 }
@@ -402,6 +404,7 @@ func MarshalCIFContentPart(p CIFContentPart) ([]byte, error) {
 			Content:      part.Content,
 			IsError:      part.IsError,
 			ToolKind:     part.ToolKind,
+			RawOutput:    part.RawOutput,
 			CustomOutput: part.CustomOutput,
 			CacheControl: part.CacheControl,
 		})
