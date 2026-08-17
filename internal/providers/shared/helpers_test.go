@@ -16,6 +16,9 @@ func TestCIFMessagesToOpenAI_ConvertsMixedMessageTypes(t *testing.T) {
 		cif.CIFUserMessage{Role: "user", Content: []cif.CIFContentPart{
 			cif.CIFToolResultPart{Type: "tool_result", ToolCallID: "call_1", Content: "Sunny", IsError: &toolErr},
 		}},
+		cif.CIFUserMessage{Role: "user", Content: []cif.CIFContentPart{
+			cif.CIFToolResultPart{Type: "tool_result", ToolCallID: "call_structured", Content: `[{"type":"input_text","text":"Structured"}]`, RawOutput: []interface{}{map[string]interface{}{"type": "input_text", "text": "Structured"}}},
+		}},
 		cif.CIFAssistantMessage{Role: "assistant", Content: []cif.CIFContentPart{
 			cif.CIFThinkingPart{Type: "thinking", Thinking: "Let me think."},
 			cif.CIFTextPart{Type: "text", Text: "Done."},
@@ -24,8 +27,8 @@ func TestCIFMessagesToOpenAI_ConvertsMixedMessageTypes(t *testing.T) {
 	}
 
 	out := CIFMessagesToOpenAI(messages)
-	if len(out) != 4 {
-		t.Fatalf("expected 4 messages, got %d", len(out))
+	if len(out) != 5 {
+		t.Fatalf("expected 5 messages, got %d", len(out))
 	}
 	if out[0]["role"] != "system" || out[0]["content"] != "Be terse." {
 		t.Fatalf("unexpected system message: %#v", out[0])
@@ -36,7 +39,10 @@ func TestCIFMessagesToOpenAI_ConvertsMixedMessageTypes(t *testing.T) {
 	if out[2]["role"] != "tool" || out[2]["tool_call_id"] != "call_1" {
 		t.Fatalf("unexpected tool result message: %#v", out[2])
 	}
-	assistant := out[3]
+	if out[3]["role"] != "tool" || out[3]["tool_call_id"] != "call_structured" || out[3]["content"] != `[{"type":"input_text","text":"Structured"}]` {
+		t.Fatalf("structured tool result did not use fallback text: %#v", out[3])
+	}
+	assistant := out[4]
 	if assistant["role"] != "assistant" {
 		t.Fatalf("unexpected assistant message: %#v", assistant)
 	}

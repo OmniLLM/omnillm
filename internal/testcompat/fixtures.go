@@ -2,6 +2,7 @@ package testcompat
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"omnillm/internal/cif"
@@ -138,16 +139,34 @@ func AnthropicRequest(s Scenario, stream bool) json.RawMessage {
 	return marshal(map[string]interface{}{"model": Model, "max_tokens": 256, "stream": stream, "system": SystemPrompt, "messages": messages, "tools": []interface{}{map[string]interface{}{"name": "Read", "description": "Read a file", "input_schema": schema()}}})
 }
 
+func StructuredResponsesOutput(index int) []interface{} {
+	return []interface{}{
+		map[string]interface{}{"type": "input_text", "text": fmt.Sprintf("result-%d", index)},
+	}
+}
+
 func ResponsesRequest(s Scenario, stream bool) json.RawMessage {
+	return responsesRequest(s, stream, false)
+}
+
+func StructuredResponsesRequest(s Scenario, stream bool) json.RawMessage {
+	return responsesRequest(s, stream, true)
+}
+
+func responsesRequest(s Scenario, stream, structuredOutputs bool) json.RawMessage {
 	input := []interface{}{map[string]interface{}{"type": "message", "role": "user", "content": []interface{}{map[string]interface{}{"type": "input_text", "text": InitialPrompt}}}}
-	for _, x := range s.Exchanges {
+	for index, x := range s.Exchanges {
 		args, _ := json.Marshal(x.Arguments)
 		if s.Prelude != "" {
 			input = append(input, map[string]interface{}{"type": "message", "role": "assistant", "content": []interface{}{map[string]interface{}{"type": "output_text", "text": s.Prelude}}})
 		}
+		output := interface{}(x.Result)
+		if structuredOutputs {
+			output = StructuredResponsesOutput(index + 1)
+		}
 		input = append(input,
 			map[string]interface{}{"type": "function_call", "id": x.ID, "call_id": x.ID, "name": x.Name, "arguments": string(args)},
-			map[string]interface{}{"type": "function_call_output", "call_id": x.ID, "output": x.Result},
+			map[string]interface{}{"type": "function_call_output", "call_id": x.ID, "output": output},
 		)
 	}
 	input = append(input, map[string]interface{}{"type": "message", "role": "user", "content": []interface{}{map[string]interface{}{"type": "input_text", "text": FinalPrompt}}})

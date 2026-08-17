@@ -3,13 +3,21 @@ package ingestion
 import (
 	"encoding/json"
 	"fmt"
-	"omnillm/internal/cif"
 	"strings"
+	"unicode/utf8"
+
+	"omnillm/internal/cif"
 
 	"github.com/rs/zerolog/log"
 )
 
 // Responses API types
+
+const (
+	responsesTextMaxLength     = 10 * 1024 * 1024
+	responsesImageURLMaxLength = 20 * 1024 * 1024
+	responsesFileDataMaxLength = 70 * 1024 * 1024
+)
 
 type ResponsesPayload struct {
 	Model                string          `json:"model"`
@@ -206,9 +214,15 @@ func translateResponsesInput(input interface{}) ([]cif.CIFMessage, error) {
 				})
 
 			case "function_call_output":
-				output, ok := inputItem.Output.(string)
-				if !ok {
-					return nil, fmt.Errorf("function_call_output item output must be a string")
+				if inputItem.CallID == "" {
+					return nil, fmt.Errorf("function_call_output item missing call_id")
+				}
+				if !inputItem.OutputPresent {
+					return nil, fmt.Errorf("function_call_output item missing output")
+				}
+				output, rawOutput, err := normalizeToolOutput("function_call_output", inputItem.Output)
+				if err != nil {
+					return nil, err
 				}
 				flushAssistant()
 				messages = append(messages, cif.CIFUserMessage{
@@ -219,6 +233,7 @@ func translateResponsesInput(input interface{}) ([]cif.CIFMessage, error) {
 							ToolCallID: inputItem.CallID,
 							ToolName:   inputItem.Name,
 							Content:    output,
+							RawOutput:  rawOutput,
 						},
 					},
 				})
@@ -254,7 +269,7 @@ func translateResponsesInput(input interface{}) ([]cif.CIFMessage, error) {
 				if !inputItem.OutputPresent {
 					return nil, fmt.Errorf("custom_tool_call_output item missing output")
 				}
-				output, err := normalizeCustomToolOutput(inputItem.Output)
+				output, _, err := normalizeToolOutput("custom_tool_call_output", inputItem.Output)
 				if err != nil {
 					return nil, err
 				}
@@ -362,60 +377,125 @@ func parseToolArguments(argumentsStr string) map[string]interface{} {
 	return map[string]interface{}{"_unparsable_arguments": argumentsStr}
 }
 
-func normalizeCustomToolOutput(output interface{}) (string, error) {
+func normalizeToolOutput(itemType string, output interface{}) (string, interface{}, error) {
 	switch value := output.(type) {
 	case string:
-		return value, nil
+		return value, nil, nil
 	case []interface{}:
 		for _, item := range value {
 			content, ok := item.(map[string]interface{})
 			if !ok {
-				return "", fmt.Errorf("custom_tool_call_output item contains invalid content type: %T", item)
+				return "", nil, fmt.Errorf("%s item contains invalid content type: %T", itemType, item)
 			}
-			if err := validateCustomToolOutputContent(content); err != nil {
-				return "", err
+			if err := validateToolOutputContent(itemType, content); err != nil {
+				return "", nil, err
 			}
 		}
 		encoded, err := json.Marshal(value)
 		if err != nil {
-			return "", fmt.Errorf("failed to encode custom_tool_call_output content: %w", err)
+			return "", nil, fmt.Errorf("failed to encode %s content: %w", itemType, err)
 		}
-		return string(encoded), nil
+		return string(encoded), value, nil
 	default:
-		return "", fmt.Errorf("custom_tool_call_output item output must be a string or content list")
+		return "", nil, fmt.Errorf("%s item output must be a string or content list", itemType)
 	}
 }
 
-func validateCustomToolOutputContent(content map[string]interface{}) error {
+func validateToolOutputContent(itemType string, content map[string]interface{}) error {
 	contentType, _ := content["type"].(string)
-	requireString := func(field string) error {
-		if _, ok := content[field].(string); !ok {
-			return fmt.Errorf("custom_tool_call_output %s content requires string field %s", contentType, field)
+
+	if itemType == "custom_tool_call_output" {
+		switch contentType {
+		case "input_text", "output_text", "text":
+			if _, ok := content["text"].(string); !ok {
+				return fmt.Errorf("%s %s content requires string field text", itemType, contentType)
+			}
+			return nil
+		case "input_image":
+			imageURL, hasImageURL := content["image_url"].(string)
+			fileID, hasFileID := content["file_id"].(string)
+			if hasImageURL && imageURL != "" || hasFileID && fileID != "" {
+				return nil
+			}
+			return fmt.Errorf("%s input_image content requires image_url or file_id", itemType)
+		case "input_file":
+			fileID, hasFileID := content["file_id"].(string)
+			fileURL, hasFileURL := content["file_url"].(string)
+			filename, hasFilename := content["filename"].(string)
+			_, hasFileData := content["file_data"].(string)
+			if hasFileID && fileID != "" || hasFileURL && fileURL != "" || hasFilename && filename != "" && hasFileData {
+				return nil
+			}
+			return fmt.Errorf("%s input_file content requires a supported file reference", itemType)
+		default:
+			return fmt.Errorf("%s item contains unknown content type: %s", itemType, contentType)
+		}
+	}
+
+	requireString := func(field string, maxLength int) error {
+		value, ok := content[field].(string)
+		if !ok {
+			return fmt.Errorf("%s %s content requires string field %s", itemType, contentType, field)
+		}
+		if utf8.RuneCountInString(value) > maxLength {
+			return fmt.Errorf("%s %s content field %s exceeds maximum length", itemType, contentType, field)
 		}
 		return nil
 	}
+	optionalString := func(field string, maxLength int) error {
+		value, present := content[field]
+		if !present || value == nil {
+			return nil
+		}
+		text, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("%s %s content field %s must be a string or null", itemType, contentType, field)
+		}
+		if maxLength > 0 && utf8.RuneCountInString(text) > maxLength {
+			return fmt.Errorf("%s %s content field %s exceeds maximum length", itemType, contentType, field)
+		}
+		return nil
+	}
+	validateOptionalStrings := func(fields map[string]int) error {
+		for field, maxLength := range fields {
+			if err := optionalString(field, maxLength); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	validateDetail := func(allowed ...string) error {
+		value, present := content["detail"]
+		if !present || value == nil {
+			return nil
+		}
+		detail, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("%s %s content field detail must be a string or null", itemType, contentType)
+		}
+		for _, candidate := range allowed {
+			if detail == candidate {
+				return nil
+			}
+		}
+		return fmt.Errorf("%s %s content has invalid detail: %s", itemType, contentType, detail)
+	}
 
 	switch contentType {
-	case "input_text", "output_text", "text":
-		return requireString("text")
+	case "input_text":
+		return requireString("text", responsesTextMaxLength)
 	case "input_image":
-		imageURL, hasImageURL := content["image_url"].(string)
-		fileID, hasFileID := content["file_id"].(string)
-		if hasImageURL && imageURL != "" || hasFileID && fileID != "" {
-			return nil
+		if err := validateOptionalStrings(map[string]int{"image_url": responsesImageURLMaxLength, "file_id": 0}); err != nil {
+			return err
 		}
-		return fmt.Errorf("custom_tool_call_output input_image content requires image_url or file_id")
+		return validateDetail("auto", "low", "high", "original")
 	case "input_file":
-		fileID, hasFileID := content["file_id"].(string)
-		fileURL, hasFileURL := content["file_url"].(string)
-		filename, hasFilename := content["filename"].(string)
-		_, hasFileData := content["file_data"].(string)
-		if hasFileID && fileID != "" || hasFileURL && fileURL != "" || hasFilename && filename != "" && hasFileData {
-			return nil
+		if err := validateOptionalStrings(map[string]int{"file_id": 0, "filename": 0, "file_data": responsesFileDataMaxLength, "file_url": 0}); err != nil {
+			return err
 		}
-		return fmt.Errorf("custom_tool_call_output input_file content requires a supported file reference")
+		return validateDetail("auto", "low", "high")
 	default:
-		return fmt.Errorf("custom_tool_call_output item contains unknown content type: %s", contentType)
+		return fmt.Errorf("%s item contains unknown content type: %s", itemType, contentType)
 	}
 }
 

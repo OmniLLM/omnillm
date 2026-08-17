@@ -26,8 +26,9 @@ type fakeOpenAICompatUpstream struct {
 	server *httptest.Server
 	model  string
 
-	mu           sync.Mutex
-	chatRequests []capturedOpenAICompatRequest
+	mu                sync.Mutex
+	chatRequests      []capturedOpenAICompatRequest
+	responsesRequests []capturedOpenAICompatRequest
 }
 
 func newFakeOpenAICompatUpstream(t *testing.T, model string) *fakeOpenAICompatUpstream {
@@ -42,6 +43,31 @@ func newFakeOpenAICompatUpstream(t *testing.T, model string) *fakeOpenAICompatUp
 				"data": []map[string]interface{}{
 					{"id": model},
 				},
+			})
+			return
+
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/responses":
+			var payload map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				http.Error(w, fmt.Sprintf("decode payload: %v", err), http.StatusBadRequest)
+				return
+			}
+			upstream.mu.Lock()
+			upstream.responsesRequests = append(upstream.responsesRequests, capturedOpenAICompatRequest{
+				Authorization: r.Header.Get("Authorization"),
+				Accept:        r.Header.Get("Accept"),
+				Payload:       payload,
+			})
+			upstream.mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"id":     "resp_structured",
+				"model":  model,
+				"status": "completed",
+				"output": []map[string]interface{}{
+					{"type": "message", "id": "msg_structured", "role": "assistant", "status": "completed", "content": []map[string]interface{}{{"type": "output_text", "text": "structured continuation complete"}}},
+				},
+				"usage": map[string]interface{}{"input_tokens": 17, "output_tokens": 3},
 			})
 			return
 
@@ -147,13 +173,25 @@ func (u *fakeOpenAICompatUpstream) lastChatRequest(t *testing.T) capturedOpenAIC
 	return u.chatRequests[len(u.chatRequests)-1]
 }
 
+func (u *fakeOpenAICompatUpstream) lastResponsesRequest(t *testing.T) capturedOpenAICompatRequest {
+	t.Helper()
+
+	u.mu.Lock()
+	defer u.mu.Unlock()
+
+	if len(u.responsesRequests) == 0 {
+		t.Fatal("expected at least one captured openai-compatible Responses request")
+	}
+	return u.responsesRequests[len(u.responsesRequests)-1]
+}
+
 func (u *fakeOpenAICompatUpstream) chatRequestCount() int {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	return len(u.chatRequests)
 }
 
-func registerOpenAICompatibleProvider(t *testing.T, upstreamBaseURL, apiKey, modelID string) string {
+func registerOpenAICompatibleProviderWithFormat(t *testing.T, upstreamBaseURL, apiKey, modelID, apiFormat string) string {
 	t.Helper()
 
 	instanceID := fmt.Sprintf("openai-compatible-test-%d", time.Now().UnixNano())
@@ -168,6 +206,7 @@ func registerOpenAICompatibleProvider(t *testing.T, upstreamBaseURL, apiKey, mod
 	if err := provider.SetupAuth(&providertypes.AuthOptions{
 		Endpoint:            upstreamBaseURL,
 		APIKey:              apiKey,
+		APIFormat:           apiFormat,
 		Models:              fmt.Sprintf("[\"%s\"]", modelID),
 		AllowLocalEndpoints: true,
 	}); err != nil {
@@ -187,6 +226,49 @@ func registerOpenAICompatibleProvider(t *testing.T, upstreamBaseURL, apiKey, mod
 	})
 
 	return instanceID
+}
+
+func registerOpenAICompatibleProvider(t *testing.T, upstreamBaseURL, apiKey, modelID string) string {
+	t.Helper()
+	return registerOpenAICompatibleProviderWithFormat(t, upstreamBaseURL, apiKey, modelID, "")
+}
+
+func TestOpenAICompatibleStructuredResponsesContinuation(t *testing.T) {
+	modelID := fmt.Sprintf("compat-structured-%d", time.Now().UnixNano())
+	upstream := newFakeOpenAICompatUpstream(t, modelID)
+	apiKey := fmt.Sprintf("sk-structured-%d", time.Now().UnixNano())
+	registerOpenAICompatibleProviderWithFormat(t, upstream.baseURL(), apiKey, modelID, "responses")
+
+	backend := newTestServer(t)
+	defer backend.Close()
+
+	requestBody := fmt.Sprintf(`{"model":%q,"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"Read the report"}]},{"type":"function_call","id":"call_report","call_id":"call_report","name":"Read","arguments":%q},{"type":"function_call_output","call_id":"call_report","output":[{"type":"input_text","text":"first"},{"type":"input_image","image_url":"https://example.com/report.png"},{"type":"input_file","file_id":"file_report"}]},{"type":"message","role":"user","content":[{"type":"input_text","text":"Continue"}]}]}`, modelID, `{"file_path":"report.txt"}`)
+	resp := postJSON(t, backend.URL+"/v1/responses", requestBody, nil)
+	body := readBody(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
+	}
+	if !strings.Contains(body, "structured continuation complete") {
+		t.Fatalf("terminal continuation missing: %s", body)
+	}
+
+	captured := upstream.lastResponsesRequest(t)
+	input := captured.Payload["input"].([]interface{})
+	var output interface{}
+	for _, rawItem := range input {
+		item := rawItem.(map[string]interface{})
+		if item["type"] == "function_call_output" {
+			output = item["output"]
+			break
+		}
+	}
+	content, ok := output.([]interface{})
+	if !ok || len(content) != 3 {
+		t.Fatalf("structured output changed upstream: %#v", output)
+	}
+	if content[0].(map[string]interface{})["text"] != "first" || content[1].(map[string]interface{})["image_url"] != "https://example.com/report.png" || content[2].(map[string]interface{})["file_id"] != "file_report" {
+		t.Fatalf("structured output fields changed upstream: %#v", content)
+	}
 }
 
 func TestOpenAICompatibleAnthropicStreamingIsBufferedDownstream(t *testing.T) {

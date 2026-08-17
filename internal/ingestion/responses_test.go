@@ -3,6 +3,7 @@ package ingestion
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"omnillm/internal/cif"
@@ -242,6 +243,168 @@ func TestParseResponsesPayload_FunctionCallOutputBecomesToolResult(t *testing.T)
 	}
 	if toolResult.ToolCallID != "call_123" || toolResult.ToolName != "get_weather" || toolResult.Content != "Sunny" {
 		t.Fatalf("unexpected tool result: %#v", toolResult)
+	}
+}
+
+func TestParseResponsesPayload_FunctionCallOutputContentList(t *testing.T) {
+	output := []interface{}{
+		map[string]interface{}{"type": "input_text", "text": "first"},
+		map[string]interface{}{"type": "input_image", "image_url": "https://example.com/image.png", "detail": "high"},
+		map[string]interface{}{"type": "input_file", "file_id": "file_123", "filename": "report.txt"},
+		map[string]interface{}{"type": "input_text", "text": "last"},
+	}
+	req, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
+		"model": "gpt-5.4-mini",
+		"input": []interface{}{
+			map[string]interface{}{
+				"type":    "function_call_output",
+				"call_id": "call_123",
+				"name":    "read_report",
+				"output":  output,
+			},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	result := req.Messages[0].(cif.CIFUserMessage).Content[0].(cif.CIFToolResultPart)
+	encoded, _ := json.Marshal(output)
+	if result.Content != string(encoded) {
+		t.Fatalf("fallback content = %q, want %q", result.Content, encoded)
+	}
+	if !reflect.DeepEqual(result.RawOutput, output) {
+		t.Fatalf("raw output changed: %#v", result.RawOutput)
+	}
+}
+
+func TestParseResponsesPayload_AcceptsSchemaValidFunctionOutputMembers(t *testing.T) {
+	tests := []struct {
+		name   string
+		output []interface{}
+	}{
+		{name: "type-only-image", output: []interface{}{map[string]interface{}{"type": "input_image"}}},
+		{name: "type-only-file", output: []interface{}{map[string]interface{}{"type": "input_file"}}},
+		{name: "nullable-image-fields", output: []interface{}{map[string]interface{}{"type": "input_image", "image_url": nil, "file_id": nil, "detail": nil}}},
+		{name: "nullable-file-fields", output: []interface{}{map[string]interface{}{"type": "input_file", "file_id": nil, "filename": nil, "file_data": nil, "file_url": nil}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			req, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
+				"model": "gpt-5.4-mini",
+				"input": []interface{}{
+					map[string]interface{}{
+						"type":    "function_call_output",
+						"call_id": "call_123",
+						"output":  test.output,
+					},
+				},
+			}))
+			if err != nil {
+				t.Fatalf("output %#v: %v", test.output, err)
+			}
+			result := req.Messages[0].(cif.CIFUserMessage).Content[0].(cif.CIFToolResultPart)
+			encoded, _ := json.Marshal(test.output)
+			if result.Content != string(encoded) || !reflect.DeepEqual(result.RawOutput, test.output) {
+				t.Fatalf("schema-valid output changed: %#v", result)
+			}
+		})
+	}
+}
+
+func TestParseResponsesPayload_UsesUnicodeCodePointsForOutputLength(t *testing.T) {
+	const maxLength = 10 * 1024 * 1024
+	text := strings.Repeat("界", maxLength)
+	req, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
+		"model": "gpt-5.4-mini",
+		"input": []interface{}{
+			map[string]interface{}{
+				"type":    "function_call_output",
+				"call_id": "call_123",
+				"output":  []interface{}{map[string]interface{}{"type": "input_text", "text": text}},
+			},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("valid multibyte boundary rejected: %v", err)
+	}
+	result := req.Messages[0].(cif.CIFUserMessage).Content[0].(cif.CIFToolResultPart)
+	if result.RawOutput == nil {
+		t.Fatal("multibyte output lost raw representation")
+	}
+}
+
+func TestParseResponsesPayload_AcceptsEmptyFunctionOutputValues(t *testing.T) {
+	tests := []struct {
+		name      string
+		output    interface{}
+		content   string
+		rawOutput interface{}
+	}{
+		{name: "empty-string", output: "", content: ""},
+		{name: "empty-list", output: []interface{}{}, content: "[]", rawOutput: []interface{}{}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			req, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
+				"model": "gpt-5.4-mini",
+				"input": []interface{}{
+					map[string]interface{}{
+						"type":    "function_call_output",
+						"call_id": "call_123",
+						"output":  test.output,
+					},
+				},
+			}))
+			if err != nil {
+				t.Fatalf("output %#v: %v", test.output, err)
+			}
+			result := req.Messages[0].(cif.CIFUserMessage).Content[0].(cif.CIFToolResultPart)
+			if result.Content != test.content || !reflect.DeepEqual(result.RawOutput, test.rawOutput) {
+				t.Fatalf("empty output changed: %#v", result)
+			}
+		})
+	}
+}
+
+func TestParseResponsesPayload_RejectsInvalidFunctionOutputs(t *testing.T) {
+	tests := []struct {
+		name   string
+		callID string
+		output interface{}
+		omit   bool
+	}{
+		{name: "missing-call-id", output: "ok"},
+		{name: "missing", callID: "call_123", omit: true},
+		{name: "null", callID: "call_123", output: nil},
+		{name: "number", callID: "call_123", output: 42},
+		{name: "object", callID: "call_123", output: map[string]interface{}{}},
+		{name: "non-object-member", callID: "call_123", output: []interface{}{"bad"}},
+		{name: "unknown-type", callID: "call_123", output: []interface{}{map[string]interface{}{"type": "unknown"}}},
+		{name: "text-missing-text", callID: "call_123", output: []interface{}{map[string]interface{}{"type": "input_text"}}},
+		{name: "text-too-long", callID: "call_123", output: []interface{}{map[string]interface{}{"type": "input_text", "text": strings.Repeat("x", 10*1024*1024+1)}}},
+		{name: "image-invalid-detail", callID: "call_123", output: []interface{}{map[string]interface{}{"type": "input_image", "detail": "ultra"}}},
+		{name: "image-invalid-url-type", callID: "call_123", output: []interface{}{map[string]interface{}{"type": "input_image", "image_url": 42}}},
+		{name: "file-invalid-detail", callID: "call_123", output: []interface{}{map[string]interface{}{"type": "input_file", "detail": "ultra"}}},
+		{name: "file-data-too-long", callID: "call_123", output: []interface{}{map[string]interface{}{"type": "input_file", "file_data": strings.Repeat("x", 70*1024*1024+1)}}},
+		{name: "file-invalid-data-type", callID: "call_123", output: []interface{}{map[string]interface{}{"type": "input_file", "file_data": 42}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			item := map[string]interface{}{
+				"type":    "function_call_output",
+				"call_id": test.callID,
+			}
+			if !test.omit {
+				item["output"] = test.output
+			}
+			_, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
+				"model": "gpt-5.4-mini",
+				"input": []interface{}{item},
+			}))
+			if err == nil || !strings.Contains(err.Error(), "function_call_output") {
+				t.Fatalf("expected function output error, got %v", err)
+			}
+		})
 	}
 }
 
@@ -684,6 +847,30 @@ func TestParseResponsesPayload_ValidatesCustomToolItems(t *testing.T) {
 				t.Fatal("expected invalid custom item to fail")
 			}
 		})
+	}
+}
+
+func TestParseResponsesPayload_PreservesLegacyCustomOutputValidation(t *testing.T) {
+	output := []interface{}{
+		map[string]interface{}{"type": "input_image", "image_url": "https://example.com/image.png", "detail": "legacy-custom-detail"},
+		map[string]interface{}{"type": "text", "text": strings.Repeat("界", 10*1024*1024+1)},
+	}
+	req, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
+		"model": "gpt-5.4-mini",
+		"input": []interface{}{
+			map[string]interface{}{
+				"type":    "custom_tool_call_output",
+				"call_id": "call_custom",
+				"output":  output,
+			},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("legacy custom output rejected: %v", err)
+	}
+	result := req.Messages[0].(cif.CIFUserMessage).Content[0].(cif.CIFToolResultPart)
+	if !reflect.DeepEqual(result.CustomOutput, output) {
+		t.Fatalf("custom output changed: %#v", result.CustomOutput)
 	}
 }
 
