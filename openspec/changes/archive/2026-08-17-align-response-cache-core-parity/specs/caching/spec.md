@@ -1,8 +1,5 @@
-# caching Specification
+## MODIFIED Requirements
 
-## Purpose
-Defines the opt-in exact-match canonical response cache, including deterministic eligibility, semantic keys, request controls, replay, persistence, expiry, and administration.
-## Requirements
 ### Requirement: Opt-in live configuration
 The response cache SHALL remain disabled unless explicitly enabled, SHALL keep enabled state and positive TTL in the durable runtime configuration store, SHALL read those values per request, and SHALL use 60 seconds when no valid positive TTL is configured.
 
@@ -75,13 +72,6 @@ Caching SHALL apply to Chat Completions, Anthropic Messages, and OpenAI Response
 - **WHEN** a request uses an embeddings route
 - **THEN** no exact-response cache read or write occurs
 
-### Requirement: Per-request controls
-The cache-control header SHALL support bypass or refresh for skipping reads while allowing writes and off or disable for skipping both.
-
-#### Scenario: Refresh requested
-- **WHEN** a client requests refresh
-- **THEN** the gateway calls upstream and stores the fresh successful result
-
 ### Requirement: Canonical replay
 A hit SHALL be re-serialized into the current caller's dialect and streaming mode, SHALL be labeled `X-OmniLLM-Cache: hit` only after successful conversion, and SHALL fall through to ordinary provider execution when cached conversion cannot produce a valid response for the caller.
 
@@ -112,61 +102,7 @@ Cache writes SHALL use the configured Redis response-cache backend, SHALL never 
 - **WHEN** Redis rejects or times out a cache write after upstream execution succeeds
 - **THEN** the gateway returns the successful upstream response and records the cache failure without writing to SQLite
 
-### Requirement: Entry lifecycle
-Entries SHALL use versioned operator-scoped Redis keys, SHALL expire through native creation-age TTL, SHALL increment hit accounting best-effort, SHALL be atomically replaceable by semantic key, and SHALL support namespace-scoped statistics and complete clear without scanning or deleting unrelated keys.
-
-#### Scenario: Expired read
-- **WHEN** Redis expires an entry at its write-time TTL
-- **THEN** lookup returns a miss and a later TTL increase does not resurrect that entry
-
-#### Scenario: TTL changes while entries exist
-- **WHEN** an operator changes the active TTL
-- **THEN** new and refreshed entries use the new TTL while existing entries retain the native expiration assigned when they were written
-
-#### Scenario: Entry replacement
-- **WHEN** a successful refresh stores an existing semantic key
-- **THEN** payload, creation age, expiration, and hit accounting are replaced atomically
-
-#### Scenario: Namespace isolation
-- **WHEN** an administrator inspects or clears response-cache entries
-- **THEN** only keys in the configured OmniLLM response-cache namespace are counted or removed
-
-### Requirement: Operator visibility
-Authenticated administrators SHALL inspect cache settings, Redis backend availability, and available statistics; SHALL update enabled and TTL fields independently; SHALL reject negative TTLs; and SHALL clear all namespaced response entries.
-
-#### Scenario: Statistics unavailable
-- **WHEN** Redis statistics fail
-- **THEN** settings and degraded backend availability are still returned with neutral statistics and the failure is logged
-
-#### Scenario: Clear unavailable
-- **WHEN** Redis is unavailable during an authenticated clear request
-- **THEN** the clear operation reports failure without changing cache enablement or affecting model-serving traffic
-
-### Requirement: Fail-open Redis availability
-Redis SHALL be an optional response-cache acceleration dependency, and initialization or runtime failures SHALL bypass cache storage without failing server startup, liveness, or upstream model execution and without falling back to SQLite.
-
-#### Scenario: Redis unavailable at startup
-- **WHEN** the configured Redis endpoint cannot be reached or authenticated during startup
-- **THEN** OmniLLM starts normally, reports degraded response-cache storage, and continues serving model requests
-
-#### Scenario: Redis read failure
-- **WHEN** an eligible request encounters a Redis read error
-- **THEN** the cache lookup becomes a miss and the request proceeds through normal provider resolution and upstream execution
-
-#### Scenario: Redis recovers
-- **WHEN** Redis becomes available after a startup or runtime outage
-- **THEN** bounded recovery probes restore response-cache reads and writes without restarting OmniLLM
-
-### Requirement: Bounded Redis impact
-Response-cache Redis operations SHALL use finite connection and command deadlines, avoid unbounded retries, and bypass repeated request-path attempts while the backend is known unavailable.
-
-#### Scenario: Sustained outage
-- **WHEN** Redis remains unavailable across multiple eligible requests
-- **THEN** requests bypass the open cache circuit without each waiting for a full Redis timeout
-
-#### Scenario: Cache failure logging
-- **WHEN** backend availability changes
-- **THEN** the system logs the state transition without logging prompt content, response content, or Redis credentials
+## ADDED Requirements
 
 ### Requirement: Exact-response hit accounting
 A successfully served exact-response cache hit SHALL be recorded as response-cache traffic, SHALL retain served aggregate input and output token volume when available, and SHALL NOT be classified as a provider prompt-cache hit or miss or report provider cache-read or cache-write token detail.
@@ -178,4 +114,3 @@ A successfully served exact-response cache hit SHALL be recorded as response-cac
 #### Scenario: Cached conversion falls through
 - **WHEN** a cache entry is read but cannot be converted for the caller
 - **THEN** the failed read is not recorded as a served response-cache hit
-

@@ -175,6 +175,41 @@ make restart REBUILD=--rebuild
 
 请求会先进入 CIF，再做调度与序列化。这样新增提供商时，通常只需要实现与 CIF 的双向适配，而不是写一整套两两转换逻辑。
 
+### 响应缓存
+
+OmniLLM 为 Chat Completions、Anthropic Messages 和 OpenAI Responses 提供可选的精确输入响应缓存，同时支持非流式和流式请求。该功能保持严格的显式启用（opt-in），并在 CIF 层工作，因此通过一种受支持 API 形态或流式模式写入的规范结果，可以为其他兼容调用方重新序列化。
+
+- 缓存资格不依赖采样设置：无论 `temperature` 和 `top_p` 是省略、为零还是非零，请求都可以缓存。采样参数及其他受支持的生成控制仍参与语义键计算，因此只有生成语义相同的请求才能重放同一条目。
+- 命中时不会再次执行上游推理，而是重放先前存储的规范模型结果。对于随机采样请求，这意味着 TTL 内可能再次返回之前的随机结果；请仅在能接受这种重放行为的场景中启用缓存。
+- 重放保证规范内容和工具调用语义，而不是原始 HTTP 字节、SSE 分块边界或事件时序。OmniLLM 会把存储的规范响应序列化为当前调用方使用的 API 形态和流式模式。
+
+启用状态和 TTL 保存在持久化的 SQLite 运行时配置中，并按请求实时读取。规范响应负载与命中计数只保存在另行提供的 Redis 或 Valkey 服务中：
+
+| 设置 | 默认值 | 含义 |
+|---|---|---|
+| `response_cache.enabled` | `false`（显式启用） | 启用响应缓存 |
+| `response_cache.ttl_seconds` | `60`（60 秒） | 未配置有效正数 TTL 时使用的 Redis 原生过期时间；已配置的正数 TTL 仍具有优先权 |
+| `--response-cache-redis-url` / `OMNILLM_RESPONSE_CACHE_REDIS_URL` | `redis://127.0.0.1:6379/0` | Redis URL；显式参数优先于环境变量 |
+| `--response-cache-redis-prefix` / `OMNILLM_RESPONSE_CACHE_REDIS_PREFIX` | `omnillm` | 命名空间前缀；显式参数优先于环境变量 |
+
+启动本地服务并启用缓存：
+
+```sh
+docker run --rm --name omnillm-redis -p 6379:6379 redis:8-alpine
+omnillm start --response-cache-redis-url redis://127.0.0.1:6379/0
+omnillm settings set response-cache on --ttl 60
+```
+
+`redis://user:password@host:6379/0` 和 `rediss://user:password@host:6380/0` URL 支持认证与 TLS。OmniLLM 不会返回或记录包含凭据的 URL。在容器中，`127.0.0.1` 指向应用容器本身，而不是同组的 Redis 服务；请使用其服务主机名，例如 `redis://redis:6379/0`。
+
+Redis 是可选的加速基础设施。如果 URL 解析、启动 ping、认证、读取或写入失败，OmniLLM 会把缓存后端报告为降级状态，并继续正常执行上游模型，不会回退到 SQLite。健康检查仍保持正常，有限的恢复探测会在 Redis 恢复后重新启用缓存。升级时会有意丢弃旧的临时 SQLite 响应行并冷启动。现有条目保留写入时设置的 Redis 原生 TTL；修改 TTL 只影响新写入和刷新的条目，不能恢复已经过期的键。
+
+可通过 `X-OmniLLM-Cache` 请求头逐请求覆盖：`bypass` 跳过读取并强制刷新（仍会写入），`off` 同时跳过读取和写入。管理统计与清理操作仅作用于带版本的 OmniLLM 命名空间，不会清空无关 Redis 数据。
+
+该精确响应缓存与**提供商提示词缓存**彼此独立。提示词缓存指令不会启用或改变精确响应缓存；除非另有独立的精确响应条目命中，提供商提示词缓存命中仍会执行上游推理；精确响应命中也不会被报告为提供商提示词缓存活动。
+
+Redis 条目使用 OmniLLM 带版本的命名空间和规范响应格式。该格式不与 LiteLLM 的 Redis 缓存格式逐字节兼容，两者不能互换使用。
+
 ### 提供商路由与故障转移
 
 模型解析支持直接模型名、带提供商前缀的模型名，以及按候选提供商顺序自动回退。

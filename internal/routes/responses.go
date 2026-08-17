@@ -1,7 +1,6 @@
 package routes
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -9,6 +8,7 @@ import (
 	"omnillm/internal/ingestion"
 	"omnillm/internal/lib/affinity"
 	"omnillm/internal/lib/modelrouting"
+	"omnillm/internal/lib/responsecache"
 	"omnillm/internal/providerdispatch"
 	"omnillm/internal/providers/types"
 	"omnillm/internal/serialization"
@@ -59,6 +59,27 @@ func handleResponses(c *gin.Context) {
 	}
 
 	originalModel := prepareCanonicalRequest(c, canonicalRequest, "responses")
+
+	if hit := lookupResponseCache(c, canonicalRequest, requestIDStr); hit != nil {
+		if canonicalRequest.Stream {
+			if replayResponsesStreamFromCache(c, hit) {
+				logCompletedResponse("responses", requestIDStr, originalModel, hit.Model, "response-cache", true, hit.StopReason, hit.Usage, startTime)
+				recordResponseCacheHit(requestIDStr, originalModel, hit.Model, normalizeMeteringClient(c.GetHeader("User-Agent")), "responses", hit.Usage, time.Since(startTime).Milliseconds(), true)
+				return
+			}
+			log.Warn().Str("request_id", requestIDStr).Msg("Cache hit failed to serialize; falling through to upstream")
+		} else {
+			responsesResp, err := serialization.SerializeToResponses(hit)
+			if err == nil {
+				c.Header(responsecache.BypassHeader, "hit")
+				logCompletedResponse("responses", requestIDStr, originalModel, hit.Model, "response-cache", false, hit.StopReason, hit.Usage, startTime)
+				recordResponseCacheHit(requestIDStr, originalModel, hit.Model, normalizeMeteringClient(c.GetHeader("User-Agent")), "responses", hit.Usage, time.Since(startTime).Milliseconds(), false)
+				c.JSON(http.StatusOK, responsesResp)
+				return
+			}
+			log.Warn().Err(err).Str("request_id", requestIDStr).Msg("Cache hit failed to serialize; falling through to upstream")
+		}
+	}
 
 	// Resolve providers using the same ordered attempt pipeline as the other
 	// generation dialects so provider pinning and failover remain intact.
@@ -156,6 +177,8 @@ func handleResponsesNonStreamingResponse(c *gin.Context, adapter types.ProviderA
 	logCompletedResponse("responses", requestID, originalModel, response.Model, providerID, false, response.StopReason, response.Usage, startTime)
 	recordUsage(requestID, originalModel, response.Model, providerID, normalizeMeteringClient(c.GetHeader("User-Agent")), "responses", response.Usage, time.Since(startTime).Milliseconds(), false, http.StatusOK, "")
 
+	populateResponseCache(c, canonicalRequest, response)
+
 	c.JSON(http.StatusOK, responsesResp)
 	return nil
 }
@@ -175,6 +198,8 @@ func handleResponsesStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 	ctx := c.Request.Context()
 	eventCh = toolarguments.NormalizeStream(ctx, eventCh, canonicalRequest.Tools)
 
+	acc, cacheState := newResponseCacheStreamAccumulator(c)
+
 	state := serialization.CreateResponsesStreamState()
 	flusher, _ := c.Writer.(http.Flusher)
 	modelUsed := canonicalRequest.Model
@@ -188,30 +213,17 @@ func handleResponsesStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 				return false
 			}
 
+			if acc != nil {
+				acc.Observe(event)
+			}
+
 			responsesEvents, err := serialization.ConvertCIFEventToResponsesSSE(event, state)
 			if err != nil {
 				log.Error().Err(err).Str("request_id", requestID).Msg("Failed to convert CIF event to Responses SSE")
 				return false
 			}
 
-			var sb strings.Builder
-			for _, evt := range responsesEvents {
-				eventType, _ := evt["type"].(string)
-				jsonBytes, err := json.Marshal(evt)
-				if err != nil {
-					continue
-				}
-				sb.WriteString("event: ")
-				sb.WriteString(eventType)
-				sb.WriteString("\ndata: ")
-				sb.Write(jsonBytes)
-				sb.WriteString("\n\n")
-			}
-			io.WriteString(w, sb.String())
-
-			if flusher != nil {
-				flusher.Flush()
-			}
+			flushStreamWriter(w, flusher, formatResponsesSSE(responsesEvents))
 
 			if endEvt, isEnd := event.(cif.CIFStreamEnd); isEnd {
 				inputTokens := 0
@@ -234,6 +246,7 @@ func handleResponsesStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 					Int64("latency_ms", time.Since(startTime).Milliseconds()).
 					Msg("\x1b[32m<--\x1b[0m RESPONSE stream")
 				recordUsage(requestID, originalModel, modelUsed, providerID, normalizeMeteringClient(c.GetHeader("User-Agent")), "responses", endEvt.Usage, time.Since(startTime).Milliseconds(), true, http.StatusOK, "")
+				populateResponseCacheStream(c, canonicalRequest, acc, cacheState)
 				return false
 			}
 
@@ -246,4 +259,20 @@ func handleResponsesStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 	})
 
 	return nil
+}
+
+func replayResponsesStreamFromCache(c *gin.Context, response *cif.CanonicalResponse) bool {
+	state := serialization.CreateResponsesStreamState()
+	var payloads []string
+	for _, event := range responsecache.SynthesizeStream(response) {
+		responsesEvents, err := serialization.ConvertCIFEventToResponsesSSE(event, state)
+		if err != nil {
+			return false
+		}
+		if payload := formatResponsesSSE(responsesEvents); payload != "" {
+			payloads = append(payloads, payload)
+		}
+	}
+
+	return replayCachedSSE(c, payloads, false)
 }

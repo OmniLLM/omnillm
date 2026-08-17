@@ -1,22 +1,10 @@
-// Package responsecache implements an exact-match cache for deterministic,
-// non-streaming LLM responses at the CIF (Canonical Intermediate Format) layer.
+// Package responsecache implements an exact-match cache for LLM responses at
+// the CIF (Canonical Intermediate Format) layer.
 //
-// Design rationale:
-//
-//   - Caching at the CIF layer (CanonicalResponse) rather than at a wire shape
-//     makes the cache shape-agnostic: a response produced for an OpenAI-shape
-//     client can be re-serialized to satisfy an Anthropic-shape client and vice
-//     versa, because every route serializes from the same CanonicalResponse.
-//
-//   - Only DETERMINISTIC requests are cacheable. temperature == 0 (or unset,
-//     which most providers treat as greedy/near-greedy — we require an explicit
-//     0 to be safe) and top_p unset/>=1. Any tool call, any temperature > 0, any
-//     streaming request is a hard skip: returning a stale answer there is a
-//     correctness bug, not an optimization.
-//
-//   - The cache key is a SHA-256 over the salient, order-preserving parts of the
-//     canonical request. Two requests collide iff they would deterministically
-//     produce the same generation.
+// Responses are stored canonically so cache entries can be re-serialized into
+// the current caller's dialect and streaming mode. Cache identity includes
+// generation semantics while excluding transport, routing, dialect, and
+// provider prompt-cache controls.
 package responsecache
 
 import (
@@ -46,7 +34,7 @@ const (
 	cfgKeyTTLSecs = "response_cache.ttl_seconds"
 
 	// DefaultTTL applies when the operator enabled the cache but set no TTL.
-	DefaultTTL = 1 * time.Hour
+	DefaultTTL = 60 * time.Second
 
 	// BypassHeader lets a client force a cache miss+refresh for one request.
 	// Value "bypass" skips the read (still writes); "off" skips read and write.
@@ -70,62 +58,125 @@ func LoadConfig() Config {
 	return Config{Enabled: enabled, TTL: ttl}
 }
 
-// Cacheable reports whether a canonical request is eligible for exact-match
-// caching. It is intentionally conservative: any doubt means "not cacheable".
-// Streaming IS eligible — a streaming response is accumulated to a
-// CanonicalResponse on the way out and replayed as synthetic SSE on a hit.
-func Cacheable(req *cif.CanonicalRequest) bool {
+// Key derives the stable semantic cache key for a canonical request. It returns
+// an error and no key when semantic material cannot be serialized safely.
+func Key(req *cif.CanonicalRequest) (string, error) {
 	if req == nil {
-		return false
+		return "", errors.New("responsecache: nil request")
 	}
-	// Require an explicit temperature of exactly 0 — greedy decoding.
-	if req.Temperature == nil || *req.Temperature != 0 {
-		return false
-	}
-	// If top_p is pinned below 1 alongside temp 0 it's still deterministic, but
-	// an explicit top_p > 0 && < 1 with sampling elsewhere is a smell; only allow
-	// unset or >= 1 (no-op) top_p.
-	if req.TopP != nil && *req.TopP < 1 {
-		return false
-	}
-	return true
-}
 
-// Key derives the stable cache key for a canonical request. Only fields that
-// affect a deterministic generation are hashed; transport/metadata (headers,
-// user id, stream flag) are excluded so semantically identical requests collide.
-func Key(req *cif.CanonicalRequest) string {
-	// A struct with a fixed field order gives a stable JSON encoding.
 	keyed := struct {
-		Model          string                 `json:"model"`
-		System         []cif.CIFSystemBlock   `json:"system,omitempty"`
-		Messages       []cif.CIFMessage       `json:"messages"`
-		Tools          []cif.CIFTool          `json:"tools,omitempty"`
-		ToolChoice     cif.CIFToolChoice      `json:"toolChoice,omitempty"`
-		Temperature    *float64               `json:"temperature,omitempty"`
-		TopP           *float64               `json:"topP,omitempty"`
-		MaxTokens      *int                   `json:"maxTokens,omitempty"`
-		Stop           []string               `json:"stop,omitempty"`
-		ResponseFormat map[string]interface{} `json:"responseFormat,omitempty"`
+		Model              string                 `json:"model"`
+		System             []cif.CIFSystemBlock   `json:"system,omitempty"`
+		Messages           []cif.CIFMessage       `json:"messages"`
+		Tools              []cif.CIFTool          `json:"tools,omitempty"`
+		ToolChoice         cif.CIFToolChoice      `json:"toolChoice,omitempty"`
+		Temperature        *float64               `json:"temperature,omitempty"`
+		TopP               *float64               `json:"topP,omitempty"`
+		MaxTokens          *int                   `json:"maxTokens,omitempty"`
+		Stop               []string               `json:"stop,omitempty"`
+		ResponseFormat     map[string]interface{} `json:"responseFormat,omitempty"`
+		PreviousResponseID *string                `json:"previousResponseId,omitempty"`
+		UserID             *string                `json:"userId,omitempty"`
+		ThinkingBudget     *int                   `json:"thinkingBudgetTokens,omitempty"`
 	}{
-		Model:          req.Model,
-		System:         req.System,
-		Messages:       req.Messages,
-		Tools:          req.Tools,
-		ToolChoice:     req.ToolChoice,
-		Temperature:    req.Temperature,
-		TopP:           req.TopP,
-		MaxTokens:      req.MaxTokens,
-		Stop:           req.Stop,
-		ResponseFormat: req.ResponseFormat,
+		Model:              req.Model,
+		System:             semanticSystem(req.System),
+		Messages:           semanticMessages(req.Messages),
+		Tools:              semanticTools(req.Tools),
+		ToolChoice:         req.ToolChoice,
+		Temperature:        req.Temperature,
+		TopP:               req.TopP,
+		MaxTokens:          req.MaxTokens,
+		Stop:               req.Stop,
+		ResponseFormat:     req.ResponseFormat,
+		PreviousResponseID: req.PreviousResponseID,
+		UserID:             req.UserID,
 	}
+	if req.Extensions != nil {
+		keyed.ThinkingBudget = req.Extensions.ThinkingBudgetTokens
+	}
+
 	raw, err := json.Marshal(keyed)
 	if err != nil {
-		// Marshal failure ⇒ un-cacheable key; a random-ish sum avoids collisions.
-		raw = []byte(req.Model + "|marshal-error")
+		return "", err
 	}
 	sum := sha256.Sum256(raw)
-	return hex.EncodeToString(sum[:])
+	return hex.EncodeToString(sum[:]), nil
+}
+
+func semanticSystem(system []cif.CIFSystemBlock) []cif.CIFSystemBlock {
+	if system == nil {
+		return nil
+	}
+	result := make([]cif.CIFSystemBlock, len(system))
+	for i, block := range system {
+		result[i] = cif.CIFSystemBlock{Type: block.Type, Text: block.Text}
+	}
+	return result
+}
+
+func semanticTools(tools []cif.CIFTool) []cif.CIFTool {
+	if tools == nil {
+		return nil
+	}
+	result := make([]cif.CIFTool, len(tools))
+	for i, tool := range tools {
+		result[i] = tool
+		result[i].CacheControl = nil
+	}
+	return result
+}
+
+func semanticMessages(messages []cif.CIFMessage) []cif.CIFMessage {
+	if messages == nil {
+		return nil
+	}
+	result := make([]cif.CIFMessage, 0, len(messages))
+	for _, message := range messages {
+		switch typed := message.(type) {
+		case cif.CIFSystemMessage:
+			result = append(result, cif.CIFSystemMessage{Role: typed.Role, Content: semanticSystem(typed.Content)})
+		case cif.CIFUserMessage:
+			result = append(result, cif.CIFUserMessage{Role: typed.Role, Content: semanticContent(typed.Content)})
+		case cif.CIFAssistantMessage:
+			result = append(result, cif.CIFAssistantMessage{Role: typed.Role, Content: semanticContent(typed.Content)})
+		default:
+			// Keep unknown implementations in the projection so unsupported values
+			// fail closed during marshaling rather than silently losing semantics.
+			result = append(result, message)
+		}
+	}
+	return result
+}
+
+func semanticContent(parts []cif.CIFContentPart) []cif.CIFContentPart {
+	if parts == nil {
+		return nil
+	}
+	result := make([]cif.CIFContentPart, 0, len(parts))
+	for _, part := range parts {
+		switch typed := part.(type) {
+		case cif.CIFTextPart:
+			typed.CacheControl = nil
+			result = append(result, typed)
+		case cif.CIFImagePart:
+			typed.CacheControl = nil
+			result = append(result, typed)
+		case cif.CIFThinkingPart:
+			typed.CacheControl = nil
+			result = append(result, typed)
+		case cif.CIFToolCallPart:
+			typed.CacheControl = nil
+			result = append(result, typed)
+		case cif.CIFToolResultPart:
+			typed.CacheControl = nil
+			result = append(result, typed)
+		default:
+			result = append(result, part)
+		}
+	}
+	return result
 }
 
 // GetContext returns a cached CanonicalResponse and propagates ctx to storage.
@@ -191,6 +242,9 @@ type cachedPart struct {
 	ToolCallID    string                 `json:"toolCallId,omitempty"`
 	ToolName      string                 `json:"toolName,omitempty"`
 	ToolArguments map[string]interface{} `json:"toolArguments,omitempty"`
+	ToolKind      cif.CIFToolKind        `json:"toolKind,omitempty"`
+	RawInput      *string                `json:"rawInput,omitempty"`
+	Namespace     string                 `json:"namespace,omitempty"`
 }
 
 func encodeResponse(resp *cif.CanonicalResponse) (string, error) {
@@ -213,6 +267,9 @@ func encodeResponse(resp *cif.CanonicalResponse) (string, error) {
 				ToolCallID:    p.ToolCallID,
 				ToolName:      p.ToolName,
 				ToolArguments: p.ToolArguments,
+				ToolKind:      p.ToolKind,
+				RawInput:      p.RawInput,
+				Namespace:     p.Namespace,
 			})
 		default:
 			// Unknown part type ⇒ un-cacheable (image/tool_result should not
@@ -251,6 +308,9 @@ func decodeResponse(data string) (*cif.CanonicalResponse, error) {
 				ToolCallID:    p.ToolCallID,
 				ToolName:      p.ToolName,
 				ToolArguments: p.ToolArguments,
+				ToolKind:      p.ToolKind,
+				RawInput:      p.RawInput,
+				Namespace:     p.Namespace,
 			})
 		default:
 			return nil, errUncacheablePart

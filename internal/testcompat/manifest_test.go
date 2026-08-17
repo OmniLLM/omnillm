@@ -28,6 +28,40 @@ func TestSemanticScenarioManifestCompleteness(t *testing.T) {
 	}
 }
 
+func TestClientCacheFixtureCompleteness(t *testing.T) {
+	required := map[string]bool{
+		"claude-code":                        false,
+		"codex-cli":                          false,
+		"droid":                              false,
+		"github-copilot-cli-custom-provider": false,
+	}
+	for _, fixture := range ClientCacheFixtures() {
+		if _, ok := required[fixture.Name]; !ok {
+			t.Fatalf("unexpected coding-agent cache fixture %q", fixture.Name)
+		}
+		if required[fixture.Name] {
+			t.Fatalf("duplicate coding-agent cache fixture %q", fixture.Name)
+		}
+		required[fixture.Name] = true
+		if fixture.Endpoint == "" || len(fixture.Request) == 0 {
+			t.Fatalf("incomplete coding-agent cache fixture %q", fixture.Name)
+		}
+		if got := len(fixture.Exchanges); got != MinimumSequentialToolCalls {
+			t.Fatalf("%s exchanges = %d, want %d", fixture.Name, got, MinimumSequentialToolCalls)
+		}
+		for index, exchange := range fixture.Exchanges {
+			if exchange.ID == "" || exchange.Name == "" || exchange.Result == "" {
+				t.Fatalf("%s exchange %d is incomplete: %#v", fixture.Name, index, exchange)
+			}
+		}
+	}
+	for name, seen := range required {
+		if !seen {
+			t.Errorf("coding-agent cache fixture %q is missing", name)
+		}
+	}
+}
+
 func TestProviderStrategyManifestCompleteness(t *testing.T) {
 	rows := ProviderStrategies()
 	providers := make(map[string]int)

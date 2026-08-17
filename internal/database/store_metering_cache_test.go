@@ -14,6 +14,7 @@ func TestPromptCacheStatusAndAggregates(t *testing.T) {
 		{RequestID: "hit", ModelID: filter.ModelID, ProviderID: "p", CacheReadInputTokens: intp(12), CacheWriteInputTokens: intp(3), CreatedAt: time.Now()},
 		{RequestID: "miss", ModelID: filter.ModelID, ProviderID: "p", CacheReadInputTokens: intp(0), CreatedAt: time.Now()},
 		{RequestID: "unknown", ModelID: filter.ModelID, ProviderID: "p", CreatedAt: time.Now()},
+		{RequestID: "response-cache", ModelID: filter.ModelID, ProviderID: "response-cache", InputTokens: 20, OutputTokens: 4, TotalTokens: 24, CreatedAt: time.Now()},
 	}
 	for _, row := range rows {
 		if err := db.InsertMeteringRecord(row); err != nil {
@@ -29,7 +30,7 @@ func TestPromptCacheStatusAndAggregates(t *testing.T) {
 	for _, record := range records {
 		statuses[record.RequestID] = record.PromptCacheStatus
 	}
-	if statuses["hit"] != PromptCacheHit || statuses["miss"] != PromptCacheMiss || statuses["unknown"] != PromptCacheUnknown {
+	if statuses["hit"] != PromptCacheHit || statuses["miss"] != PromptCacheMiss || statuses["unknown"] != PromptCacheUnknown || statuses["response-cache"] != PromptCacheUnknown {
 		t.Fatalf("statuses = %#v", statuses)
 	}
 
@@ -37,17 +38,26 @@ func TestPromptCacheStatusAndAggregates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.CacheHits != 1 || stats.CacheMisses != 1 || stats.CacheUnknown != 1 || stats.CacheReadTokens != 12 || stats.CacheWriteTokens != 3 {
+	if stats.CacheHits != 1 || stats.CacheMisses != 1 || stats.CacheUnknown != 2 || stats.CacheReadTokens != 12 || stats.CacheWriteTokens != 3 {
 		t.Fatalf("stats = %#v", stats)
 	}
 
-	for status, want := range map[PromptCacheStatus]string{PromptCacheHit: "hit", PromptCacheMiss: "miss", PromptCacheUnknown: "unknown"} {
+	for status, want := range map[PromptCacheStatus][]string{
+		PromptCacheHit:     {"hit"},
+		PromptCacheMiss:    {"miss"},
+		PromptCacheUnknown: {"response-cache", "unknown"},
+	} {
 		filtered, count, err := db.ListMeteringRecords(MeteringFilter{ModelID: filter.ModelID, PromptCacheStatus: status}, 10, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if count != 1 || len(filtered) != 1 || filtered[0].RequestID != want {
+		if count != int64(len(want)) || len(filtered) != len(want) {
 			t.Fatalf("filter %s = %#v count=%d", status, filtered, count)
+		}
+		for index, requestID := range want {
+			if filtered[index].RequestID != requestID {
+				t.Fatalf("filter %s[%d] = %q, want %q", status, index, filtered[index].RequestID, requestID)
+			}
 		}
 	}
 }

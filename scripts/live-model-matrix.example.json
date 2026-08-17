@@ -25,7 +25,8 @@
         "cancellation": true,
         "promptCaching": {
           "notApplicable": "Declare support only when this account and model expose cache-read usage"
-        }
+        },
+        "exactResponseCaching": true
       },
       "provision": {
         "path": "/api/admin/providers/auth-and-create/google",
@@ -58,7 +59,8 @@
         "cancellation": true,
         "promptCaching": {
           "notApplicable": "Declare support only when this account and model expose cache-read usage"
-        }
+        },
+        "exactResponseCaching": true
       }
     },
     {
@@ -79,7 +81,8 @@
         "cancellation": true,
         "promptCaching": {
           "notApplicable": "Declare support only when this account and model expose cache-read usage"
-        }
+        },
+        "exactResponseCaching": true
       },
       "scenarioOverrides": {
         "parallel_tools": {

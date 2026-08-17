@@ -78,7 +78,8 @@
               "largeResults",
               "longStream",
               "cancellation",
-              "promptCaching"
+              "promptCaching",
+              "exactResponseCaching"
             ],
             "properties": {
               "tools": { "$ref": "#/$defs/support" },
@@ -86,7 +87,8 @@
               "largeResults": { "$ref": "#/$defs/support" },
               "longStream": { "$ref": "#/$defs/support" },
               "cancellation": { "$ref": "#/$defs/support" },
-              "promptCaching": { "$ref": "#/$defs/support" }
+              "promptCaching": { "$ref": "#/$defs/support" },
+              "exactResponseCaching": { "$ref": "#/$defs/support" }
             }
           },
           "scenarioOverrides": {
@@ -102,7 +104,8 @@
               "large_result": { "$ref": "#/$defs/support" },
               "long_stream": { "$ref": "#/$defs/support" },
               "cancellation": { "$ref": "#/$defs/support" },
-              "prompt_caching": { "$ref": "#/$defs/support" }
+              "prompt_caching": { "$ref": "#/$defs/support" },
+              "exact_response_caching": { "$ref": "#/$defs/support" }
             }
           },
           "provision": {

@@ -45,14 +45,25 @@ func (s *recordingStore) Clear(context.Context) (int64, error) { return 0, nil }
 func (s *recordingStore) Available() bool                      { return s.available }
 func (s *recordingStore) Close() error                         { return nil }
 
+func TestEffectiveTTL(t *testing.T) {
+	for _, ttl := range []time.Duration{0, -time.Second} {
+		if got := effectiveTTL(ttl); got != 60*time.Second {
+			t.Fatalf("effectiveTTL(%v) = %v, want 60s", ttl, got)
+		}
+	}
+	if got := effectiveTTL(37 * time.Second); got != 37*time.Second {
+		t.Fatalf("effectiveTTL(37s) = %v, want configured positive TTL", got)
+	}
+}
+
 func TestDefaultStoreFailsOpen(t *testing.T) {
 	restore := ConfigureStore(nil)
 	defer restore()
 	req := baseReq()
-	if got := GetContext(context.Background(), Config{Enabled: true}, req, Key(req)); got != nil {
+	if got := GetContext(context.Background(), Config{Enabled: true}, req, mustKey(t, req)); got != nil {
 		t.Fatalf("GetContext unavailable store = %#v, want miss", got)
 	}
-	PutContext(context.Background(), Config{Enabled: true}, req, Key(req), cacheTestResponse())
+	PutContext(context.Background(), Config{Enabled: true}, req, mustKey(t, req), cacheTestResponse())
 	if CurrentStore().Available() {
 		t.Fatal("default unavailable store reports available")
 	}
@@ -68,7 +79,7 @@ func TestGetPutContextPropagationAndFailOpen(t *testing.T) {
 	restore := ConfigureStore(store)
 	defer restore()
 	req := baseReq()
-	key := Key(req)
+	key := mustKey(t, req)
 	type markerKey struct{}
 	ctx := context.WithValue(context.Background(), markerKey{}, "request")
 
@@ -100,7 +111,7 @@ func TestPutContextExcludesUnsupportedResponses(t *testing.T) {
 	restore := ConfigureStore(store)
 	defer restore()
 	req := baseReq()
-	key := Key(req)
+	key := mustKey(t, req)
 
 	cases := []*cif.CanonicalResponse{
 		nil,

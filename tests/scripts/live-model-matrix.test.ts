@@ -1,13 +1,15 @@
 import { describe, expect, test } from "bun:test"
 
 import {
+  type ManifestRow,
+  needsExactResponseCache,
   parseManifest,
   readStream,
   replayRequest,
   sanitizeFailure,
 } from "../../scripts/test-live-model-matrix"
 
-const copilotGrokRow = {
+const copilotGrokRow: ManifestRow = {
   id: "copilot-grok",
   provider: "github-copilot",
   model: "grok-4.5",
@@ -20,6 +22,7 @@ const copilotGrokRow = {
     longStream: true,
     cancellation: true,
     promptCaching: { notApplicable: "cache usage unavailable" },
+    exactResponseCaching: true,
   },
   scenarioOverrides: {
     parallel_tools: { notApplicable: "account-specific behavior" },
@@ -34,7 +37,7 @@ const copilotGrokRow = {
   },
 }
 
-const validRow = {
+const validRow: ManifestRow = {
   id: "example",
   provider: "google",
   model: "gemini-test",
@@ -51,6 +54,7 @@ const validRow = {
     longStream: true,
     cancellation: true,
     promptCaching: { notApplicable: "cache usage unavailable" },
+    exactResponseCaching: true,
   },
   provision: {
     path: "/api/admin/providers/auth-and-create/google",
@@ -73,6 +77,74 @@ describe("live model matrix manifest", () => {
     const manifest = parseManifest({ version: 1, rows: [copilotGrokRow] })
 
     expect(manifest.rows[0]).toEqual(copilotGrokRow)
+  })
+
+  test("keeps exact-response caching separate from prompt caching", () => {
+    const row = {
+      ...validRow,
+      capabilities: {
+        ...validRow.capabilities,
+        promptCaching: { notApplicable: "provider usage unavailable" },
+        exactResponseCaching: true,
+      },
+      scenarioOverrides: {
+        prompt_caching: { notApplicable: "provider contract unavailable" },
+        exact_response_caching: true,
+      },
+    }
+    const manifest = parseManifest({ version: 1, rows: [row] })
+
+    expect(manifest.rows[0]?.capabilities.promptCaching).toEqual({
+      notApplicable: "provider usage unavailable",
+    })
+    expect(manifest.rows[0]?.capabilities.exactResponseCaching).toBe(true)
+    expect(manifest.rows[0]?.scenarioOverrides?.prompt_caching).toEqual({
+      notApplicable: "provider contract unavailable",
+    })
+    expect(manifest.rows[0]?.scenarioOverrides?.exact_response_caching).toBe(
+      true,
+    )
+  })
+
+  test("requires an exact-response-cache capability declaration", () => {
+    const { exactResponseCaching: _, ...capabilities } = validRow.capabilities
+    expect(() =>
+      parseManifest({
+        version: 1,
+        rows: [{ ...validRow, capabilities }],
+      }),
+    ).toThrow("capabilities.exactResponseCaching is required")
+  })
+
+  test("configures exact-response cache only for runnable extended scenarios", () => {
+    expect(needsExactResponseCache("smoke", [validRow])).toBe(false)
+    expect(needsExactResponseCache("extended", [])).toBe(false)
+    expect(needsExactResponseCache("extended", [validRow])).toBe(true)
+    expect(
+      needsExactResponseCache("extended", [
+        {
+          ...validRow,
+          scenarioOverrides: {
+            exact_response_caching: {
+              notApplicable: "not enabled for this account",
+            },
+          },
+        },
+      ]),
+    ).toBe(false)
+    expect(
+      needsExactResponseCache("extended", [
+        {
+          ...validRow,
+          capabilities: {
+            ...validRow.capabilities,
+            exactResponseCaching: {
+              notApplicable: "Redis is unavailable",
+            },
+          },
+        },
+      ]),
+    ).toBe(false)
   })
 
   test("rejects duplicate row identifiers", () => {

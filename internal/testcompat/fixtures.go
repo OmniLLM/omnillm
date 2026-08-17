@@ -30,6 +30,17 @@ type ToolExchange struct {
 	Arguments map[string]interface{}
 	Result    string
 	IsError   bool
+	ToolKind  cif.CIFToolKind
+	RawInput  *string
+	Namespace string
+}
+
+type ClientCacheFixture struct {
+	Name      string
+	Endpoint  string
+	Headers   map[string]string
+	Request   json.RawMessage
+	Exchanges []ToolExchange
 }
 
 type Scenario struct {
@@ -64,6 +75,96 @@ func AgenticScenario() Scenario {
 		}
 	}
 	panic("five-sequential-tool-cycles scenario is missing")
+}
+
+// ClientCacheFixtures models the native API histories submitted by each
+// maintained coding-agent client. Every fixture includes five observed calls,
+// five associated results, and the terminal continuation prompt; a provider
+// response to the request must therefore contain no sixth call.
+func ClientCacheFixtures() []ClientCacheFixture {
+	scenario := AgenticScenario()
+	codexExchanges := customToolExchanges("exec", "functions", "command")
+	droidExchanges := customToolExchanges(DroidToolName, "", "patch")
+	return []ClientCacheFixture{
+		{
+			Name:      "claude-code",
+			Endpoint:  "/v1/messages",
+			Headers:   map[string]string{"anthropic-version": "2023-06-01"},
+			Request:   AnthropicRequest(scenario, false),
+			Exchanges: scenario.Exchanges,
+		},
+		{
+			Name:      "github-copilot-cli-custom-provider",
+			Endpoint:  "/v1/chat/completions",
+			Request:   ChatCompletionsRequest(scenario, false),
+			Exchanges: scenario.Exchanges,
+		},
+		{
+			Name:      "codex-cli",
+			Endpoint:  "/v1/responses",
+			Request:   customToolResponsesRequest(codexExchanges, false),
+			Exchanges: codexExchanges,
+		},
+		{
+			Name:      "droid",
+			Endpoint:  "/v1/responses",
+			Request:   customToolResponsesRequest(droidExchanges, false),
+			Exchanges: droidExchanges,
+		},
+	}
+}
+
+func customToolExchanges(name, namespace, inputLabel string) []ToolExchange {
+	exchanges := make([]ToolExchange, 0, MinimumSequentialToolCalls)
+	for index := 1; index <= MinimumSequentialToolCalls; index++ {
+		rawInput := fmt.Sprintf("%s-%d\nline-%d", inputLabel, index, index)
+		exchanges = append(exchanges, ToolExchange{
+			ID:        fmt.Sprintf("call_custom_%d", index),
+			Name:      name,
+			Arguments: map[string]interface{}{"input": rawInput},
+			Result:    fmt.Sprintf("result-%d", index),
+			ToolKind:  cif.CIFToolKindCustom,
+			RawInput:  &rawInput,
+			Namespace: namespace,
+		})
+	}
+	return exchanges
+}
+
+func customToolResponsesRequest(exchanges []ToolExchange, stream bool) json.RawMessage {
+	first := exchanges[0]
+	input := []interface{}{map[string]interface{}{"type": "message", "role": "user", "content": InitialPrompt}}
+	for _, exchange := range exchanges {
+		call := map[string]interface{}{
+			"type":    "custom_tool_call",
+			"call_id": exchange.ID,
+			"name":    exchange.Name,
+			"input":   *exchange.RawInput,
+		}
+		if exchange.Namespace != "" {
+			call["namespace"] = exchange.Namespace
+		}
+		input = append(input,
+			call,
+			map[string]interface{}{"type": "custom_tool_call_output", "call_id": exchange.ID, "output": exchange.Result},
+		)
+	}
+	input = append(input, map[string]interface{}{"type": "message", "role": "user", "content": FinalPrompt})
+	tool := map[string]interface{}{
+		"type":        "custom",
+		"name":        first.Name,
+		"description": "Execute a native custom tool",
+		"format":      map[string]interface{}{"type": "text"},
+	}
+	if first.Namespace != "" {
+		tool["namespace"] = first.Namespace
+	}
+	return marshal(map[string]interface{}{
+		"model":  Model,
+		"stream": stream,
+		"input":  input,
+		"tools":  []interface{}{tool},
+	})
 }
 
 func exchange(index int, result string) ToolExchange {
