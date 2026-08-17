@@ -32,11 +32,19 @@ Read operations SHALL support table and JSON output, default to table, and retur
 - **THEN** the CLI prints the server JSON without table rendering
 
 ### Requirement: Server operation and administration
-The CLI SHALL provide commands to start the server and administer provider authentication, providers, models, virtual models, settings, status, logs, usage, and synchronization.
+The CLI SHALL provide commands to start the server and administer provider authentication, providers, models, virtual models, settings, status, logs, usage, synchronization, and Redis-backed exact-response caching.
 
 #### Scenario: Live log tail
 - **WHEN** an operator runs the log-tail command against a reachable server
 - **THEN** the CLI subscribes to the authenticated server-sent-event log stream and prints events as they arrive
+
+#### Scenario: Default Redis endpoint
+- **WHEN** the operator starts OmniLLM without a response-cache Redis URL flag or environment value
+- **THEN** the server attempts the documented local Redis endpoint without making Redis availability a startup requirement
+
+#### Scenario: Redis URL precedence
+- **WHEN** both the response-cache Redis URL flag and its environment variable are set
+- **THEN** the explicitly supplied flag value is used
 
 ### Requirement: External tool configuration commands
 The CLI SHALL list, read, write, import, and back up known external tool configurations through the admin API, requiring exactly one content source for writes.
@@ -46,18 +54,30 @@ The CLI SHALL list, read, write, import, and back up known external tool configu
 - **THEN** the CLI fails validation without contacting the server
 
 ### Requirement: Runtime settings commands
-The CLI SHALL read and update supported runtime log levels and response-cache settings and SHALL leave optional settings unchanged when omitted.
+The CLI SHALL read and update supported runtime log levels and response-cache settings, SHALL leave optional settings unchanged when omitted, and SHALL report the response-cache backend and availability without exposing Redis credentials.
 
 #### Scenario: Cache TTL omitted
 - **WHEN** an operator updates the cache enabled state without `--ttl`
 - **THEN** the existing server TTL is not altered
 
+#### Scenario: Redis unavailable
+- **WHEN** the settings endpoint reports degraded Redis availability
+- **THEN** human-readable CLI output identifies the Redis response-cache backend as unavailable while preserving enabled, TTL, entry, and hit output
+
+#### Scenario: Credential-bearing Redis URL
+- **WHEN** a configured Redis URL contains authentication information
+- **THEN** CLI output, diagnostics, and logs do not expose the username or password
+
 ### Requirement: Diagnostics and completion
-The CLI SHALL provide configuration/server diagnostics and generate shell completion scripts for supported shells.
+The CLI SHALL provide configuration/server diagnostics, including non-fatal response-cache backend availability, and SHALL generate shell completion scripts for supported shells.
 
 #### Scenario: Diagnostics run
 - **WHEN** an operator runs `omnillm doctor`
-- **THEN** the CLI checks local configuration and server reachability and reports actionable findings
+- **THEN** the CLI checks local configuration, server reachability, and response-cache backend availability and reports actionable findings
+
+#### Scenario: Degraded cache backend
+- **WHEN** the gateway is reachable and serving but Redis is unavailable
+- **THEN** diagnostics report the response cache as degraded without reporting the gateway itself as unhealthy
 
 ### Requirement: CLI prompt-cache usage output
 The CLI usage command SHALL display provider prompt-cache hit, miss, and unknown counts and cache read/write token totals in human-readable table output while JSON output SHALL retain the complete raw server response.

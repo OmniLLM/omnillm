@@ -128,12 +128,6 @@ func Key(req *cif.CanonicalRequest) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// Get returns a cached CanonicalResponse for req, or nil on miss/disabled/expired.
-// Deprecated: request paths should call GetContext with their request context.
-func Get(cfg Config, req *cif.CanonicalRequest, key string) *cif.CanonicalResponse {
-	return GetContext(context.Background(), cfg, req, key)
-}
-
 // GetContext returns a cached CanonicalResponse and propagates ctx to storage.
 // Backend failures and malformed entries fail open as cache misses.
 func GetContext(ctx context.Context, cfg Config, req *cif.CanonicalRequest, key string) *cif.CanonicalResponse {
@@ -149,13 +143,6 @@ func GetContext(ctx context.Context, cfg Config, req *cif.CanonicalRequest, key 
 		return nil
 	}
 	return resp
-}
-
-// Put stores a CanonicalResponse. Errors are swallowed: caching is best-effort
-// and must never fail a request that already succeeded upstream.
-// Deprecated: request paths should call PutContext with their request context.
-func Put(cfg Config, req *cif.CanonicalRequest, key string, resp *cif.CanonicalResponse) {
-	PutContext(context.Background(), cfg, req, key, resp)
 }
 
 // PutContext stores a CanonicalResponse and propagates ctx to storage. Backend

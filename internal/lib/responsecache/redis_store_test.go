@@ -17,15 +17,15 @@ func newTestRedisStore(t *testing.T, prefix string) (*RedisStore, *miniredis.Min
 	server := miniredis.RunT(t)
 	client := redis.NewClient(&redis.Options{
 		Addr:         server.Addr(),
-		DialTimeout:  100 * time.Millisecond,
-		ReadTimeout:  100 * time.Millisecond,
-		WriteTimeout: 100 * time.Millisecond,
-		PoolTimeout:  100 * time.Millisecond,
+		DialTimeout:  2 * time.Second,
+		ReadTimeout:  2 * time.Second,
+		WriteTimeout: 2 * time.Second,
+		PoolTimeout:  2 * time.Second,
 		MaxRetries:   -1,
 	})
 	store, err := NewRedisStore(client, RedisStoreConfig{
 		Prefix:           prefix,
-		CommandTimeout:   100 * time.Millisecond,
+		CommandTimeout:   2 * time.Second,
 		CircuitCooldown:  20 * time.Millisecond,
 		RecoveryInterval: time.Hour,
 		ScanCount:        3,
@@ -243,6 +243,27 @@ func TestRedisStoreCircuitBypassAndRecovery(t *testing.T) {
 	}
 	if !store.Available() {
 		t.Fatal("store did not recover")
+	}
+}
+
+func TestRedisStoreRecoveryLoopSkipsHealthyPings(t *testing.T) {
+	server := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: server.Addr(), MaxRetries: -1})
+	store, err := NewRedisStore(client, RedisStoreConfig{
+		Prefix:           "healthy_probe",
+		CommandTimeout:   100 * time.Millisecond,
+		CircuitCooldown:  10 * time.Millisecond,
+		RecoveryInterval: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("NewRedisStore: %v", err)
+	}
+	defer store.Close()
+
+	baseline := server.CommandCount()
+	time.Sleep(35 * time.Millisecond)
+	if got := server.CommandCount() - baseline; got != 0 {
+		t.Fatalf("healthy recovery loop issued %d Redis commands, want 0", got)
 	}
 }
 

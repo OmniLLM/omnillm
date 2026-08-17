@@ -3,6 +3,8 @@ package commands
 import (
 	"fmt"
 	"omnillm/internal/server"
+	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -19,8 +21,11 @@ The server listens on --host:--port and exposes:
 
 Configuration precedence (highest to lowest):
   1. CLI flags
-  2. Environment variables (OMNILLM_SERVER, OMNILLM_API_KEY, etc.)
+  2. Environment variables (OMNILLM_SERVER, OMNILLM_API_KEY, OMNILLM_RESPONSE_CACHE_REDIS_URL, etc.)
   3. Files in ~/.config/omnillm/
+
+The exact-response cache stores payloads in optional Redis/Valkey. Redis failures
+are fail-open: model serving continues without a SQLite cache fallback.
 
 The inbound --api-key defaults to a generated key stored in ~/.config/omnillm/api-key.`,
 	Example: `  # Start with defaults (port 5000, github-copilot provider)
@@ -111,6 +116,20 @@ The inbound --api-key defaults to a generated key stored in ~/.config/omnillm/ap
 		if err != nil {
 			return fmt.Errorf("get allow-chrome-extension flag: %w", err)
 		}
+		redisURL, err := cmd.Flags().GetString("response-cache-redis-url")
+		if err != nil {
+			return fmt.Errorf("get response-cache-redis-url flag: %w", err)
+		}
+		if !cmd.Flags().Changed("response-cache-redis-url") {
+			redisURL = environmentOverride(redisURL, "OMNILLM_RESPONSE_CACHE_REDIS_URL")
+		}
+		redisPrefix, err := cmd.Flags().GetString("response-cache-redis-prefix")
+		if err != nil {
+			return fmt.Errorf("get response-cache-redis-prefix flag: %w", err)
+		}
+		if !cmd.Flags().Changed("response-cache-redis-prefix") {
+			redisPrefix = environmentOverride(redisPrefix, "OMNILLM_RESPONSE_CACHE_REDIS_PREFIX")
+		}
 
 		var rateLimit *int
 		if cmd.Flags().Changed("rate-limit") {
@@ -136,10 +155,19 @@ The inbound --api-key defaults to a generated key stored in ~/.config/omnillm/ap
 			AllowLocalEndpoints:       allowLocalEndpoints,
 			EnableConfigEdit:          enableConfigEdit,
 			AllowedChromeExtensionIDs: allowedChromeExtensions,
+			ResponseCacheRedisURL:     redisURL,
+			ResponseCacheRedisPrefix:  redisPrefix,
 		}
 
 		return server.RunServer(options)
 	},
+}
+
+func environmentOverride(fallback, name string) string {
+	if value := strings.TrimSpace(os.Getenv(name)); value != "" {
+		return value
+	}
+	return fallback
 }
 
 func init() {
@@ -161,4 +189,6 @@ func init() {
 	StartCmd.Flags().Bool("allow-local-endpoints", false, "Allow localhost/private OpenAI-compatible endpoints")
 	StartCmd.Flags().Bool("enable-config-edit", false, "Allow editing external config files via admin API")
 	StartCmd.Flags().StringSlice("allow-chrome-extension", nil, "Allow specific Chrome extension IDs for CORS (repeat flag or pass comma-separated IDs)")
+	StartCmd.Flags().String("response-cache-redis-url", "redis://127.0.0.1:6379/0", "Redis URL for exact-response cache storage")
+	StartCmd.Flags().String("response-cache-redis-prefix", "omnillm", "Redis key prefix for exact-response cache isolation")
 }

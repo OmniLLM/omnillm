@@ -382,6 +382,9 @@ func (s *RedisStore) recoverLoop() {
 	for {
 		select {
 		case <-ticker.C:
+			if s.Available() {
+				continue
+			}
 			if err := s.beginCommand(); err != nil {
 				continue
 			}

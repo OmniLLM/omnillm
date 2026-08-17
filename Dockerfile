@@ -1,5 +1,5 @@
 # ── Build stage: compile Go binary ─────────────────────────────────────────
-FROM golang:1.23-alpine AS go-builder
+FROM golang:1.25-alpine AS go-builder
 WORKDIR /app
 
 COPY go.mod go.sum ./

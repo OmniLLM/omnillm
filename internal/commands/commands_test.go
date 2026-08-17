@@ -818,7 +818,7 @@ func TestDoctorCmdWritesHealthyStatusWithBorderedTables(t *testing.T) {
 
 		switch r.URL.Path {
 		case "/api/admin/status":
-			_, _ = w.Write([]byte(`{"status":"healthy","uptime":"39s","modelCount":273}`))
+			_, _ = w.Write([]byte(`{"status":"healthy","uptime":"39s","modelCount":273,"services":{"responseCache":{"backend":"redis","available":false}}}`))
 		case "/api/admin/providers":
 			_, _ = w.Write([]byte(`[]`))
 		case "/api/admin/virtualmodels":
@@ -845,7 +845,7 @@ func TestDoctorCmdWritesHealthyStatusWithBorderedTables(t *testing.T) {
 	}
 
 	output := out.String()
-	for _, want := range []string{"Local configuration", "Server", "Server status", "Providers", "Status", "healthy", "┌", "│", "└"} {
+	for _, want := range []string{"Local configuration", "Server", "Server status", "Response cache", "redis", "degraded", "Providers", "Status", "healthy", "┌", "│", "└"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("expected doctor output to contain %q, got output:\n%s", want, output)
 		}

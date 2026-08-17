@@ -14,15 +14,21 @@ import (
 // handleGetResponseCache reports current response-cache settings and stats.
 func handleGetResponseCache(c *gin.Context) {
 	cfg := responsecache.LoadConfig()
-	entries, hits, err := database.NewResponseCacheStore().Stats()
+	store := responsecache.CurrentStore()
+	stats, err := store.Stats(c.Request.Context())
+	available := store.Available()
 	if err != nil {
+		stats = responsecache.Stats{}
+		available = false
 		log.Warn().Err(err).Msg("Failed to read response cache stats")
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"enabled":     cfg.Enabled,
 		"ttl_seconds": int(cfg.TTL.Seconds()),
-		"entries":     entries,
-		"total_hits":  hits,
+		"entries":     stats.Entries,
+		"total_hits":  stats.TotalHits,
+		"backend":     "redis",
+		"available":   available,
 	})
 }
 
@@ -68,7 +74,7 @@ func handleSetResponseCache(c *gin.Context) {
 
 // handleClearResponseCache purges all cached responses.
 func handleClearResponseCache(c *gin.Context) {
-	removed, err := database.NewResponseCacheStore().Clear()
+	removed, err := responsecache.CurrentStore().Clear(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

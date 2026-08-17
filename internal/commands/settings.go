@@ -83,7 +83,7 @@ var settingsSetLogLevelCmd = &cobra.Command{
 			c.PrintJSON(data)
 			return nil
 		}
-		SuccessMsg(cmd,"Log level set to '%s'.", args[0])
+		SuccessMsg(cmd, "Log level set to '%s'.", args[0])
 		return nil
 	},
 }
@@ -102,10 +102,12 @@ var settingsGetResponseCacheCmd = &cobra.Command{
 			return nil
 		}
 		var resp struct {
-			Enabled    bool `json:"enabled"`
-			TTLSeconds int  `json:"ttl_seconds"`
-			Entries    int  `json:"entries"`
-			TotalHits  int  `json:"total_hits"`
+			Enabled    bool   `json:"enabled"`
+			TTLSeconds int    `json:"ttl_seconds"`
+			Entries    int    `json:"entries"`
+			TotalHits  int    `json:"total_hits"`
+			Backend    string `json:"backend"`
+			Available  bool   `json:"available"`
 		}
 		if err := json.Unmarshal(data, &resp); err != nil {
 			return err
@@ -116,6 +118,7 @@ var settingsGetResponseCacheCmd = &cobra.Command{
 			state = "enabled"
 		}
 		fmt.Fprintf(out, "Response cache: %s\n", state)
+		fmt.Fprintf(out, "Backend:        %s (%s)\n", resp.Backend, responseCacheAvailability(resp.Available))
 		fmt.Fprintf(out, "TTL:            %d seconds\n", resp.TTLSeconds)
 		fmt.Fprintf(out, "Entries:        %d\n", resp.Entries)
 		fmt.Fprintf(out, "Total hits:     %d\n", resp.TotalHits)
@@ -123,10 +126,17 @@ var settingsGetResponseCacheCmd = &cobra.Command{
 	},
 }
 
+func responseCacheAvailability(available bool) string {
+	if available {
+		return "available"
+	}
+	return "degraded"
+}
+
 var settingsSetResponseCacheCmd = &cobra.Command{
-	Use:   "response-cache <on|off>",
-	Short: "Enable or disable the exact-match response cache",
-	Args:  cobra.ExactArgs(1),
+	Use:       "response-cache <on|off>",
+	Short:     "Enable or disable the exact-match response cache",
+	Args:      cobra.ExactArgs(1),
 	ValidArgs: []string{"on", "off"},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := NewClient(cmd)

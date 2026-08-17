@@ -152,17 +152,6 @@ func (db *Database) createTables() error {
 			FOREIGN KEY (instance_id) REFERENCES provider_instances (instance_id) ON DELETE CASCADE
 		)`,
 
-		// Exact-match LLM response cache (deterministic, non-streaming requests only).
-		`CREATE TABLE IF NOT EXISTS response_cache (
-			cache_key     TEXT PRIMARY KEY,
-			model_id      TEXT NOT NULL,
-			response_data TEXT NOT NULL,
-			hit_count     INTEGER NOT NULL DEFAULT 0,
-			created_at    DATETIME NOT NULL DEFAULT (datetime('now')),
-			last_hit_at   DATETIME
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_response_cache_created_at ON response_cache (created_at)`,
-
 		// Chat sessions.
 		`CREATE TABLE IF NOT EXISTS chat_sessions (
 			session_id    TEXT PRIMARY KEY,
@@ -419,6 +408,11 @@ var migrations = []migration{
 		`ALTER TABLE request_logs ADD COLUMN cache_write_input_tokens INTEGER`,
 		`ALTER TABLE request_logs ADD COLUMN cache_write_5m_input_tokens INTEGER`,
 		`ALTER TABLE request_logs ADD COLUMN cache_write_1h_input_tokens INTEGER`,
+	}},
+	// v17: exact-response payloads moved to Redis; remove the disposable SQLite cache.
+	{17, []string{
+		`DROP INDEX IF EXISTS idx_response_cache_created_at`,
+		`DROP TABLE IF EXISTS response_cache`,
 	}},
 }
 

@@ -11,17 +11,20 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 
 	"omnillm/internal/database"
 	"omnillm/internal/lib/ratelimit"
+	"omnillm/internal/lib/responsecache"
 	alibabapkg "omnillm/internal/providers/alibaba"
 	antigravitypkg "omnillm/internal/providers/antigravity"
 	azurepkg "omnillm/internal/providers/azure"
@@ -56,6 +59,8 @@ type StartOptions struct {
 	AllowLocalEndpoints       bool
 	EnableConfigEdit          bool
 	AllowedChromeExtensionIDs []string
+	ResponseCacheRedisURL     string
+	ResponseCacheRedisPrefix  string
 }
 
 func RunServer(options StartOptions) error {
@@ -71,6 +76,22 @@ func RunServer(options StartOptions) error {
 
 	if err := database.InitializeDatabase(configDir); err != nil {
 		return fmt.Errorf("failed to initialize database: %w", err)
+	}
+	defer func() {
+		database.StopAsyncWorkers()
+		if err := database.GetDatabase().Close(); err != nil {
+			log.Error().Err(err).Msg("Failed to close database")
+		}
+	}()
+
+	cacheStore, cacheRestore := configureResponseCacheRedis(options)
+	defer cacheRestore()
+	if cacheStore != nil {
+		defer func() {
+			if err := cacheStore.Close(); err != nil {
+				log.Error().Err(err).Msg("Failed to close response cache Redis client")
+			}
+		}()
 	}
 
 	apiKey, err := resolveAPIKey(configDir, options.APIKey)
@@ -176,12 +197,59 @@ func RunServer(options StartOptions) error {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("shutdown server: %w", err)
 	}
-
-	database.StopAsyncWorkers()
-	if err := database.GetDatabase().Close(); err != nil {
-		return fmt.Errorf("close database: %w", err)
-	}
 	return nil
+}
+
+func configureResponseCacheRedis(options StartOptions) (*responsecache.RedisStore, func()) {
+	redisOptions, err := redis.ParseURL(options.ResponseCacheRedisURL)
+	if err != nil {
+		log.Warn().Str("backend", "redis").Msg("Invalid response cache Redis URL; cache storage is degraded")
+		return nil, responsecache.ConfigureStore(nil)
+	}
+	redisOptions.DialTimeout = 250 * time.Millisecond
+	redisOptions.ReadTimeout = 250 * time.Millisecond
+	redisOptions.WriteTimeout = 250 * time.Millisecond
+	redisOptions.PoolTimeout = 250 * time.Millisecond
+	redisOptions.MaxRetries = -1
+
+	redisClient := redis.NewClient(redisOptions)
+	store, err := responsecache.NewRedisStore(redisClient, responsecache.RedisStoreConfig{
+		Prefix:           options.ResponseCacheRedisPrefix,
+		CommandTimeout:   250 * time.Millisecond,
+		CircuitCooldown:  time.Second,
+		RecoveryInterval: time.Second,
+	})
+	if err != nil {
+		_ = redisClient.Close()
+		log.Warn().Err(redactRedisError(err)).Msg("Invalid response cache Redis configuration; cache storage is degraded")
+		return nil, responsecache.ConfigureStore(nil)
+	}
+	restore := responsecache.ConfigureStore(store)
+	err = store.Ping(context.Background())
+	if err != nil {
+		log.Warn().Err(redactRedisError(err)).Str("backend", "redis").Msg("Response cache Redis unavailable; model serving continues")
+	} else {
+		log.Info().Str("backend", "redis").Msg("Response cache Redis connected")
+	}
+	return store, restore
+}
+
+func redactRedisError(err error) error {
+	if err == nil {
+		return nil
+	}
+	message := err.Error()
+	if marker := strings.Index(message, "://"); marker >= 0 {
+		authorityStart := marker + 3
+		authorityEnd := len(message)
+		if slash := strings.IndexAny(message[authorityStart:], "/?# "); slash >= 0 {
+			authorityEnd = authorityStart + slash
+		}
+		if at := strings.LastIndex(message[authorityStart:authorityEnd], "@"); at >= 0 {
+			message = message[:authorityStart] + "***@" + message[authorityStart+at+1:]
+		}
+	}
+	return errors.New(message)
 }
 
 func buildRouter(port int, apiKey string, chatOptions routes.ChatCompletionOptions, maxConcurrent int) *gin.Engine {
