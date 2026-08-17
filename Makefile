@@ -53,12 +53,12 @@ OMNIPROXY_BIN := $(INSTALL_DIR)/omniproxy$(EXE)
 
 .PHONY: all install deps build build-go build-frontend build-all \
         build-desktop-sidecar build-desktop desktop-dev \
-        start stop restart restart-rebuild status logs logs-follow \
+        start start-redis stop restart restart-rebuild status logs logs-follow \
         dev dev-frontend \
         test test-frontend lint typecheck \
         release-patch release-minor release-major \
         docker-build docker-run \
-        help
+        help help-redis-examples
 
 # ── Default ───────────────────────────────────────────────────────────────────
 
@@ -123,6 +123,9 @@ desktop-dev: build-desktop-sidecar
 ## start: Build the Go backend and start all services in the background
 start: $(DEPS)
 	$(BUN) run omni start --server-port $(SERVER_PORT) --frontend-port $(FRONTEND_PORT) --host $(HOST)
+
+## start-redis: Start all services with an existing Redis response-cache backend
+start-redis: start
 
 ## stop: Stop all background services
 stop: $(DEPS)
@@ -211,10 +214,13 @@ help:
 	@echo   SERVER_PORT=5000       Backend API port - default 5000
 	@echo   FRONTEND_PORT=5080     Frontend dev server port - default 5080
 	@echo   HOST=127.0.0.1         Bind address - default 127.0.0.1
+	@echo   OMNILLM_RESPONSE_CACHE_REDIS_URL
+	@echo                         Redis endpoint - default redis://127.0.0.1:6379/0
 	@echo   REBUILD=--rebuild      Add --rebuild flag to restart target
 	$(PRINT_BLANK)
 	@echo QUICK START:
 	@echo   start                Build the Go backend and start all services in the background
+	@echo   start-redis          Start all services with an existing Redis response-cache backend
 	@echo   stop                 Stop all background services
 	@echo   dev                  Start both backend and frontend in the foreground - Ctrl+C to stop
 	@echo   status               Show running service status and ports
@@ -257,5 +263,14 @@ help:
 	@echo   make deps
 	@echo   make dev
 	@echo   make start SERVER_PORT=5000 FRONTEND_PORT=5080
+	@echo   make start-redis
+	@$(MAKE) --no-print-directory help-redis-examples
+	@echo   omnillm settings set response-cache on --ttl 3600
 	@echo   make restart REBUILD=--rebuild
 	@echo   make logs-follow
+
+help-redis-examples:
+	$(info   POSIX: OMNILLM_RESPONSE_CACHE_REDIS_URL=redis://redis.example:6379/0 make start-redis)
+	$(info   PowerShell: $$env:OMNILLM_RESPONSE_CACHE_REDIS_URL='redis://redis.example:6379/0'; make start-redis)
+	$(info   cmd.exe: set "OMNILLM_RESPONSE_CACHE_REDIS_URL=redis://redis.example:6379/0" && make start-redis)
+	@:

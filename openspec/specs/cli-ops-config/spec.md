@@ -32,7 +32,7 @@ Read operations SHALL support table and JSON output, default to table, and retur
 - **THEN** the CLI prints the server JSON without table rendering
 
 ### Requirement: Server operation and administration
-The CLI SHALL provide commands to start the server and administer provider authentication, providers, models, virtual models, settings, status, logs, usage, synchronization, and Redis-backed exact-response caching.
+The CLI and repository operator workflows SHALL provide commands to start the server and administer provider authentication, providers, models, virtual models, settings, status, logs, usage, synchronization, and Redis-backed exact-response caching.
 
 #### Scenario: Live log tail
 - **WHEN** an operator runs the log-tail command against a reachable server
@@ -45,6 +45,18 @@ The CLI SHALL provide commands to start the server and administer provider authe
 #### Scenario: Redis URL precedence
 - **WHEN** both the response-cache Redis URL flag and its environment variable are set
 - **THEN** the explicitly supplied flag value is used
+
+#### Scenario: Redis-enabled Make startup
+- **WHEN** an operator invokes the documented Redis-enabled Make startup target with `OMNILLM_RESPONSE_CACHE_REDIS_URL` inherited from the process environment
+- **THEN** the managed OmniLLM backend receives that URL as its response-cache Redis endpoint without evaluating the URL as recipe shell source while the normal backend, frontend, host, and port startup workflow is preserved
+
+#### Scenario: Redis-enabled Make startup default
+- **WHEN** an operator invokes the Redis-enabled Make startup target without a response-cache Redis URL in the environment
+- **THEN** the backend uses the documented local Redis endpoint
+
+#### Scenario: Redis startup help
+- **WHEN** an operator runs the Make help target
+- **THEN** the Redis-enabled startup target, canonical Redis URL environment variable, local default, and runnable examples are displayed
 
 ### Requirement: External tool configuration commands
 The CLI SHALL list, read, write, import, and back up known external tool configurations through the admin API, requiring exactly one content source for writes.
