@@ -21,6 +21,7 @@ package responsecache
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -127,12 +128,13 @@ func Key(req *cif.CanonicalRequest) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// Get returns a cached CanonicalResponse for req, or nil on miss/disabled/expired.
-func Get(cfg Config, req *cif.CanonicalRequest, key string) *cif.CanonicalResponse {
+// GetContext returns a cached CanonicalResponse and propagates ctx to storage.
+// Backend failures and malformed entries fail open as cache misses.
+func GetContext(ctx context.Context, cfg Config, req *cif.CanonicalRequest, key string) *cif.CanonicalResponse {
 	if !cfg.Enabled {
 		return nil
 	}
-	rec, err := database.NewResponseCacheStore().Get(key, cfg.TTL)
+	rec, err := CurrentStore().Get(ctx, key)
 	if err != nil || rec == nil {
 		return nil
 	}
@@ -143,10 +145,10 @@ func Get(cfg Config, req *cif.CanonicalRequest, key string) *cif.CanonicalRespon
 	return resp
 }
 
-// Put stores a CanonicalResponse. Errors are swallowed: caching is best-effort
-// and must never fail a request that already succeeded upstream.
-func Put(cfg Config, req *cif.CanonicalRequest, key string, resp *cif.CanonicalResponse) {
-	if !cfg.Enabled || resp == nil {
+// PutContext stores a CanonicalResponse and propagates ctx to storage. Backend
+// failures remain best-effort and never affect the successful upstream response.
+func PutContext(ctx context.Context, cfg Config, req *cif.CanonicalRequest, key string, resp *cif.CanonicalResponse) {
+	if !cfg.Enabled || req == nil || resp == nil {
 		return
 	}
 	// Never cache an error/empty generation.
@@ -157,7 +159,14 @@ func Put(cfg Config, req *cif.CanonicalRequest, key string, resp *cif.CanonicalR
 	if err != nil {
 		return
 	}
-	_ = database.NewResponseCacheStore().Save(key, req.Model, data)
+	_ = CurrentStore().Save(ctx, key, req.Model, data, effectiveTTL(cfg.TTL))
+}
+
+func effectiveTTL(ttl time.Duration) time.Duration {
+	if ttl <= 0 {
+		return DefaultTTL
+	}
+	return ttl
 }
 
 // cachedResponse is a JSON-round-trippable projection of cif.CanonicalResponse.

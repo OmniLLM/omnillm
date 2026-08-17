@@ -1,8 +1,5 @@
-# caching Specification
+## MODIFIED Requirements
 
-## Purpose
-Defines the opt-in exact-match canonical response cache, including deterministic eligibility, semantic keys, request controls, replay, persistence, expiry, and administration.
-## Requirements
 ### Requirement: Opt-in live configuration
 The response cache SHALL remain disabled unless explicitly enabled, SHALL keep enabled state and positive TTL in the durable runtime configuration store, and SHALL read those values per request while defaulting TTL to one hour.
 
@@ -13,45 +10,6 @@ The response cache SHALL remain disabled unless explicitly enabled, SHALL keep e
 #### Scenario: Zero or invalid TTL
 - **WHEN** the persisted TTL is absent, zero, negative, or invalid
 - **THEN** subsequent cache operations use the one-hour default
-
-### Requirement: Deterministic eligibility
-Only requests with explicit temperature zero and top-p unset or at least one SHALL be cache eligible; streaming intent SHALL not make an otherwise deterministic request ineligible.
-
-#### Scenario: Temperature omitted
-- **WHEN** a request omits temperature
-- **THEN** it is not cached because provider defaults cannot be assumed deterministic
-
-### Requirement: Semantic cache key
-The key SHALL be stable over generation-affecting canonical fields and SHALL exclude transport headers, user metadata, and streaming mode.
-
-#### Scenario: Cross-mode key
-- **WHEN** otherwise identical streaming and non-streaming requests are keyed
-- **THEN** they produce the same key
-
-### Requirement: Route scope
-Caching SHALL apply to chat completions and Anthropic messages and SHALL not apply to Responses or embeddings.
-
-#### Scenario: Responses request
-- **WHEN** an eligible request uses `/v1/responses`
-- **THEN** no response-cache read or write occurs
-
-### Requirement: Per-request controls
-The cache-control header SHALL support bypass or refresh for skipping reads while allowing writes and off or disable for skipping both.
-
-#### Scenario: Refresh requested
-- **WHEN** a client requests refresh
-- **THEN** the gateway calls upstream and stores the fresh successful result
-
-### Requirement: Canonical replay
-A hit SHALL be re-serialized into the current caller's dialect and streaming mode and labeled `X-OmniLLM-Cache: hit`.
-
-#### Scenario: Streaming cache hit
-- **WHEN** a streaming request hits an entry
-- **THEN** the canonical response is synthesized into normal dialect stream events
-
-#### Scenario: Serialization fails
-- **WHEN** a stored response cannot be serialized for the caller
-- **THEN** the gateway warns and falls through to upstream execution
 
 ### Requirement: Best-effort population
 Cache writes SHALL use the configured Redis response-cache backend, SHALL never fail a successful request, and SHALL exclude errored, incomplete, empty, or unsupported canonical responses.
@@ -94,6 +52,8 @@ Authenticated administrators SHALL inspect cache settings, Redis backend availab
 - **WHEN** Redis is unavailable during an authenticated clear request
 - **THEN** the clear operation reports failure without changing cache enablement or affecting model-serving traffic
 
+## ADDED Requirements
+
 ### Requirement: Fail-open Redis availability
 Redis SHALL be an optional response-cache acceleration dependency, and initialization or runtime failures SHALL bypass cache storage without failing server startup, liveness, or upstream model execution and without falling back to SQLite.
 
@@ -119,4 +79,3 @@ Response-cache Redis operations SHALL use finite connection and command deadline
 #### Scenario: Cache failure logging
 - **WHEN** backend availability changes
 - **THEN** the system logs the state transition without logging prompt content, response content, or Redis credentials
-

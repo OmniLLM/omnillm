@@ -7,6 +7,8 @@ node_modules
 .gitignore
 
 dist/
+desktop/src-tauri/target/
+desktop/src-tauri/binaries/
 tests/
 *.md
 

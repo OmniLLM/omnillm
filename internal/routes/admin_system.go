@@ -11,6 +11,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
+	"omnillm/internal/lib/responsecache"
 	"omnillm/internal/registry"
 )
 
@@ -102,6 +103,10 @@ func handleGetStatus(c *gin.Context) {
 				"active": len(activeProviders),
 			},
 			"database": "connected",
+			"responseCache": gin.H{
+				"backend":   "redis",
+				"available": responsecache.CurrentStore().Available(),
+			},
 		},
 		"uptime":    time.Since(serverStartTime).String(),
 		"timestamp": time.Now().Format(time.RFC3339),

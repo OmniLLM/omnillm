@@ -99,7 +99,7 @@ func handleMessages(c *gin.Context) {
 	if cacheEligible {
 		cacheKey := responsecache.Key(canonicalRequest)
 		if bypass != responsecache.BypassRead {
-			if hit := responsecache.Get(cacheCfg, canonicalRequest, cacheKey); hit != nil {
+			if hit := responsecache.GetContext(c.Request.Context(), cacheCfg, canonicalRequest, cacheKey); hit != nil {
 				hit = normalizeCachedToolArguments(hit, canonicalRequest)
 				suppressThinking := !strings.Contains(c.GetHeader("anthropic-beta"), "interleaved-thinking")
 				if canonicalRequest.Stream {
@@ -234,7 +234,7 @@ func handleAnthropicNonStreamingResponse(c *gin.Context, adapter types.ProviderA
 
 	if key, ok := c.Get("responsecache_key"); ok {
 		if keyStr, _ := key.(string); keyStr != "" {
-			responsecache.Put(responsecache.LoadConfig(), canonicalRequest, keyStr, response)
+			responsecache.PutContext(c.Request.Context(), responsecache.LoadConfig(), canonicalRequest, keyStr, response)
 			c.Header("X-OmniLLM-Cache", "miss")
 		}
 	}
@@ -375,7 +375,7 @@ func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 
 				if acc != nil {
 					if assembled := acc.Response(); assembled != nil {
-						responsecache.Put(responsecache.LoadConfig(), canonicalRequest, cacheKey, assembled)
+						responsecache.PutContext(c.Request.Context(), responsecache.LoadConfig(), canonicalRequest, cacheKey, assembled)
 					}
 				}
 				return false

@@ -123,7 +123,7 @@ func (h *chatCompletionHandler) handleChatCompletions(c *gin.Context) {
 	if cacheEligible {
 		cacheKey = responsecache.Key(canonicalRequest)
 		if bypass != responsecache.BypassRead {
-			if hit := responsecache.Get(cacheCfg, canonicalRequest, cacheKey); hit != nil {
+			if hit := responsecache.GetContext(c.Request.Context(), cacheCfg, canonicalRequest, cacheKey); hit != nil {
 				hit = normalizeCachedToolArguments(hit, canonicalRequest)
 				if canonicalRequest.Stream {
 					replayOpenAIStreamFromCache(c, hit)
@@ -232,7 +232,7 @@ func handleNonStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, c
 	// Populate the exact-match response cache if this request was eligible.
 	if key, ok := c.Get("responsecache_key"); ok {
 		if keyStr, _ := key.(string); keyStr != "" {
-			responsecache.Put(responsecache.LoadConfig(), canonicalRequest, keyStr, response)
+			responsecache.PutContext(c.Request.Context(), responsecache.LoadConfig(), canonicalRequest, keyStr, response)
 			c.Header("X-OmniLLM-Cache", "miss")
 		}
 	}
@@ -319,7 +319,7 @@ func handleStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, cano
 
 				if acc != nil {
 					if assembled := acc.Response(); assembled != nil {
-						responsecache.Put(responsecache.LoadConfig(), canonicalRequest, cacheKey, assembled)
+						responsecache.PutContext(c.Request.Context(), responsecache.LoadConfig(), canonicalRequest, cacheKey, assembled)
 					}
 				}
 				return false

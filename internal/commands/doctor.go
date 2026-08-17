@@ -62,6 +62,14 @@ func renderKeyValueTable(out io.Writer, title string, pairs [][2]string) error {
 	return table.Render(out)
 }
 
+func responseCacheStatusFromAdmin(status map[string]interface{}) (string, bool) {
+	services, _ := status["services"].(map[string]interface{})
+	cache, _ := services["responseCache"].(map[string]interface{})
+	backend, _ := cache["backend"].(string)
+	available, _ := cache["available"].(bool)
+	return backend, available
+}
+
 func runDoctor(cmd *cobra.Command, args []string) error {
 	out := cmd.OutOrStdout()
 	nextStep := ""
@@ -149,6 +157,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		status, _ := statusResp["status"].(string)
 		uptime, _ := statusResp["uptime"].(string)
 		modelCount, _ := statusResp["modelCount"].(float64)
+		cacheBackend, cacheAvailable := responseCacheStatusFromAdmin(statusResp)
 
 		statusOK := status == "ok" || status == "running" || status == "healthy"
 		if err := renderChecksTable(out, "Server status", []checkRow{
@@ -157,6 +166,21 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 			{ok: true, label: "Models", value: fmt.Sprintf("%.0f", modelCount)},
 		}); err != nil {
 			return err
+		}
+
+		if cacheBackend != "" {
+			availability := "available"
+			if !cacheAvailable {
+				availability = "degraded (model serving remains available)"
+			}
+			fmt.Fprintln(out)
+			if err := renderChecksTable(out, "Response cache", []checkRow{{
+				ok:    cacheAvailable,
+				label: cacheBackend,
+				value: availability,
+			}}); err != nil {
+				return err
+			}
 		}
 
 		fmt.Fprintln(out)
