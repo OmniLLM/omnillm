@@ -90,30 +90,26 @@ func handleMessages(c *gin.Context) {
 	originalModel := prepareCanonicalRequest(c, canonicalRequest, "anthropic")
 	logAnthropicToolLoopRequest(requestIDStr, canonicalRequest)
 
-	// Exact-match response cache (opt-in, deterministic requests).
-	// Shape-agnostic: a CanonicalResponse cached via the OpenAI route can satisfy
-	// this Anthropic request and vice versa.
-	cacheCfg := responsecache.LoadConfig()
-	bypass := responsecache.ParseBypass(c.GetHeader(responsecache.BypassHeader))
-	cacheEligible := cacheCfg.Enabled && bypass != responsecache.BypassAll && responsecache.Cacheable(canonicalRequest)
-	if cacheEligible {
-		cacheKey := responsecache.Key(canonicalRequest)
-		if bypass != responsecache.BypassRead {
-			if hit := responsecache.GetContext(c.Request.Context(), cacheCfg, canonicalRequest, cacheKey); hit != nil {
-				hit = normalizeCachedToolArguments(hit, canonicalRequest)
-				suppressThinking := !strings.Contains(c.GetHeader("anthropic-beta"), "interleaved-thinking")
-				if canonicalRequest.Stream {
-					replayAnthropicStreamFromCache(c, hit, suppressThinking)
-					return
-				}
-				if anthropicResp, err := serialization.SerializeToAnthropicWithSuppression(hit, suppressThinking); err == nil {
-					c.Header("X-OmniLLM-Cache", "hit")
-					c.JSON(http.StatusOK, anthropicResp)
-					return
-				}
+	if hit := lookupResponseCache(c, canonicalRequest, requestIDStr); hit != nil {
+		suppressThinking := !strings.Contains(c.GetHeader("anthropic-beta"), "interleaved-thinking")
+		if canonicalRequest.Stream {
+			if replayAnthropicStreamFromCache(c, hit, suppressThinking) {
+				logCompletedResponse("anthropic", requestIDStr, originalModel, hit.Model, "response-cache", true, hit.StopReason, hit.Usage, startTime)
+				recordResponseCacheHit(requestIDStr, originalModel, hit.Model, normalizeMeteringClient(c.GetHeader("User-Agent")), "anthropic", hit.Usage, time.Since(startTime).Milliseconds(), true)
+				return
 			}
+			log.Warn().Str("request_id", requestIDStr).Msg("Cache hit failed to serialize; falling through to upstream")
+		} else {
+			anthropicResp, err := serialization.SerializeToAnthropicWithSuppression(hit, suppressThinking)
+			if err == nil {
+				c.Header(responsecache.BypassHeader, "hit")
+				logCompletedResponse("anthropic", requestIDStr, originalModel, hit.Model, "response-cache", false, hit.StopReason, hit.Usage, startTime)
+				recordResponseCacheHit(requestIDStr, originalModel, hit.Model, normalizeMeteringClient(c.GetHeader("User-Agent")), "anthropic", hit.Usage, time.Since(startTime).Milliseconds(), false)
+				c.JSON(http.StatusOK, anthropicResp)
+				return
+			}
+			log.Warn().Err(err).Str("request_id", requestIDStr).Msg("Cache hit failed to serialize; falling through to upstream")
 		}
-		c.Set("responsecache_key", cacheKey)
 	}
 
 	var resolveStart time.Time
@@ -232,12 +228,7 @@ func handleAnthropicNonStreamingResponse(c *gin.Context, adapter types.ProviderA
 		Msg("\x1b[32m<--\x1b[0m RESPONSE")
 	recordUsage(requestID, originalModel, response.Model, providerID, normalizeMeteringClient(c.GetHeader("User-Agent")), "anthropic", response.Usage, time.Since(startTime).Milliseconds(), false, http.StatusOK, "")
 
-	if key, ok := c.Get("responsecache_key"); ok {
-		if keyStr, _ := key.(string); keyStr != "" {
-			responsecache.PutContext(c.Request.Context(), responsecache.LoadConfig(), canonicalRequest, keyStr, response)
-			c.Header("X-OmniLLM-Cache", "miss")
-		}
-	}
+	populateResponseCache(c, canonicalRequest, response)
 
 	c.JSON(http.StatusOK, anthropicResp)
 	return nil
@@ -274,15 +265,7 @@ func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 	modelUsed := canonicalRequest.Model
 	toolCallTracker := newToolLoopCallTracker()
 
-	var acc *responsecache.StreamAccumulator
-	var cacheKey string
-	if key, ok := c.Get("responsecache_key"); ok {
-		if ks, _ := key.(string); ks != "" {
-			cacheKey = ks
-			acc = responsecache.NewStreamAccumulator()
-			c.Header("X-OmniLLM-Cache", "miss")
-		}
-	}
+	acc, cacheState := newResponseCacheStreamAccumulator(c)
 
 	// streamTerminated records whether a well-formed terminal event sequence
 	// (message_delta + message_stop, or an error event) was written. If the
@@ -373,11 +356,7 @@ func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 					Msg("\x1b[32m<--\x1b[0m RESPONSE stream")
 				recordUsage(requestID, originalModel, modelUsed, providerID, normalizeMeteringClient(c.GetHeader("User-Agent")), "anthropic", endEvt.Usage, time.Since(startTime).Milliseconds(), true, http.StatusOK, "")
 
-				if acc != nil {
-					if assembled := acc.Response(); assembled != nil {
-						responsecache.PutContext(c.Request.Context(), responsecache.LoadConfig(), canonicalRequest, cacheKey, assembled)
-					}
-				}
+				populateResponseCacheStream(c, canonicalRequest, acc, cacheState)
 				return false
 			}
 
@@ -509,35 +488,24 @@ func estimateStringTokens(s string) int {
 // replayAnthropicStreamFromCache re-emits a cached CanonicalResponse as an
 // Anthropic SSE stream, reusing the production event serializer via synthesized
 // CIF events so a streaming Claude Code client sees a normal (instant) stream.
-func replayAnthropicStreamFromCache(c *gin.Context, resp *cif.CanonicalResponse, suppressThinking bool) {
-	c.Header("X-OmniLLM-Cache", "hit")
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
-
+func replayAnthropicStreamFromCache(c *gin.Context, resp *cif.CanonicalResponse, suppressThinking bool) bool {
 	state := serialization.CreateAnthropicStreamState()
 	state.SuppressThinkingBlocks = suppressThinking
-	flusher, _ := c.Writer.(http.Flusher)
-	events := responsecache.SynthesizeStream(resp)
-
-	c.Stream(func(w io.Writer) bool {
-		for _, ev := range events {
-			sseEvents, err := serialization.ConvertCIFEventToAnthropicSSE(ev, state)
+	var payloads []string
+	for _, event := range responsecache.SynthesizeStream(resp) {
+		sseEvents, err := serialization.ConvertCIFEventToAnthropicSSE(event, state)
+		if err != nil {
+			return false
+		}
+		for _, sseEvent := range sseEvents {
+			eventType, _ := sseEvent["type"].(string)
+			formatted, err := serialization.FormatAnthropicSSEData(eventType, sseEvent)
 			if err != nil {
 				return false
 			}
-			for _, sseEvent := range sseEvents {
-				eventType, _ := sseEvent["type"].(string)
-				formatted, err := serialization.FormatAnthropicSSEData(eventType, sseEvent)
-				if err != nil {
-					return false
-				}
-				fmt.Fprint(w, formatted)
-			}
+			payloads = append(payloads, formatted)
 		}
-		if flusher != nil {
-			flusher.Flush()
-		}
-		return false
-	})
+	}
+
+	return replayCachedSSE(c, payloads, false)
 }

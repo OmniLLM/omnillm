@@ -42,11 +42,16 @@ type blockAccum struct {
 }
 
 type toolAccum struct {
-	id   string
-	name string
-	args map[string]interface{}
+	id        string
+	name      string
+	kind      cif.CIFToolKind
+	args      map[string]interface{}
+	rawInput  *string
+	namespace string
 
-	rawArgs string
+	rawArgs        string
+	rawCustomInput string
+	customDelta    bool
 }
 
 // NewStreamAccumulator returns a ready accumulator.
@@ -64,13 +69,16 @@ func (a *StreamAccumulator) openBlock(idx int, kind blockKind) *blockAccum {
 	return block
 }
 
-func (a *StreamAccumulator) openToolBlock(idx int, id, name string) *blockAccum {
+func (a *StreamAccumulator) openToolBlock(idx int, id, name string, kind cif.CIFToolKind) *blockAccum {
 	if block := a.openByIndex[idx]; block != nil && block.kind == blockTool {
-		if (block.tool.id == "" || block.tool.id == id) && (block.tool.name == "" || block.tool.name == name) {
+		if (block.tool.id == "" || block.tool.id == id) &&
+			(block.tool.name == "" || block.tool.name == name) &&
+			(block.tool.kind == "" || block.tool.kind == kind) {
 			return block
 		}
 	}
 	block := &blockAccum{kind: blockTool}
+	block.tool.kind = kind
 	a.blocks = append(a.blocks, block)
 	a.openByIndex[idx] = block
 	return block
@@ -107,9 +115,12 @@ func (a *StreamAccumulator) observeDelta(e cif.CIFContentDelta) {
 	if e.ContentBlock != nil {
 		switch cb := e.ContentBlock.(type) {
 		case cif.CIFToolCallPart:
-			block := a.openToolBlock(idx, cb.ToolCallID, cb.ToolName)
+			block := a.openToolBlock(idx, cb.ToolCallID, cb.ToolName, cb.ToolKind)
 			block.tool.id = cb.ToolCallID
 			block.tool.name = cb.ToolName
+			block.tool.kind = cb.ToolKind
+			block.tool.rawInput = cb.RawInput
+			block.tool.namespace = cb.Namespace
 			// Providers announce a tool call with an empty-but-non-nil
 			// ToolArguments map and stream the real arguments as deltas.
 			if len(cb.ToolArguments) > 0 {
@@ -138,6 +149,16 @@ func (a *StreamAccumulator) observeDelta(e cif.CIFContentDelta) {
 		a.openBlock(idx, blockThinking).text += d.Thinking
 	case cif.ToolArgumentsDelta:
 		a.openBlock(idx, blockTool).tool.rawArgs += d.PartialJSON
+	case cif.CustomToolInputDelta:
+		tool := &a.openBlock(idx, blockTool).tool
+		tool.kind = cif.CIFToolKindCustom
+		// An empty delta can be the announcement sentinel. Preserve a complete
+		// announced RawInput in that case; with no announced value, empty still
+		// records explicit presence.
+		if d.Delta != "" || tool.rawInput == nil {
+			tool.customDelta = true
+			tool.rawCustomInput += d.Delta
+		}
 	}
 }
 
@@ -164,14 +185,23 @@ func (a *StreamAccumulator) Response() *cif.CanonicalResponse {
 			})
 		case blockTool:
 			args := block.tool.args
+			rawInput := block.tool.rawInput
 			if block.tool.rawArgs != "" {
 				args = decodeToolArgs(block.tool.rawArgs)
+			}
+			if block.tool.customDelta {
+				input := block.tool.rawCustomInput
+				rawInput = &input
+				args = map[string]interface{}{"input": input}
 			}
 			resp.Content = append(resp.Content, cif.CIFToolCallPart{
 				Type:          "tool_call",
 				ToolCallID:    block.tool.id,
 				ToolName:      block.tool.name,
 				ToolArguments: args,
+				ToolKind:      block.tool.kind,
+				RawInput:      rawInput,
+				Namespace:     block.tool.namespace,
 			})
 		}
 	}
@@ -211,11 +241,31 @@ func SynthesizeStream(resp *cif.CanonicalResponse) []cif.CIFStreamEvent {
 				cif.CIFContentBlockStop{Type: "content_block_stop", Index: i},
 			)
 		case cif.CIFToolCallPart:
+			announcement := cif.CIFToolCallPart{
+				Type:       "tool_call",
+				ToolCallID: p.ToolCallID,
+				ToolName:   p.ToolName,
+				ToolKind:   p.ToolKind,
+				Namespace:  p.Namespace,
+			}
+			var delta cif.DeltaContent = cif.ToolArgumentsDelta{
+				Type:        "tool_arguments_delta",
+				PartialJSON: encodeToolArgs(p.ToolArguments),
+			}
+			if p.ToolKind == cif.CIFToolKindCustom {
+				input := ""
+				if p.RawInput != nil {
+					input = *p.RawInput
+				}
+				announcement.RawInput = stringPointer("")
+				delta = cif.CustomToolInputDelta{Type: "custom_tool_input_delta", Delta: input}
+			}
 			events = append(events,
 				cif.CIFContentDelta{
-					Type: "content_delta", Index: i,
-					ContentBlock: cif.CIFToolCallPart{Type: "tool_call", ToolCallID: p.ToolCallID, ToolName: p.ToolName},
-					Delta:        cif.ToolArgumentsDelta{Type: "tool_arguments_delta", PartialJSON: encodeToolArgs(p.ToolArguments)},
+					Type:         "content_delta",
+					Index:        i,
+					ContentBlock: announcement,
+					Delta:        delta,
 				},
 				cif.CIFContentBlockStop{Type: "content_block_stop", Index: i},
 			)
@@ -229,3 +279,5 @@ func SynthesizeStream(resp *cif.CanonicalResponse) []cif.CIFStreamEvent {
 	})
 	return events
 }
+
+func stringPointer(value string) *string { return &value }

@@ -31,6 +31,30 @@ func flushStreamWriter(w io.Writer, flusher http.Flusher, data string) {
 	}
 }
 
+func replayCachedSSE(c *gin.Context, payloads []string, chunked bool) bool {
+	c.Header("X-OmniLLM-Cache", "hit")
+	setSSEHeaders(c, chunked)
+	flusher, _ := c.Writer.(http.Flusher)
+	index := 0
+	disconnected := c.Stream(func(w io.Writer) bool {
+		if index >= len(payloads) || c.Request.Context().Err() != nil {
+			return false
+		}
+		payload := payloads[index]
+		index++
+		if payload != "" {
+			if _, err := io.WriteString(w, payload); err != nil {
+				return false
+			}
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+		return index < len(payloads)
+	})
+	return !disconnected && index == len(payloads) && c.Request.Context().Err() == nil
+}
+
 func usageTokenCounts(usage *cif.CIFUsage) (int, int) {
 	if usage == nil {
 		return 0, 0

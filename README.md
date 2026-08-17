@@ -181,18 +181,18 @@ Incoming requests are converted into CIF before dispatch. That avoids pairwise f
 
 ### Response cache
 
-An optional exact-match cache for deterministic, non-streaming and streaming responses, keyed at the CIF layer so a response produced for one client shape (OpenAI) can satisfy another (Anthropic). It is strictly opt-in and conservative:
+OmniLLM provides an optional exact-input response cache for non-streaming and streaming requests on Chat Completions, Anthropic Messages, and OpenAI Responses. It is strictly opt-in and operates at the CIF layer, so a canonical result populated through one supported API dialect or streaming mode can be re-serialized for another compatible caller.
 
-- **Only deterministic requests are cached** — an explicit `temperature: 0` and `top_p` unset or `>= 1`. Tool definitions and tool calls participate in the semantic key; `temperature > 0` or a pinned `top_p < 1` is a hard skip.
-- The cache key is a SHA-256 over the salient request fields (`model`, `system`, `messages`, `tools`, sampling params, `max_tokens`, `stop`, `response_format`). Two requests hit the same entry only if they would deterministically produce the same generation — change one byte of the prompt and you get a fresh call.
-- A hit replays the **exact** stored model output, so accuracy is never affected; the cache never approximates or degrades a response.
+- Eligibility is independent of sampling settings: requests may be cached whether `temperature` and `top_p` are omitted, zero, or nonzero. Sampling and other supported generation controls remain part of the semantic key, so only requests with the same generation semantics can replay an entry.
+- A hit replays the previously stored canonical model result without another upstream inference. For stochastic requests, this means a prior random result may be returned again during the TTL; enable the cache only where that replay behavior is acceptable.
+- Replay preserves canonical content and tool-call semantics, not the original HTTP bytes, SSE chunk boundaries, or event timing. OmniLLM serializes the stored canonical response into the current caller's API dialect and streaming mode.
 
 Enabled state and TTL remain in the durable SQLite runtime configuration store and are read live per request. Canonical response payloads and hit counters live only in a separately supplied Redis or Valkey service:
 
 | Setting | Default | Meaning |
 |---|---|---|
 | `response_cache.enabled` | `false` (opt-in) | Enable the cache |
-| `response_cache.ttl_seconds` | `3600` (1h) | Native Redis lifetime assigned to new/refreshed entries |
+| `response_cache.ttl_seconds` | `60` (60s) | Fallback native Redis lifetime when no valid positive TTL is configured; a positive configured TTL remains authoritative |
 | `--response-cache-redis-url` / `OMNILLM_RESPONSE_CACHE_REDIS_URL` | `redis://127.0.0.1:6379/0` | Redis URL; the explicit flag overrides the environment |
 | `--response-cache-redis-prefix` / `OMNILLM_RESPONSE_CACHE_REDIS_PREFIX` | `omnillm` | Namespace prefix; the explicit flag overrides the environment |
 
@@ -201,7 +201,7 @@ Start a local service, then enable the cache:
 ```sh
 docker run --rm --name omnillm-redis -p 6379:6379 redis:8-alpine
 omnillm start --response-cache-redis-url redis://127.0.0.1:6379/0
-omnillm settings set response-cache on --ttl 3600
+omnillm settings set response-cache on --ttl 60
 ```
 
 `redis://user:password@host:6379/0` and `rediss://user:password@host:6380/0` URLs support authentication and TLS. OmniLLM never returns or logs the credential-bearing URL. In a container, `127.0.0.1` identifies that application container rather than a sibling Redis service; use its service hostname, for example `redis://redis:6379/0`.
@@ -210,9 +210,9 @@ Redis is optional acceleration infrastructure. If URL parsing, startup ping, aut
 
 Per-request override via the `X-OmniLLM-Cache` header: `bypass` skips the read and forces a refresh (still writes), `off` skips both read and write. Administrative statistics and clear operations are restricted to the versioned OmniLLM namespace and do not flush unrelated Redis data.
 
-This exact-response cache is separate from **provider prompt caching**. Provider prompt prefixes remain stored and billed by the upstream provider; Redis response hits do not count as provider prompt-cache hits.
+This exact-response cache is separate from **provider prompt caching**. Prompt-cache directives do not enable or alter exact-response caching, a provider prompt-cache hit still requires upstream inference unless an independent exact-response entry is served, and an exact-response hit is not reported as provider prompt-cache activity.
 
-> Note: for gpt-5 / gpt-6 / o-series reasoning models, OmniLLM strips `temperature`/`top_p` before dispatch (the upstream rejects them), so those models are not sampling-deterministic on their own — the response cache is what makes repeated identical requests reproducible within the TTL.
+Redis entries use OmniLLM's versioned namespace and canonical response format. They are not byte-for-byte compatible with LiteLLM's Redis cache format and must not be treated as interchangeable.
 
 ### Provider routing and failover
 

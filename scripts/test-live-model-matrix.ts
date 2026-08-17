@@ -25,6 +25,7 @@ const DEFAULT_BUDGETS = {
 } as const
 const SHAPES = ["chat", "messages", "responses"] as const
 let suiteAbortSignal: AbortSignal | undefined
+let exactCacheConfigurationFailure: string | undefined
 const CAPABILITIES = [
   "tools",
   "parallelTools",
@@ -32,6 +33,7 @@ const CAPABILITIES = [
   "longStream",
   "cancellation",
   "promptCaching",
+  "exactResponseCaching",
 ] as const
 const SMOKE_SCENARIOS = [
   "model_availability",
@@ -46,6 +48,7 @@ const EXTENDED_SCENARIOS = [
   "long_stream",
   "cancellation",
   "prompt_caching",
+  "exact_response_caching",
 ] as const
 
 type Shape = (typeof SHAPES)[number]
@@ -60,7 +63,7 @@ type CredentialReference =
   | { tokenBundleEnv: string; target: string }
 type Capability = (typeof CAPABILITIES)[number]
 
-type ManifestRow = {
+export type ManifestRow = {
   id: string
   provider: string
   model: string
@@ -121,6 +124,7 @@ type ToolCall = { id: string; name: string }
 type ToolTurn = { payload: unknown; calls: Array<ToolCall> }
 type RequestKind = "plain" | "stream" | "long_stream" | "tool"
 type StreamStats = { body: string; chunks: number; dataFrames: number }
+type JSONResponse = { payload: unknown; headers: Headers }
 
 const SCENARIO_CAPABILITIES: Partial<Record<Scenario, Capability>> = {
   tool_replay: "tools",
@@ -130,6 +134,7 @@ const SCENARIO_CAPABILITIES: Partial<Record<Scenario, Capability>> = {
   long_stream: "longStream",
   cancellation: "cancellation",
   prompt_caching: "promptCaching",
+  exact_response_caching: "exactResponseCaching",
 }
 
 export function sanitizeFailure(
@@ -569,6 +574,10 @@ async function launchGateway(
       String(port),
       "--api-key",
       INBOUND_API_KEY,
+      "--response-cache-redis-url",
+      process.env.OMNILLM_TEST_REDIS_URL ?? "redis://127.0.0.1:6379/0",
+      "--response-cache-redis-prefix",
+      `omnillm-live-${basename(home)}`,
     ],
     {
       cwd: process.cwd(),
@@ -598,12 +607,12 @@ async function stopGateway(gateway: Gateway): Promise<void> {
   }
 }
 
-async function requestJSON(
+async function requestJSONWithHeaders(
   baseUrl: string,
   path: string,
   body: unknown,
   timeoutMs: number,
-): Promise<unknown> {
+): Promise<JSONResponse> {
   const response = await fetchBounded(
     `${baseUrl}${path}`,
     { method: "POST", headers: authHeaders(), body: JSON.stringify(body) },
@@ -612,10 +621,59 @@ async function requestJSON(
   const text = await response.text()
   if (!response.ok) throw new Error(`${path} returned HTTP ${response.status}`)
   try {
-    return JSON.parse(text) as unknown
+    return { payload: JSON.parse(text) as unknown, headers: response.headers }
   } catch {
     throw new Error(`${path} returned invalid JSON`)
   }
+}
+
+async function requestJSON(
+  baseUrl: string,
+  path: string,
+  body: unknown,
+  timeoutMs: number,
+): Promise<unknown> {
+  return (await requestJSONWithHeaders(baseUrl, path, body, timeoutMs)).payload
+}
+
+async function setExactResponseCacheEnabled(
+  baseUrl: string,
+  timeoutMs: number,
+  enabled: boolean,
+): Promise<string | undefined> {
+  const path = "/api/admin/settings/response-cache"
+  try {
+    const response = await fetchBounded(
+      `${baseUrl}${path}`,
+      {
+        method: "PUT",
+        headers: authHeaders(),
+        body: JSON.stringify({ enabled, ttl_seconds: 60 }),
+      },
+      timeoutMs,
+    )
+    if (!response.ok) return `${path} returned HTTP ${response.status}`
+    return undefined
+  } catch (error) {
+    return sanitizeFailure(error)
+  }
+}
+
+export function needsExactResponseCache(
+  mode: Mode,
+  rows: ReadonlyArray<ManifestRow>,
+): boolean {
+  if (mode !== "extended") return false
+  return rows.some(
+    (row) =>
+      row.capabilities.exactResponseCaching === true
+      && SHAPES.some(
+        (shape) =>
+          row.shapes[shape] === true
+          && (row.scenarioOverrides?.exact_response_caching === undefined
+            || row.scenarioOverrides.exact_response_caching === true),
+      ),
+  )
 }
 
 async function provisionRow(
@@ -1204,6 +1262,101 @@ async function promptCaching(
   }
 }
 
+async function exactResponseCaching(
+  baseUrl: string,
+  row: ManifestRow,
+  shape: Shape,
+  timeoutMs: number,
+): Promise<void> {
+  if (exactCacheConfigurationFailure) {
+    throw new Error(exactCacheConfigurationFailure)
+  }
+  const request = requestFor(
+    shape,
+    row.model,
+    "plain",
+    `Return the exact-response-cache live matrix marker for ${row.id} ${shape}.`,
+  )
+  const first = await requestJSONWithHeaders(
+    baseUrl,
+    endpoint(shape),
+    request,
+    timeoutMs,
+  )
+  requireText(shape, first.payload)
+  if (first.headers.get("X-OmniLLM-Cache") !== "miss") {
+    throw new Error(
+      `${shape} exact-response population did not report cache miss`,
+    )
+  }
+  const second = await requestJSONWithHeaders(
+    baseUrl,
+    endpoint(shape),
+    request,
+    timeoutMs,
+  )
+  requireText(shape, second.payload)
+  if (second.headers.get("X-OmniLLM-Cache") !== "hit") {
+    throw new Error(`${shape} exact-response replay did not report cache hit`)
+  }
+  const firstRoot = object(first.payload, `${shape} population response`)
+  const secondRoot = object(second.payload, `${shape} replay response`)
+  const firstOutput = JSON.stringify(
+    firstRoot.output ?? firstRoot.content ?? firstRoot.choices,
+  )
+  const secondOutput = JSON.stringify(
+    secondRoot.output ?? secondRoot.content ?? secondRoot.choices,
+  )
+  if (firstRoot.id !== secondRoot.id || firstOutput !== secondOutput) {
+    throw new Error(`${shape} exact-response replay changed canonical output`)
+  }
+
+  const streamRequest = requestFor(
+    shape,
+    row.model,
+    "stream",
+    `Stream the exact-response-cache live matrix marker for ${row.id} ${shape}.`,
+  )
+  const population = await fetchBounded(
+    `${baseUrl}${endpoint(shape)}`,
+    {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify(streamRequest),
+    },
+    timeoutMs,
+  )
+  if (!population.ok)
+    throw new Error(`${shape} exact-response stream population returned HTTP ${population.status}`)
+  const populationStats = await readStream(population)
+  assertTerminalStream(shape, populationStats)
+  if (population.headers.get("X-OmniLLM-Cache") !== "miss")
+    throw new Error(`${shape} exact-response stream population did not report cache miss`)
+
+  const replay = await fetchBounded(
+    `${baseUrl}${endpoint(shape)}`,
+    {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify(streamRequest),
+    },
+    timeoutMs,
+  )
+  if (!replay.ok)
+    throw new Error(`${shape} exact-response stream replay returned HTTP ${replay.status}`)
+  const replayStats = await readStream(replay)
+  assertTerminalStream(shape, replayStats)
+  if (replay.headers.get("X-OmniLLM-Cache") !== "hit")
+    throw new Error(`${shape} exact-response stream replay did not report cache hit`)
+
+  const terminalMarker =
+    shape === "chat" ? "[DONE]"
+    : shape === "messages" ? "message_stop"
+    : "response.completed"
+  if (replayStats.body.split(terminalMarker).length - 1 !== 1)
+    throw new Error(`${shape} exact-response stream replay emitted duplicate terminal events`)
+}
+
 async function cancellation(
   baseUrl: string,
   row: ManifestRow,
@@ -1255,6 +1408,14 @@ async function executeScenario(
   shape: Shape,
   requestMs: number,
 ): Promise<void> {
+  const needsCache = scenario === "exact_response_caching"
+  const cacheError = await setExactResponseCacheEnabled(baseUrl, requestMs, needsCache)
+  if (needsCache) {
+    if (cacheError) exactCacheConfigurationFailure = cacheError
+    else exactCacheConfigurationFailure = undefined
+  } else if (cacheError) {
+    throw new Error(cacheError)
+  }
   if (scenario === "model_availability") {
     await modelAvailability(baseUrl, row.model, requestMs)
     return
@@ -1289,6 +1450,10 @@ async function executeScenario(
   }
   if (scenario === "prompt_caching") {
     await promptCaching(baseUrl, row, shape, requestMs)
+    return
+  }
+  if (scenario === "exact_response_caching") {
+    await exactResponseCaching(baseUrl, row, shape, requestMs)
     return
   }
   await cancellation(baseUrl, row, shape)
@@ -1536,6 +1701,16 @@ export async function main(): Promise<number> {
           rowFailures.set(row.id, sanitizeFailure(error, secrets))
         }
       }
+      const exactCacheRows = runnableRows.filter(
+        (row) => !rowFailures.has(row.id),
+      )
+      if (needsExactResponseCache(mode, exactCacheRows)) {
+        exactCacheConfigurationFailure = await setExactResponseCacheEnabled(
+          gateway.baseUrl,
+          budgets.requestMs,
+          false,
+        )
+      }
       const suiteController = new AbortController()
       suiteAbortSignal = suiteController.signal
       const execution = executeRows(
@@ -1587,6 +1762,7 @@ export async function main(): Promise<number> {
       }
     }
   } finally {
+    exactCacheConfigurationFailure = undefined
     if (gateway) await stopGateway(gateway)
     if (tempRoot) rmSync(tempRoot, { recursive: true, force: true })
   }
