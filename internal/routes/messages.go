@@ -91,6 +91,8 @@ func handleMessages(c *gin.Context) {
 	logAnthropicToolLoopRequest(requestIDStr, canonicalRequest)
 
 	if hit := lookupResponseCache(c, canonicalRequest, requestIDStr); hit != nil {
+		cachePolicy := claudeCodeToolArgumentPolicy(c.GetHeader("User-Agent"), requestIDStr, hit.Model, "response-cache", canonicalRequest.Stream, true)
+		hit = toolarguments.NormalizeResponseWithPolicy(hit, canonicalRequest.Tools, cachePolicy)
 		suppressThinking := !strings.Contains(c.GetHeader("anthropic-beta"), "interleaved-thinking")
 		if canonicalRequest.Stream {
 			if replayAnthropicStreamFromCache(c, hit, suppressThinking) {
@@ -195,7 +197,8 @@ func handleAnthropicNonStreamingResponse(c *gin.Context, adapter types.ProviderA
 		return fmt.Errorf("adapter execute failed: %w", err)
 	}
 
-	response = toolarguments.NormalizeResponse(response, canonicalRequest.Tools)
+	policy := claudeCodeToolArgumentPolicy(c.GetHeader("User-Agent"), requestID, response.Model, providerID, false, false)
+	response = toolarguments.NormalizeResponseWithPolicy(response, canonicalRequest.Tools, policy)
 
 	if response.StopReason == cif.StopReasonToolUse {
 		logAnthropicToolLoopResponse(requestID, originalModel, response.Model, providerID, false, extractToolCallLogEntriesFromResponse(response))
@@ -251,7 +254,8 @@ func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 	c.Header("Connection", "keep-alive")
 
 	ctx := c.Request.Context()
-	eventCh = toolarguments.NormalizeStream(ctx, eventCh, canonicalRequest.Tools)
+	policy := claudeCodeToolArgumentPolicy(c.GetHeader("User-Agent"), requestID, canonicalRequest.Model, providerID, true, false)
+	eventCh = toolarguments.NormalizeStreamWithPolicy(ctx, eventCh, canonicalRequest.Tools, policy)
 
 	state := serialization.CreateAnthropicStreamState()
 	// Suppress thinking blocks unless the client explicitly opted in to the

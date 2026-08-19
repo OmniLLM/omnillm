@@ -9,6 +9,26 @@ import (
 	"omnillm/internal/cif"
 )
 
+const (
+	ClaudeCodePlanAgentTypeSentinel = "Plan-scriptPath not found: plan file is managed by plan mode system, use Plan agent output only."
+	ClaudeCodePlanAgentTypeRepair   = "claude_code_plan_agent_type"
+)
+
+// CompatibilityPolicy selects narrowly scoped client compatibility repairs.
+// Callers must opt in explicitly; zero-value policy preserves existing behavior.
+type CompatibilityPolicy struct {
+	ClaudeCodePlanAgentType bool
+	OnRepair                func(Repair)
+}
+
+// Repair contains metadata about an applied compatibility repair. It never
+// includes tool arguments or content.
+type Repair struct {
+	Reason     string
+	ToolCallID string
+	ToolName   string
+}
+
 // NormalizeMap removes top-level, declared, optional properties whose value is
 // exactly the empty string. It returns the original map when no safe change can
 // be made or no property changes.
@@ -70,6 +90,12 @@ func NormalizeJSON(arguments string, schema map[string]interface{}) string {
 // be safely normalized. When a change is needed it copy-on-writes the response,
 // content slice, tool part, and argument map.
 func NormalizeResponse(response *cif.CanonicalResponse, tools []cif.CIFTool) *cif.CanonicalResponse {
+	return NormalizeResponseWithPolicy(response, tools, CompatibilityPolicy{})
+}
+
+// NormalizeResponseWithPolicy applies schema-aware normalization and any
+// explicitly selected compatibility repair to completed tool calls.
+func NormalizeResponseWithPolicy(response *cif.CanonicalResponse, tools []cif.CIFTool, policy CompatibilityPolicy) *cif.CanonicalResponse {
 	if response == nil || len(response.Content) == 0 || len(tools) == 0 {
 		return response
 	}
@@ -86,7 +112,8 @@ func NormalizeResponse(response *cif.CanonicalResponse, tools []cif.CIFTool) *ci
 			continue
 		}
 		normalized := NormalizeMap(toolCall.ToolArguments, schema)
-		if len(normalized) == len(toolCall.ToolArguments) {
+		normalized, repaired, repair := repairArguments(toolCall, normalized, schema, policy)
+		if len(normalized) == len(toolCall.ToolArguments) && !repaired {
 			continue
 		}
 		if content == nil {
@@ -94,6 +121,9 @@ func NormalizeResponse(response *cif.CanonicalResponse, tools []cif.CIFTool) *ci
 		}
 		toolCall.ToolArguments = normalized
 		content[index] = toolCall
+		if repaired && policy.OnRepair != nil {
+			policy.OnRepair(repair)
+		}
 	}
 	if content == nil {
 		return response
@@ -108,12 +138,20 @@ func NormalizeResponse(response *cif.CanonicalResponse, tools []cif.CIFTool) *ci
 // and emits one completed, normalized delta immediately before its stop, index
 // reuse, terminal event, error, or upstream channel close.
 func NormalizeStream(ctx context.Context, input <-chan cif.CIFStreamEvent, tools []cif.CIFTool) <-chan cif.CIFStreamEvent {
+	return NormalizeStreamWithPolicy(ctx, input, tools, CompatibilityPolicy{})
+}
+
+// NormalizeStreamWithPolicy applies schema-aware normalization and an explicit
+// compatibility policy after each independently indexed argument object is
+// complete.
+func NormalizeStreamWithPolicy(ctx context.Context, input <-chan cif.CIFStreamEvent, tools []cif.CIFTool, policy CompatibilityPolicy) <-chan cif.CIFStreamEvent {
 	output := make(chan cif.CIFStreamEvent)
 	schemas := schemasByName(tools)
 	normalizable := make(map[string]bool, len(schemas))
 	for name, schema := range schemas {
 		optional, ok := optionalProperties(schema)
-		normalizable[name] = ok && len(optional) > 0
+		normalizable[name] = ok && len(optional) > 0 ||
+			policy.ClaudeCodePlanAgentType && name == "Agent" && schemaAllowsString(schema, "subagent_type", "Plan")
 	}
 	go func() {
 		defer close(output)
@@ -140,6 +178,19 @@ func NormalizeStream(ctx context.Context, input <-chan cif.CIFStreamEvent, tools
 			arguments := buffer.arguments
 			if schema, ok := schemas[buffer.toolName]; ok {
 				arguments = NormalizeJSON(arguments, schema)
+				var object map[string]interface{}
+				if json.Unmarshal([]byte(arguments), &object) == nil {
+					toolCall := cif.CIFToolCallPart{ToolCallID: buffer.toolCallID, ToolName: buffer.toolName, ToolArguments: object}
+					if repairedObject, repaired, repair := repairArguments(toolCall, object, schema, policy); repaired {
+						encoded, err := json.Marshal(repairedObject)
+						if err == nil {
+							arguments = string(encoded)
+							if policy.OnRepair != nil {
+								policy.OnRepair(repair)
+							}
+						}
+					}
+				}
 			}
 			return send(cif.CIFContentDelta{
 				Type:  "content_delta",
@@ -242,6 +293,54 @@ func NormalizeStream(ctx context.Context, input <-chan cif.CIFStreamEvent, tools
 		}
 	}()
 	return output
+}
+
+func repairArguments(toolCall cif.CIFToolCallPart, arguments, schema map[string]interface{}, policy CompatibilityPolicy) (map[string]interface{}, bool, Repair) {
+	if !policy.ClaudeCodePlanAgentType || toolCall.ToolName != "Agent" || arguments == nil {
+		return arguments, false, Repair{}
+	}
+	value, ok := arguments["subagent_type"].(string)
+	if !ok || value != ClaudeCodePlanAgentTypeSentinel || !schemaAllowsString(schema, "subagent_type", "Plan") {
+		return arguments, false, Repair{}
+	}
+	// NormalizeMap may have returned the model-owned map. Copy before repair so
+	// callers retain the package's copy-on-write guarantee.
+	copy := make(map[string]interface{}, len(arguments))
+	for key, original := range arguments {
+		copy[key] = original
+	}
+	copy["subagent_type"] = "Plan"
+	return copy, true, Repair{Reason: ClaudeCodePlanAgentTypeRepair, ToolCallID: toolCall.ToolCallID, ToolName: toolCall.ToolName}
+}
+
+func schemaAllowsString(schema map[string]interface{}, propertyName, allowed string) bool {
+	if schema == nil || schema["type"] != "object" {
+		return false
+	}
+	properties, ok := schema["properties"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	property, ok := properties[propertyName].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	if schemaType, exists := property["type"]; exists && schemaType != "string" {
+		return false
+	}
+	if constant, ok := property["const"].(string); ok {
+		return constant == allowed
+	}
+	values, ok := property["enum"].([]interface{})
+	if !ok {
+		return false
+	}
+	for _, value := range values {
+		if stringValue, ok := value.(string); ok && stringValue == allowed {
+			return true
+		}
+	}
+	return false
 }
 
 type streamBuffer struct {
