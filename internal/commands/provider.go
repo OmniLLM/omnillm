@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -823,41 +824,83 @@ var providerRenameCmd = &cobra.Command{
 	Short: "Rename a provider or update its alias",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c := NewClient(cmd)
-		id, err := resolveProviderID(cmd, c, args)
-		if err != nil {
-			return err
-		}
-		name := getStringFlag(cmd, "name")
-		alias := getStringFlag(cmd, "alias")
-		subtitle := getStringFlag(cmd, "subtitle")
-		if alias != "" && subtitle != "" && alias != subtitle {
-			return fmt.Errorf("--alias and --subtitle must match when both are supplied")
-		}
-		if alias == "" {
-			alias = subtitle
-		}
-		if name == "" && alias == "" {
-			return fmt.Errorf("at least one of --name or --alias is required")
-		}
-		body := map[string]interface{}{}
-		if name != "" {
-			body["name"] = name
-		}
-		if alias != "" {
-			body["alias"] = alias
-		}
-		data, err := c.Patch("/api/admin/providers/"+url.PathEscape(id)+"/name", body)
-		if err != nil {
-			return err
-		}
-		if c.IsJSON() {
-			c.PrintJSON(data)
-			return nil
-		}
-		SuccessMsg(cmd, "Provider '%s' renamed.", id)
-		return nil
+		return runProviderRename(cmd, args, IsTerminalWriter(cmd.OutOrStdout()))
 	},
+}
+
+func runProviderRename(cmd *cobra.Command, args []string, interactive bool) error {
+	c := NewClient(cmd)
+	id, err := resolveProviderID(cmd, c, args)
+	if err != nil {
+		return err
+	}
+	name, alias, err := resolveProviderRenameFields(
+		cmd,
+		getStringFlag(cmd, "name"),
+		getStringFlag(cmd, "alias"),
+		getStringFlag(cmd, "subtitle"),
+		interactive,
+	)
+	if err != nil {
+		return err
+	}
+	body := map[string]interface{}{}
+	if name != "" {
+		body["name"] = name
+	}
+	if alias != "" {
+		body["alias"] = alias
+	}
+	data, err := c.Patch("/api/admin/providers/"+url.PathEscape(id)+"/name", body)
+	if err != nil {
+		return err
+	}
+	if c.IsJSON() {
+		c.PrintJSON(data)
+		return nil
+	}
+	SuccessMsg(cmd, "Provider '%s' renamed.", id)
+	return nil
+}
+
+func resolveProviderRenameFields(cmd *cobra.Command, name, alias, subtitle string, interactive bool) (string, string, error) {
+	if alias != "" && subtitle != "" && alias != subtitle {
+		return "", "", fmt.Errorf("--alias and --subtitle must match when both are supplied")
+	}
+	if alias == "" {
+		alias = subtitle
+	}
+	if name != "" || alias != "" {
+		return name, alias, nil
+	}
+	if !interactive {
+		return "", "", fmt.Errorf("at least one of --name or --alias is required")
+	}
+
+	reader := bufio.NewReader(cmd.InOrStdin())
+	name, err := promptRenameField(cmd, reader, "New display name")
+	if err != nil {
+		return "", "", err
+	}
+	alias, err = promptRenameField(cmd, reader, "New provider alias")
+	if err != nil {
+		return "", "", err
+	}
+	if name == "" && alias == "" {
+		return "", "", fmt.Errorf("at least one of --name or --alias is required")
+	}
+	return name, alias, nil
+}
+
+func promptRenameField(cmd *cobra.Command, reader *bufio.Reader, label string) (string, error) {
+	if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "%s: ", label); err != nil {
+		return "", fmt.Errorf("write %s prompt: %w", strings.ToLower(label), err)
+	}
+	value, err := reader.ReadString('\n')
+	if err != nil && len(value) == 0 {
+		return "", fmt.Errorf("read %s: %w", strings.ToLower(label), err)
+	}
+	return strings.TrimSpace(value), nil
 }
 
 // ─── priorities ───────────────────────────────────────────────────────────────
