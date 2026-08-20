@@ -58,7 +58,10 @@ func TestResolveRequestedModelsProviderQualification(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			attempts := resolveRequestedModels("test-request", tt.model)
+			attempts, err := resolveRequestedModels("test-request", tt.model)
+			if err != nil {
+				t.Fatalf("resolveRequestedModels: %v", err)
+			}
 			if len(attempts) != tt.wantAttempts {
 				t.Fatalf("attempt count = %d, want %d", len(attempts), tt.wantAttempts)
 			}

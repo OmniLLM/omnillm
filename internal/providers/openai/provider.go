@@ -221,6 +221,9 @@ func (p *Provider) RefreshToken() error {
 
 		t, err := RefreshAccessToken(refresh)
 		if err != nil {
+			if isRefreshTokenAlreadyUsed(err) {
+				return nil, p.recoverRotatedRefreshToken(refresh)
+			}
 			return nil, err
 		}
 		if err := p.ApplyTokens(t); err != nil {
@@ -230,6 +233,62 @@ func (p *Provider) RefreshToken() error {
 		return nil, nil
 	})
 	return err
+}
+
+func (p *Provider) recoverRotatedRefreshToken(rejected string) error {
+	stored, err := p.persistedRefreshToken()
+	if err != nil {
+		return fmt.Errorf("openai: reload rotated refresh token: %w", err)
+	}
+	if stored != "" && stored != rejected {
+		return p.exchangeRecoveredRefreshToken(stored)
+	}
+
+	retired, err := database.NewTokenStore().ClearRefreshTokenIfMatches(p.instanceID, rejected)
+	if err != nil {
+		return fmt.Errorf("openai: retire rejected refresh token: %w", err)
+	}
+	if !retired {
+		stored, err = p.persistedRefreshToken()
+		if err != nil {
+			return fmt.Errorf("openai: reload refresh token after rotation race: %w", err)
+		}
+		if stored != "" && stored != rejected {
+			return p.exchangeRecoveredRefreshToken(stored)
+		}
+	}
+
+	p.mu.Lock()
+	if p.refreshToken == rejected {
+		p.refreshToken = ""
+	}
+	p.mu.Unlock()
+	return fmt.Errorf("openai: refresh token was already used; sign in again with 'omnillm provider login %s'", p.instanceID)
+}
+
+func (p *Provider) persistedRefreshToken() (string, error) {
+	record, err := database.NewTokenStore().Get(p.instanceID)
+	if err != nil || record == nil {
+		return "", err
+	}
+	var data map[string]interface{}
+	if err := json.Unmarshal([]byte(record.TokenData), &data); err != nil {
+		return "", err
+	}
+	refresh, _ := data["refresh_token"].(string)
+	return refresh, nil
+}
+
+func (p *Provider) exchangeRecoveredRefreshToken(refresh string) error {
+	tokens, err := RefreshAccessToken(refresh)
+	if err != nil {
+		return fmt.Errorf("openai: retry with newer persisted refresh token: %w", err)
+	}
+	if err := p.ApplyTokens(tokens); err != nil {
+		return err
+	}
+	log.Info().Str("provider", p.instanceID).Msg("OpenAI: access token refreshed from newer persisted rotation")
+	return nil
 }
 
 // ── API configuration ────────────────────────────────────────────────────────

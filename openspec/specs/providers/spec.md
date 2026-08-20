@@ -11,11 +11,47 @@ The system SHALL support distinct provider types for GitHub Copilot, Antigravity
 - **THEN** API-key Codex and OAuth OpenAI accounts remain distinct types
 
 ### Requirement: Provider instance registration
-Every provider SHALL have a unique instance identifier independent of provider type, and registering the same identifier SHALL replace its previous in-process registration.
+
+Every provider SHALL have a unique canonical instance identifier independent of
+provider type, a non-empty display name, and an optional short alias. Registering
+the same identifier SHALL replace its previous in-process registration. Provider
+references MUST resolve in deterministic order by exact instance ID, unique
+case-insensitive alias, then unique case-insensitive display name.
+
+#### Scenario: Resolve exact instance ID
+
+- **WHEN** a reference exactly equals a registered provider instance ID
+- **THEN** that instance is returned without consulting alias or name matches
+
+#### Scenario: Resolve unique alias
+
+- **WHEN** no exact ID matches and exactly one provider alias matches the
+  reference case-insensitively
+- **THEN** that provider's canonical instance ID is returned
+
+#### Scenario: Resolve unique display name
+
+- **WHEN** no ID or alias matches and exactly one provider display name matches
+  the reference case-insensitively
+- **THEN** that provider's canonical instance ID is returned
+
+#### Scenario: Ambiguous alias or display name
+
+- **WHEN** the highest-precedence matching alias or display name belongs to more
+  than one provider instance
+- **THEN** resolution fails without selecting an instance and identifies the
+  matching canonical instance IDs
 
 #### Scenario: Unknown instance
-- **WHEN** an unknown instance is requested
-- **THEN** lookup fails and reports available instance identifiers
+
+- **WHEN** no instance ID, alias, or display name matches a provider reference
+- **THEN** lookup fails without selecting an instance
+
+#### Scenario: Legacy subtitle persistence
+
+- **WHEN** an existing provider has a persisted `subtitle`
+- **THEN** that value is treated as its alias without rewriting its instance ID,
+  credentials, or owned records
 
 ### Requirement: Active provider selection
 The registry SHALL maintain active instances and a primary active provider, promoting another active instance if the primary is removed.
@@ -294,3 +330,38 @@ The system SHALL NOT claim native Anthropic, Bedrock cache-point, or Gemini mana
 #### Scenario: Provider catalog lacks deferred protocol
 - **WHEN** provider capabilities are reported for the current release
 - **THEN** native Anthropic, Bedrock, and Gemini managed-cache request support are absent rather than inferred from inbound dialect compatibility
+
+### Requirement: OpenAI refresh-token rotation recovery
+
+The OpenAI ChatGPT-OAuth provider SHALL decode standard and nested token
+endpoint errors without logging raw credential-response bodies, SHALL recover a
+rejected single-use refresh token by retrying at most once with a different
+newer token from provider-owned durable state, and MUST stop automatically
+retrying a rejected token when no newer durable token exists.
+
+#### Scenario: Newer durable refresh token
+
+- **WHEN** an OpenAI refresh token is rejected as already used and the durable
+  provider record contains a different non-empty refresh token
+- **THEN** the provider adopts that token, retries the exchange once, and
+  persists the successful rotated token set
+
+#### Scenario: No newer durable refresh token
+
+- **WHEN** an OpenAI refresh token is rejected as already used and durable state
+  contains no different refresh token
+- **THEN** the provider retains its existing access token, durably retires the
+  rejected refresh token, returns browser sign-in guidance, and makes no
+  automatic refresh request with that rejected token later
+
+#### Scenario: Nested token endpoint error
+
+- **WHEN** OpenAI returns a nested JSON error object from the token endpoint
+- **THEN** the provider returns a sanitized error containing actionable type,
+  code, and message fields without including a raw response-body preview
+
+#### Scenario: Concurrent refresh callers
+
+- **WHEN** concurrent requests on one provider instance require refresh
+- **THEN** they share the bounded refresh operation and do not independently
+  consume the same single-use token

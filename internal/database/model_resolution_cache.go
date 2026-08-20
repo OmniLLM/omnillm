@@ -1,6 +1,9 @@
 package database
 
 import (
+	"errors"
+	"fmt"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -11,11 +14,12 @@ import (
 type ModelResolutionCache struct {
 	mu sync.RWMutex
 
-	vmByName    map[string]*VirtualModelRecord
-	vmUpstreams map[string][]VirtualModelUpstreamRecord
-	provInst    []ProviderInstanceRecord
-	instByID    map[string]ProviderInstanceRecord
-	instByLcSub map[string]string
+	vmByName      map[string]*VirtualModelRecord
+	vmUpstreams   map[string][]VirtualModelUpstreamRecord
+	provInst      []ProviderInstanceRecord
+	instByID      map[string]ProviderInstanceRecord
+	instByLcAlias map[string][]string
+	instByLcName  map[string][]string
 
 	vmLoaded   bool
 	instLoaded bool
@@ -161,7 +165,8 @@ func (c *ModelResolutionCache) loadInstLocked() error {
 
 	var records []ProviderInstanceRecord
 	byID := make(map[string]ProviderInstanceRecord)
-	byLcSub := make(map[string]string)
+	byLcAlias := make(map[string][]string)
+	byLcName := make(map[string][]string)
 	for rows.Next() {
 		var r ProviderInstanceRecord
 		var activated int
@@ -174,11 +179,13 @@ func (c *ModelResolutionCache) loadInstLocked() error {
 		r.UpdatedAt = parseTime(updatedAtStr)
 		records = append(records, r)
 		byID[r.InstanceID] = r
-		lcs := strings.ToLower(r.Subtitle)
-		if lcs != "" {
-			if _, exists := byLcSub[lcs]; !exists {
-				byLcSub[lcs] = r.InstanceID
-			}
+		aliasKey := normalizeProviderReference(r.Subtitle)
+		if aliasKey != "" {
+			byLcAlias[aliasKey] = append(byLcAlias[aliasKey], r.InstanceID)
+		}
+		nameKey := normalizeProviderReference(r.Name)
+		if nameKey != "" {
+			byLcName[nameKey] = append(byLcName[nameKey], r.InstanceID)
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -187,7 +194,14 @@ func (c *ModelResolutionCache) loadInstLocked() error {
 
 	c.provInst = records
 	c.instByID = byID
-	c.instByLcSub = byLcSub
+	for _, ids := range byLcAlias {
+		slices.Sort(ids)
+	}
+	for _, ids := range byLcName {
+		slices.Sort(ids)
+	}
+	c.instByLcAlias = byLcAlias
+	c.instByLcName = byLcName
 	c.instLoaded = true
 	return nil
 }
@@ -200,15 +214,48 @@ func (c *ModelResolutionCache) GetAllProviderInstances() []ProviderInstanceRecor
 	return r
 }
 
-func (c *ModelResolutionCache) LookupProviderPrefix(prefix string) (string, bool) {
+var ErrProviderReferenceNotFound = errors.New("provider reference not found")
+
+type AmbiguousProviderReferenceError struct {
+	Reference string
+	Matches   []string
+}
+
+func (e *AmbiguousProviderReferenceError) Error() string {
+	return fmt.Sprintf("provider reference %q is ambiguous; matching instance IDs: %s", e.Reference, strings.Join(e.Matches, ", "))
+}
+
+func normalizeProviderReference(reference string) string {
+	return strings.ToLower(strings.TrimSpace(reference))
+}
+
+// ResolveProviderReference resolves an exact instance ID, then a unique
+// case-insensitive alias, then a unique case-insensitive display name.
+func (c *ModelResolutionCache) ResolveProviderReference(reference string) (string, error) {
 	c.ensureInstLoaded()
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	if _, ok := c.instByID[prefix]; ok {
-		return prefix, true
+	reference = strings.TrimSpace(reference)
+	if _, ok := c.instByID[reference]; ok {
+		return reference, nil
 	}
-	id, ok := c.instByLcSub[strings.ToLower(prefix)]
-	return id, ok
+	key := normalizeProviderReference(reference)
+	for _, matches := range [][]string{c.instByLcAlias[key], c.instByLcName[key]} {
+		switch len(matches) {
+		case 0:
+			continue
+		case 1:
+			return matches[0], nil
+		default:
+			return "", &AmbiguousProviderReferenceError{Reference: reference, Matches: slices.Clone(matches)}
+		}
+	}
+	return "", fmt.Errorf("%w: %q", ErrProviderReferenceNotFound, reference)
+}
+
+func (c *ModelResolutionCache) LookupProviderPrefix(prefix string) (string, bool) {
+	id, err := c.ResolveProviderReference(prefix)
+	return id, err == nil
 }
 
 func (c *ModelResolutionCache) ResolveProviderPrefix(prefix string) string {

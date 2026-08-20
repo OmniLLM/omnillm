@@ -3,10 +3,12 @@ package commands
 import "github.com/spf13/cobra"
 
 var AuthCmd = &cobra.Command{
-	Use:   "auth [type]",
-	Short: "Authenticate and add a provider through the OmniLLM backend",
-	Long:  "Authenticate and add a provider through the OmniLLM backend.\n\nIf no provider type is supplied, an interactive prompt lets you choose one.\nSupported types match \"omnillm provider add\": " + supportedAuthProviderTypesSummary + ".",
-	Args:  cobra.MaximumNArgs(1),
+	Use:        "auth [type]",
+	Short:      "Authenticate and add a provider through the OmniLLM backend",
+	Long:       "Authenticate and add a provider through the OmniLLM backend.\n\nIf no provider type is supplied, an interactive prompt lets you choose one.\nSupported types match \"omnillm provider add\": " + supportedAuthProviderTypesSummary + ".",
+	Args:       cobra.MaximumNArgs(1),
+	Hidden:     true,
+	Deprecated: "use 'provider login'",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		providerType, err := resolveAuthProviderType(args)
 		if err != nil {
@@ -15,7 +17,7 @@ var AuthCmd = &cobra.Command{
 		if err := promptForProviderAuth(cmd, providerType); err != nil {
 			return err
 		}
-		return authAndCreateProvider(cmd, providerType)
+		return loginProvider(cmd, providerType, true)
 	},
 }
 

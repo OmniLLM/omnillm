@@ -12,10 +12,30 @@ import (
 
 type ProviderRegistry struct {
 	mu              sync.RWMutex
+	saveMu          sync.Mutex
+	saveWG          sync.WaitGroup
 	providers       map[string]types.Provider
 	activeProvider  types.Provider
 	activeProviders map[string]struct{}
 	instanceStore   *database.ProviderInstanceStore
+}
+
+func (pr *ProviderRegistry) saveConfigInBackground() {
+	pr.saveMu.Lock()
+	pr.saveWG.Add(1)
+	go func() {
+		defer pr.saveWG.Done()
+		_ = pr.saveConfigAsync()
+	}()
+	pr.saveMu.Unlock()
+}
+
+// WaitForPendingSaves waits for provider persistence already scheduled by the
+// registry. It is primarily useful during orderly shutdown and test cleanup.
+func (pr *ProviderRegistry) WaitForPendingSaves() {
+	pr.saveMu.Lock()
+	defer pr.saveMu.Unlock()
+	pr.saveWG.Wait()
 }
 
 var (
@@ -41,7 +61,7 @@ func (pr *ProviderRegistry) Register(provider types.Provider, saveConfig bool) e
 	pr.mu.Unlock()
 
 	if shouldSave {
-		go pr.saveConfigAsync()
+		pr.saveConfigInBackground()
 	}
 
 	log.Debug().Str("provider", provider.GetInstanceID()).Msg("Provider registered")
@@ -75,7 +95,7 @@ func (pr *ProviderRegistry) SetActive(instanceID string) (types.Provider, error)
 	pr.activeProviders[instanceID] = struct{}{}
 	pr.mu.Unlock()
 
-	go pr.saveConfigAsync()
+	pr.saveConfigInBackground()
 
 	log.Debug().Str("provider", instanceID).Msg("Provider set as active")
 	return provider, nil
@@ -105,7 +125,7 @@ func (pr *ProviderRegistry) AddActive(instanceID string) (types.Provider, error)
 	}
 	pr.mu.Unlock()
 
-	go pr.saveConfigAsync()
+	pr.saveConfigInBackground()
 
 	return provider, nil
 }
@@ -125,7 +145,7 @@ func (pr *ProviderRegistry) RemoveActive(instanceID string) error {
 	}
 	pr.mu.Unlock()
 
-	go pr.saveConfigAsync()
+	pr.saveConfigInBackground()
 
 	return nil
 }
@@ -205,7 +225,7 @@ func (pr *ProviderRegistry) Rename(oldInstanceID, newInstanceID string) error {
 	}
 	pr.mu.Unlock()
 
-	go pr.saveConfigAsync()
+	pr.saveConfigInBackground()
 
 	return nil
 }
@@ -237,7 +257,7 @@ func (pr *ProviderRegistry) Remove(instanceID string) error {
 		log.Warn().Str("instance", instanceID).Err(err).Msg("Failed to clean up token")
 	}
 
-	go pr.saveConfigAsync()
+	pr.saveConfigInBackground()
 
 	log.Debug().Str("provider", instanceID).Msg("Provider removed")
 	return nil

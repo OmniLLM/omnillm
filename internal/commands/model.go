@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -13,7 +14,54 @@ var ModelCmd = &cobra.Command{
 	Short: "Manage models for a provider",
 }
 
+var LegacyModelCmd = &cobra.Command{
+	Use:                "model",
+	Short:              "Manage models for a provider",
+	Hidden:             true,
+	Deprecated:         "use 'provider model'",
+	DisableFlagParsing: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return executeLegacyModelCommand(cmd, ModelCmd, args)
+	},
+}
+
+func executeLegacyModelCommand(source, parent *cobra.Command, args []string) error {
+	if len(args) == 0 || (len(args) == 1 && (args[0] == "--help" || args[0] == "-h")) {
+		parent.SetIn(source.InOrStdin())
+		parent.SetOut(source.OutOrStdout())
+		parent.SetErr(source.ErrOrStderr())
+		return parent.Help()
+	}
+	for _, target := range parent.Commands() {
+		if target.Name() != args[0] {
+			continue
+		}
+		if target.HasSubCommands() {
+			return executeLegacyModelCommand(source, target, args[1:])
+		}
+		target.SetIn(source.InOrStdin())
+		target.SetOut(source.OutOrStdout())
+		target.SetErr(source.ErrOrStderr())
+		if err := target.ParseFlags(args[1:]); err != nil {
+			return err
+		}
+		positional := target.Flags().Args()
+		if err := target.ValidateArgs(positional); err != nil {
+			return err
+		}
+		if err := target.ValidateRequiredFlags(); err != nil {
+			return err
+		}
+		if err := target.ValidateFlagGroups(); err != nil {
+			return err
+		}
+		return target.RunE(target, positional)
+	}
+	return fmt.Errorf("unknown model command %q", args[0])
+}
+
 func init() {
+	ModelCmd.SilenceUsage = true
 	ModelCmd.AddCommand(modelListCmd)
 	ModelCmd.AddCommand(modelRefreshCmd)
 	ModelCmd.AddCommand(modelMetadataCmd)
@@ -144,7 +192,7 @@ var modelListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		data, err := c.Get("/api/admin/providers/" + providerID + "/models")
+		data, err := c.Get("/api/admin/providers/" + url.PathEscape(providerID) + "/models")
 		if err != nil {
 			return err
 		}
@@ -195,7 +243,7 @@ var modelRefreshCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		data, err := c.Post("/api/admin/providers/"+providerID+"/models/refresh", nil)
+		data, err := c.Post("/api/admin/providers/"+url.PathEscape(providerID)+"/models/refresh", nil)
 		if err != nil {
 			return err
 		}
@@ -227,7 +275,7 @@ var modelToggleCmd = &cobra.Command{
 			"modelId": args[1],
 			"enabled": enabled,
 		}
-		data, err := c.Post("/api/admin/providers/"+args[0]+"/models/toggle", body)
+		data, err := c.Post("/api/admin/providers/"+url.PathEscape(args[0])+"/models/toggle", body)
 		if err != nil {
 			return err
 		}
@@ -258,7 +306,7 @@ var modelEnableCmd = &cobra.Command{
 			"modelId": args[1],
 			"enabled": true,
 		}
-		data, err := c.Post("/api/admin/providers/"+args[0]+"/models/toggle", body)
+		data, err := c.Post("/api/admin/providers/"+url.PathEscape(args[0])+"/models/toggle", body)
 		if err != nil {
 			return err
 		}
@@ -284,7 +332,7 @@ var modelDisableCmd = &cobra.Command{
 			"modelId": args[1],
 			"enabled": false,
 		}
-		data, err := c.Post("/api/admin/providers/"+args[0]+"/models/toggle", body)
+		data, err := c.Post("/api/admin/providers/"+url.PathEscape(args[0])+"/models/toggle", body)
 		if err != nil {
 			return err
 		}
@@ -305,7 +353,7 @@ var modelVersionGetCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := NewClient(cmd)
-		path := fmt.Sprintf("/api/admin/providers/%s/models/%s/version", args[0], args[1])
+		path := fmt.Sprintf("/api/admin/providers/%s/models/%s/version", url.PathEscape(args[0]), url.PathEscape(args[1]))
 		data, err := c.Get(path)
 		if err != nil {
 			return err
@@ -337,7 +385,7 @@ var modelVersionSetCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := NewClient(cmd)
-		path := fmt.Sprintf("/api/admin/providers/%s/models/%s/version", args[0], args[1])
+		path := fmt.Sprintf("/api/admin/providers/%s/models/%s/version", url.PathEscape(args[0]), url.PathEscape(args[1]))
 		body := map[string]string{"version": args[2]}
 		data, err := c.Put(path, body)
 		if err != nil {

@@ -2830,7 +2830,7 @@ function ProviderCard({
   onDelete: (id: string) => void
   onAuthSubmit: (id: string, body: Record<string, string>) => Promise<void>
   onModelsChanged: () => void
-  onRename: (id: string, fields: { name?: string; subtitle?: string }) => void
+  onRename: (id: string, fields: { name?: string; alias?: string }) => void
   priorityIndex: number
   multiProvider: boolean
 }) {
@@ -2840,7 +2840,9 @@ function ProviderCard({
   const [nameInput, setNameInput] = useState(provider.name)
   const nameInputRef = useRef<HTMLInputElement>(null)
   const [editingSubtitle, setEditingSubtitle] = useState(false)
-  const [subtitleInput, setSubtitleInput] = useState(provider.subtitle ?? "")
+  const [subtitleInput, setSubtitleInput] = useState(
+    provider.alias ?? provider.subtitle ?? "",
+  )
   const subtitleInputRef = useRef<HTMLInputElement>(null)
   const accent = PROVIDER_ACCENT[provider.type] ?? "#0a84ff"
 
@@ -2851,8 +2853,9 @@ function ProviderCard({
   }, [provider.name, editingName])
 
   useEffect(() => {
-    if (!editingSubtitle) setSubtitleInput(provider.subtitle ?? "")
-  }, [provider.subtitle, editingSubtitle])
+    if (!editingSubtitle)
+      setSubtitleInput(provider.alias ?? provider.subtitle ?? "")
+  }, [provider.alias, provider.subtitle, editingSubtitle])
 
   const handleAuthSubmit = async (body: Record<string, string>) => {
     await onAuthSubmit(provider.id, body)
@@ -2879,23 +2882,23 @@ function ProviderCard({
   }
 
   const startEditSubtitle = () => {
-    setSubtitleInput(provider.subtitle ?? "")
+    setSubtitleInput(provider.alias ?? provider.subtitle ?? "")
     setEditingSubtitle(true)
     setTimeout(() => subtitleInputRef.current?.select(), 0)
   }
 
   const commitSubtitle = () => {
     const trimmed = subtitleInput.trim()
-    const current = provider.subtitle ?? ""
+    const current = provider.alias ?? provider.subtitle ?? ""
     if (trimmed !== current) {
-      onRename(provider.id, { subtitle: trimmed })
+      onRename(provider.id, { alias: trimmed })
     }
     setEditingSubtitle(false)
   }
 
   const cancelEditSubtitle = () => {
     setEditingSubtitle(false)
-    setSubtitleInput(provider.subtitle ?? "")
+    setSubtitleInput(provider.alias ?? provider.subtitle ?? "")
   }
 
   return (
@@ -3075,12 +3078,12 @@ function ProviderCard({
                       fontFamily: "var(--font-mono)",
                     }}
                   >
-                    {provider.subtitle || provider.id}
+                    {provider.alias || provider.subtitle || provider.id}
                   </span>
                 }
                 {!editingSubtitle && (
                   <button
-                    title="Edit subtitle"
+                    title="Edit alias"
                     onClick={startEditSubtitle}
                     style={{
                       background: "none",
@@ -3177,7 +3180,7 @@ function ProviderCard({
             <span style={{ color: "var(--color-text-secondary)" }}>
               prefix:{" "}
             </span>
-            {provider.subtitle || provider.id}
+            {provider.alias || provider.subtitle || provider.id}
           </span>
         </div>
 
@@ -4930,7 +4933,7 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
 
   const handleRename = async (
     id: string,
-    fields: { name?: string; subtitle?: string },
+    fields: { name?: string; alias?: string },
   ) => {
     // Optimistic update — reflect the change in UI immediately
     const prev = providers.find((p) => p.id === id)
@@ -4940,8 +4943,8 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
           {
             ...p,
             ...(fields.name !== undefined ? { name: fields.name } : {}),
-            ...(fields.subtitle !== undefined ?
-              { subtitle: fields.subtitle }
+            ...(fields.alias !== undefined ?
+              { alias: fields.alias, subtitle: fields.alias }
             : {}),
           }
         : p,

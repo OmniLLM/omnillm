@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"errors"
 	"omnillm/internal/cif"
 	"omnillm/internal/database"
 	"omnillm/internal/lib/affinity"
@@ -17,7 +18,7 @@ type resolvedModelAttempt struct {
 	OnlyIfPreviousUnavailable bool
 }
 
-func resolveRequestedModels(requestID, requestedModel string) []resolvedModelAttempt {
+func resolveRequestedModels(requestID, requestedModel string) ([]resolvedModelAttempt, error) {
 	normalizedModel := modelrouting.NormalizeModelName(requestedModel)
 
 	cache := database.GetModelResolutionCache()
@@ -34,13 +35,13 @@ func resolveRequestedModels(requestID, requestedModel string) []resolvedModelAtt
 	upstreams := cache.GetUpstreams(vm.VirtualModelID)
 	if len(upstreams) == 0 {
 		log.Warn().Str("request_id", requestID).Str("virtual_model", vm.VirtualModelID).Msg("Virtual model has no routable upstream")
-		return []resolvedModelAttempt{{RequestedModel: requestedModel, NormalizedModel: normalizedModel}}
+		return []resolvedModelAttempt{{RequestedModel: requestedModel, NormalizedModel: normalizedModel}}, nil
 	}
 
 	ordered := virtualmodelrouting.OrderUpstreams(upstreams, vm.LbStrategy, vm.VirtualModelID)
 	if len(ordered) == 0 {
 		log.Warn().Str("request_id", requestID).Str("virtual_model", vm.VirtualModelID).Msg("Virtual model has no routable upstream")
-		return []resolvedModelAttempt{{RequestedModel: requestedModel, NormalizedModel: normalizedModel}}
+		return []resolvedModelAttempt{{RequestedModel: requestedModel, NormalizedModel: normalizedModel}}, nil
 	}
 
 	attempts := make([]resolvedModelAttempt, 0, len(ordered))
@@ -70,7 +71,7 @@ func resolveRequestedModels(requestID, requestedModel string) []resolvedModelAtt
 		})
 	}
 
-	return attempts
+	return attempts, nil
 }
 
 func preferAffinityAttempt(attempts []resolvedModelAttempt, request *cif.CanonicalRequest, requestedModel string) []resolvedModelAttempt {
@@ -91,15 +92,20 @@ func preferAffinityAttempt(attempts []resolvedModelAttempt, request *cif.Canonic
 	return attempts
 }
 
-func resolveRequestedModelsForRequest(requestID, requestedModel string, request *cif.CanonicalRequest) []resolvedModelAttempt {
-	return preferAffinityAttempt(resolveRequestedModels(requestID, requestedModel), request, requestedModel)
+func resolveRequestedModelsForRequest(requestID, requestedModel string, request *cif.CanonicalRequest) ([]resolvedModelAttempt, error) {
+	attempts, err := resolveRequestedModels(requestID, requestedModel)
+	return preferAffinityAttempt(attempts, request, requestedModel), err
 }
 
-func appendProviderPrefixFallback(requestID string, attempts []resolvedModelAttempt, requestedModel string) []resolvedModelAttempt {
+func appendProviderPrefixFallback(requestID string, attempts []resolvedModelAttempt, requestedModel string) ([]resolvedModelAttempt, error) {
 	prefix, bareModel := modelrouting.ParseProviderPrefix(requestedModel)
-	resolvedInstanceID, ok := lookupProviderPrefix(prefix)
-	if !ok || bareModel == "" {
-		return attempts
+	resolvedInstanceID, err := resolveProviderPrefix(prefix)
+	if err != nil || bareModel == "" {
+		var ambiguous *database.AmbiguousProviderReferenceError
+		if errors.As(err, &ambiguous) && bareModel != "" {
+			return nil, err
+		}
+		return attempts, nil
 	}
 
 	log.Debug().
@@ -113,18 +119,24 @@ func appendProviderPrefixFallback(requestID string, attempts []resolvedModelAtte
 		NormalizedModel:           modelrouting.NormalizeModelName(bareModel),
 		ProviderID:                resolvedInstanceID,
 		OnlyIfPreviousUnavailable: true,
-	})
+	}), nil
 }
 
 // lookupProviderPrefix maps a user-supplied prefix to a known registry instance ID.
 //
 // The lookup order is:
 //  1. Exact match against a registered instance ID (e.g. "alibaba-2").
-//  2. Case-insensitive match against the provider's subtitle — the short label
-//     users set in the UI (e.g. "alipay01").
+//  2. Unique case-insensitive match against the provider alias (persisted as
+//     subtitle for compatibility).
+//  3. Unique case-insensitive match against the display name.
 func lookupProviderPrefix(prefix string) (string, bool) {
+	id, err := resolveProviderPrefix(prefix)
+	return id, err == nil
+}
+
+func resolveProviderPrefix(prefix string) (string, error) {
 	if prefix == "" {
-		return "", false
+		return "", database.ErrProviderReferenceNotFound
 	}
-	return database.GetModelResolutionCache().LookupProviderPrefix(prefix)
+	return database.GetModelResolutionCache().ResolveProviderReference(prefix)
 }

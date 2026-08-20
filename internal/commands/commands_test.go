@@ -877,10 +877,9 @@ func TestNewClientDefaultServer(t *testing.T) {
 func TestModelToggleRequiresEnableOrDisable(t *testing.T) {
 	for _, sub := range ModelCmd.Commands() {
 		if sub.Name() == "toggle" {
-			ModelCmd.SetArgs([]string{"toggle", "some-provider", "some-model"})
 			var errBuf bytes.Buffer
-			ModelCmd.SetErr(&errBuf)
-			err := ModelCmd.Execute()
+			sub.SetErr(&errBuf)
+			err := sub.ValidateFlagGroups()
 			if err == nil {
 				t.Fatal("expected error when neither --enable nor --disable is set")
 			}

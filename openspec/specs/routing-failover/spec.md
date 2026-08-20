@@ -4,27 +4,67 @@
 Defines how model names become ordered provider attempts and how virtual models, balancing, affinity, candidate isolation, failover, and terminal errors control dispatch.
 ## Requirements
 ### Requirement: Provider-prefixed model resolution
-A slash-containing model name SHALL first undergo ordinary resolution as a complete native model identifier. When an active provider advertises that complete identifier, ordinary provider ordering and failover SHALL take precedence even if the first segment also identifies a provider instance or subtitle. Only when the complete identifier is unavailable SHALL a first segment that resolves to a provider instance identifier or provider subtitle pin dispatch to that provider and remove only that recognized qualifier.
+
+A slash-containing model name SHALL first undergo ordinary resolution as a
+complete native model identifier. When an active provider advertises that
+complete identifier, ordinary provider ordering and failover SHALL take
+precedence even if the first segment identifies a provider instance, alias, or
+display name. Only when the complete identifier is unavailable SHALL a first
+segment that uniquely resolves by exact instance ID, case-insensitive alias, or
+case-insensitive display name pin dispatch to that provider and remove only that
+recognized qualifier. An ambiguous qualifier MUST fail rather than select a
+provider.
 
 #### Scenario: Advertised native identifier collides with provider prefix
-- **WHEN** an active provider advertises the complete slash-containing model identifier and its first segment also identifies a provider instance or subtitle
-- **THEN** the complete model identifier is resolved through ordinary provider selection and retains normal provider ordering and failover
+
+- **WHEN** an active provider advertises the complete slash-containing model
+  identifier and its first segment also identifies a provider instance, alias,
+  or display name
+- **THEN** the complete model identifier is resolved through ordinary provider
+  selection and retains normal provider ordering and failover
 
 #### Scenario: Instance qualifier fallback
-- **WHEN** the complete slash-containing identifier is unavailable and the first segment identifies a provider instance
-- **THEN** exactly one fallback attempt targets that provider with only the recognized qualifier removed from the model name
+
+- **WHEN** the complete slash-containing identifier is unavailable and the first
+  segment exactly identifies a provider instance
+- **THEN** exactly one fallback attempt targets that provider with only the
+  recognized qualifier removed from the model name
 
 #### Scenario: Subtitle qualifier fallback
-- **WHEN** the complete slash-containing identifier is unavailable and the first segment identifies a provider subtitle
-- **THEN** exactly one fallback attempt targets the resolved provider instance with only the recognized qualifier removed from the model name
+
+- **WHEN** the complete slash-containing identifier is unavailable and the first
+  segment uniquely identifies a provider alias case-insensitively
+- **THEN** exactly one fallback attempt targets the resolved provider instance
+  with only the recognized qualifier removed from the model name
+
+#### Scenario: Display-name qualifier fallback
+
+- **WHEN** the complete slash-containing identifier is unavailable and the first
+  segment uniquely identifies a provider display name case-insensitively
+- **THEN** exactly one fallback attempt targets the resolved provider instance
+  with only the recognized qualifier removed from the model name
+
+#### Scenario: Ambiguous provider qualifier
+
+- **WHEN** the complete slash-containing identifier is unavailable and the first
+  segment ambiguously matches multiple aliases or display names
+- **THEN** dispatch fails with an invalid provider-reference error identifying
+  the matching instance IDs and no matched provider is called
 
 #### Scenario: Native namespaced model
-- **WHEN** a slash-containing model name is advertised by an active provider and its first segment does not identify a provider instance or subtitle
-- **THEN** the complete model name is resolved through ordinary provider selection without removing a segment
+
+- **WHEN** a slash-containing model name is advertised by an active provider and
+  its first segment does not uniquely identify a provider reference
+- **THEN** the complete model name is resolved through ordinary provider
+  selection without removing a segment
 
 #### Scenario: Explicit qualifier before namespaced model
-- **WHEN** the complete qualified string is unavailable and a recognized provider qualifier precedes a native model identifier that itself contains one or more slashes
-- **THEN** fallback dispatch pins the resolved provider and preserves every slash and segment in the native model identifier
+
+- **WHEN** the complete qualified string is unavailable and a recognized
+  provider qualifier precedes a native model identifier that itself contains
+  one or more slashes
+- **THEN** fallback dispatch pins the resolved provider and preserves every
+  slash and segment in the native model identifier
 
 ### Requirement: Virtual model expansion
 An enabled virtual model SHALL expand into one attempt per configured upstream and SHALL fall back to direct resolution when disabled or unroutable.
@@ -137,26 +177,3 @@ Prompt-cache affinity expiry SHALL be configured independently of provider cache
 #### Scenario: One-hour provider control
 - **WHEN** a request uses a one-hour provider cache TTL
 - **THEN** the affinity record still uses its configured lifetime rather than silently extending to one hour
-
-### Requirement: Provider-qualified model aliases
-
-Provider-qualified model names SHALL resolve a case-insensitive alias against
-the persisted subtitle of a registered provider instance, while preserving
-exact instance-ID resolution and the model identifier after the prefix.
-
-#### Scenario: Resolve the configured GitHub Copilot alias
-
-- **GIVEN** provider instance `github-copilot-jian-zhu---zhujian0805` is
-  registered with subtitle `jzhu`
-- **WHEN** a request uses model `jzhu/<model>`
-- **THEN** OmniLLM routes the request to that provider instance with
-  `<model>` as the upstream model identifier
-
-#### Scenario: Preserve existing instance-ID resolution
-
-- **GIVEN** provider instance `github-copilot-jian-zhu---zhujian0805` is
-  registered
-- **WHEN** a request uses the exact provider-qualified prefix
-  `github-copilot-jian-zhu---zhujian0805/<model>`
-- **THEN** OmniLLM routes the request to the same provider instance with
-  `<model>` unchanged

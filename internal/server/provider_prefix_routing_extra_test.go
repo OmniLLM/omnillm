@@ -212,10 +212,10 @@ func TestProviderPrefixRouting_StreamingRequest(t *testing.T) {
 
 // ─── Case sensitivity ─────────────────────────────────────────────────────────
 
-// TestProviderPrefixRouting_CaseSensitivePrefix verifies that prefixes are
-// matched case-sensitively — an upper-cased prefix should not route to a
-// lower-cased provider instance.
-func TestProviderPrefixRouting_CaseSensitivePrefix(t *testing.T) {
+// TestProviderPrefixRouting_CaseInsensitiveDisplayName verifies that when a
+// provider's display name equals its instance ID, a differently-cased prefix
+// resolves through the case-insensitive display-name tier.
+func TestProviderPrefixRouting_CaseInsensitiveDisplayName(t *testing.T) {
 	sfx := fmt.Sprintf("%d", stubProviderCounter.Add(1))
 	instanceID := "pfx-lowercase-" + sfx
 	registerPrefixProvider(t, instanceID, "", "stub-provider", "case-model", nil)
@@ -229,11 +229,11 @@ func TestProviderPrefixRouting_CaseSensitivePrefix(t *testing.T) {
 		t.Fatalf("correct case: expected 200, got %d: %s", status, body)
 	}
 
-	// Use an upper-cased prefix — provider lookup should fail
+	// Use an upper-cased prefix — it resolves as the provider display name.
 	upperID := strings.ToUpper(instanceID)
 	statusUpper, bodyUpper := chatCompletions(t, srv.URL, upperID+"/case-model")
-	if statusUpper == http.StatusOK {
-		t.Fatalf("upper-cased prefix should not match; got 200: %s", bodyUpper)
+	if statusUpper != http.StatusOK {
+		t.Fatalf("upper-cased display name should match; got %d: %s", statusUpper, bodyUpper)
 	}
 }
 

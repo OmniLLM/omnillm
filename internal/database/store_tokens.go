@@ -50,6 +50,26 @@ func (ts *TokenStore) Save(instanceID string, tokenData interface{}) error {
 	return err
 }
 
+// ClearRefreshTokenIfMatches atomically retires a rejected OAuth refresh token
+// without overwriting a newer token persisted by another provider process.
+func (ts *TokenStore) ClearRefreshTokenIfMatches(instanceID, rejected string) (bool, error) {
+	result, err := ts.db.db.Exec(`
+		UPDATE tokens
+		SET token_data = json_set(token_data, '$.refresh_token', ''),
+			updated_at = datetime('now')
+		WHERE instance_id = ?
+			AND json_extract(token_data, '$.refresh_token') = ?
+	`, instanceID, rejected)
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return rows == 1, nil
+}
+
 func (ts *TokenStore) Delete(instanceID string) error {
 	_, err := ts.db.db.Exec("DELETE FROM tokens WHERE instance_id = ?", instanceID)
 	return err

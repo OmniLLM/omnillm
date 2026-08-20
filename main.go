@@ -17,6 +17,15 @@ var rootCmd = &cobra.Command{
 }
 
 func main() {
+	configureRootCommand()
+
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func configureRootCommand() {
 	// Persistent flags
 	rootCmd.PersistentFlags().String("server", "http://127.0.0.1:5000",
 		"OmniLLM server address (or set OMNILLM_SERVER)")
@@ -43,11 +52,11 @@ func main() {
 	// Providers
 	commands.AuthCmd.GroupID = "providers"
 	commands.ProviderCmd.GroupID = "providers"
-	commands.ModelCmd.GroupID = "providers"
+	commands.LegacyModelCmd.GroupID = "providers"
 	commands.VirtualModelCmd.GroupID = "providers"
 	rootCmd.AddCommand(commands.AuthCmd)
 	rootCmd.AddCommand(commands.ProviderCmd)
-	rootCmd.AddCommand(commands.ModelCmd)
+	rootCmd.AddCommand(commands.LegacyModelCmd)
 	rootCmd.AddCommand(commands.VirtualModelCmd)
 
 	// Admin
@@ -73,8 +82,4 @@ func main() {
 	// Completions
 	rootCmd.AddCommand(commands.CompletionCmd)
 
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
 }

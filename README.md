@@ -216,7 +216,15 @@ Redis entries use OmniLLM's versioned namespace and canonical response format. T
 
 ### Provider routing and failover
 
-Model resolution supports direct provider selection, provider-prefixed model names, and automatic fallback across candidate providers when one fails.
+Model resolution supports direct provider selection, provider-qualified model names, and automatic fallback across candidate providers when one fails. A provider can be identified by its canonical instance ID, short alias, or unique display name:
+
+```text
+provider-instance-id/model-id
+alias/model-id
+Provider Display Name/model-id
+```
+
+References resolve in this order: exact instance ID, unique case-insensitive alias, then unique case-insensitive display name. If an alias or display name matches multiple providers, OmniLLM rejects the reference and reports the matching instance IDs instead of choosing one.
 
 ### Virtual models
 
@@ -254,7 +262,7 @@ The current codebase supports these provider families in user-facing flows:
 | OpenAI (ChatGPT) | ChatGPT OAuth (PKCE) | Browser sign-in; uses a ChatGPT subscription instead of an API key |
 | Antigravity | Google OAuth | Onboarded through the admin OAuth flow |
 
-The admin UI adds providers through auth-first onboarding: credentials or OAuth are validated before the provider instance is registered, so failed setup attempts do not leave unauthenticated placeholder providers behind.
+The admin UI and CLI add providers through auth-first onboarding: credentials or OAuth are validated before the provider instance is registered, so failed setup attempts do not leave unauthenticated placeholder providers behind. The same login flow can re-authenticate an existing provider without replacing its instance.
 
 See [docs/ADDING_A_PROVIDER.md](docs/ADDING_A_PROVIDER.md) if you want to add another provider.
 
@@ -304,13 +312,11 @@ High-value admin groups include:
 The main `omnillm` binary includes:
 
 - `start`
-- `auth`
 - `usage`
 - `check-usage`
 - `sync-names`
 - `debug`
-- `provider`
-- `model`
+- `provider` (login, instances, and models)
 - `virtualmodel`
 - `config`
 - `settings`
@@ -319,6 +325,27 @@ The main `omnillm` binary includes:
 - `logs`
 
 `omniproxy` mirrors the same server-oriented flow under a proxy-specific binary name.
+
+### Provider management
+
+Use one provider namespace for initial login, re-authentication, and model management:
+
+```sh
+# Create and authenticate a new provider instance.
+omnillm provider login --new google --api-key "$GOOGLE_API_KEY"
+
+# Re-authenticate the same instance using its ID, alias, or display name.
+omnillm provider login my-google --api-key "$GOOGLE_API_KEY"
+
+# Assign a short alias, then use any provider reference for model operations.
+omnillm provider rename google-instance-id --alias my-google
+omnillm provider model list my-google
+omnillm provider model refresh "Google Production"
+```
+
+Without `--new`, `provider login <type-or-provider>` re-authenticates the referenced provider when it exists; otherwise a supported provider type starts new-provider authentication. Use `--new <type>` when you explicitly want another instance of that provider type.
+
+Provider arguments use the same deterministic lookup as model routing: exact instance ID first, then unique case-insensitive alias, then unique case-insensitive display name. Ambiguous aliases or names fail and identify the matching instance IDs. The former root `auth`, root `model`, and `provider add` forms remain accepted as hidden deprecated compatibility commands for existing automation.
 
 Selected `start` flags for the server binaries:
 
@@ -412,6 +439,8 @@ There are also live or environment-dependent scripts in `scripts/`, including mo
 ### Isolated live model compatibility matrix
 
 The live matrix is manual and credential-gated. Running any live-matrix package command without `OMNILLM_RUN_LIVE_MATRIX=1` exits successfully before reading a manifest or credentials, building the binary, creating state, allocating a port, or making a network request.
+
+The unit tests for the live-matrix harness validate manifest parsing, multi-turn tool replay, streaming, and secret redaction without contacting an upstream model. Actual live rows send the declared OpenAI-, Anthropic-, or Responses-compatible request shapes through an isolated OmniLLM server; they require an enabled manifest and its referenced credentials. Skipped credential-gated rows are not live-call passes.
 
 Copy `scripts/live-model-matrix.example.json` to the ignored `scripts/live-model-matrix.json` (or set `OMNILLM_LIVE_MATRIX_MANIFEST`) and declare only credential **environment-variable names** or isolated token-bundle paths. Never put secret values in the manifest. Each run builds and launches OmniLLM with a temporary `HOME`, config directory, SQLite database, and automatically allocated loopback port; temporary state is removed when the run finishes.
 

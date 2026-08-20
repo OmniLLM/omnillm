@@ -43,11 +43,11 @@ func main() {
 	// Providers
 	commands.AuthCmd.GroupID = "providers"
 	commands.ProviderCmd.GroupID = "providers"
-	commands.ModelCmd.GroupID = "providers"
+	commands.LegacyModelCmd.GroupID = "providers"
 	commands.VirtualModelCmd.GroupID = "providers"
 	rootCmd.AddCommand(commands.AuthCmd)
 	rootCmd.AddCommand(commands.ProviderCmd)
-	rootCmd.AddCommand(commands.ModelCmd)
+	rootCmd.AddCommand(commands.LegacyModelCmd)
 	rootCmd.AddCommand(commands.VirtualModelCmd)
 
 	// Admin

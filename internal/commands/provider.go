@@ -58,12 +58,24 @@ var ProviderCmd = &cobra.Command{
 }
 
 func init() {
+	addProviderAuthFlags(providerLoginCmd)
+	providerLoginCmd.Flags().Bool("new", false, "Create a new provider instance of the specified type")
+	providerLoginCmd.ValidArgsFunction = providerLoginCompletionFunc
+	ProviderCmd.AddCommand(providerLoginCmd)
+
 	// provider list
 	ProviderCmd.AddCommand(providerListCmd)
 
 	// provider add
 	addProviderAuthFlags(providerAddCmd)
+	providerAddCmd.Hidden = true
+	providerAddCmd.Deprecated = "use 'provider login --new <type>'"
 	ProviderCmd.AddCommand(providerAddCmd)
+
+	ProviderCmd.AddCommand(ModelCmd)
+	// Keep the exported model command independently executable in unit tests
+	// and embedding callers even though provider is its canonical CLI parent.
+	ModelCmd.TraverseChildren = true
 
 	// provider delete
 	providerDeleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation")
@@ -76,7 +88,9 @@ func init() {
 
 	// provider rename
 	providerRenameCmd.Flags().String("name", "", "New display name")
-	providerRenameCmd.Flags().String("subtitle", "", "New subtitle")
+	providerRenameCmd.Flags().String("alias", "", "New provider alias")
+	providerRenameCmd.Flags().String("subtitle", "", "Deprecated alias for --alias")
+	_ = providerRenameCmd.Flags().MarkHidden("subtitle")
 	ProviderCmd.AddCommand(providerRenameCmd)
 
 	// provider priorities
@@ -93,6 +107,165 @@ func init() {
 		sub.ValidArgsFunction = providerIDCompletionFunc
 	}
 	providerAddCmd.ValidArgs = supportedAuthProviderTypes
+}
+
+func providerLoginCompletionFunc(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	values := append([]string(nil), supportedAuthProviderTypes...)
+	providerValues, _ := providerIDCompletionFunc(cmd, args, toComplete)
+	values = append(values, providerValues...)
+	return values, cobra.ShellCompDirectiveNoFileComp
+}
+
+var providerLoginCmd = &cobra.Command{
+	Use:   "login [type-or-provider]",
+	Short: "Log in to a new or existing provider",
+	Args:  cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		subject := ""
+		if len(args) > 0 {
+			subject = args[0]
+		} else {
+			selected, err := selectProviderTypeInteractive()
+			if err != nil {
+				return err
+			}
+			subject = selected
+		}
+		isNew, _ := cmd.Flags().GetBool("new")
+		providerType := subject
+		if !isNew {
+			resolvedType, err := providerTypeForLoginSubject(NewClient(cmd), subject)
+			if err != nil {
+				return err
+			}
+			if resolvedType != "" {
+				providerType = resolvedType
+			}
+			if err := promptForProviderAuth(cmd, providerType); err != nil {
+				return err
+			}
+		} else if err := promptForProviderAuth(cmd, providerType); err != nil {
+			return err
+		}
+		return loginProvider(cmd, subject, isNew)
+	},
+}
+
+func providerTypeForLoginSubject(client *Client, subject string) (string, error) {
+	for _, candidate := range supportedAuthProviderTypes {
+		if subject == candidate {
+			return candidate, nil
+		}
+	}
+	data, err := client.Get("/api/admin/providers")
+	if err != nil {
+		return "", err
+	}
+	providers, err := parseProviders(data)
+	if err != nil {
+		return "", err
+	}
+	matchTier := func(field string, exact bool) []map[string]interface{} {
+		matches := make([]map[string]interface{}, 0, 1)
+		for _, provider := range providers {
+			value, _ := provider[field].(string)
+			matched := value == subject
+			if !exact {
+				matched = strings.EqualFold(strings.TrimSpace(value), strings.TrimSpace(subject))
+			}
+			if matched {
+				matches = append(matches, provider)
+			}
+		}
+		return matches
+	}
+	for _, tier := range []struct {
+		field string
+		exact bool
+	}{{"id", true}, {"alias", false}, {"subtitle", false}, {"name", false}} {
+		matches := matchTier(tier.field, tier.exact)
+		if len(matches) == 0 {
+			continue
+		}
+		if len(matches) > 1 {
+			return "", nil // The authoritative server resolver returns details.
+		}
+		providerType, _ := matches[0]["type"].(string)
+		return providerType, nil
+	}
+	return "", nil
+}
+
+func loginProvider(cmd *cobra.Command, subject string, forceNew bool) error {
+	body := map[string]interface{}{
+		"api_key": getStringFlag(cmd, "api-key"), "apiKey": getStringFlag(cmd, "api-key"),
+		"client_id": getStringFlag(cmd, "client-id"), "client_secret": getStringFlag(cmd, "client-secret"),
+		"token": getStringFlag(cmd, "token"), "method": getStringFlag(cmd, "method"),
+		"endpoint": getStringFlag(cmd, "endpoint"), "region": getStringFlag(cmd, "region"),
+		"plan": getStringFlag(cmd, "plan"),
+	}
+	if forceNew {
+		body["type"] = subject
+	} else {
+		body["subject"] = subject
+	}
+	c := NewClient(cmd)
+	data, err := c.Post("/api/admin/providers/login", body)
+	if err != nil {
+		return err
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return fmt.Errorf("parse response: %w", err)
+	}
+	if c.IsJSON() {
+		c.PrintJSON(data)
+		return nil
+	}
+	status, _ := result["status"].(string)
+	providerID, _ := result["provider_id"].(string)
+	if status == "complete" {
+		SuccessMsg(cmd, "Provider '%s' authenticated successfully.", providerID)
+		return nil
+	}
+	flowID, _ := result["flow_id"].(string)
+	authURL, _ := result["authorization_url"].(string)
+	userCode, _ := result["user_code"].(string)
+	if flowID == "" {
+		return fmt.Errorf("unexpected login response: missing flow_id")
+	}
+	if !getBoolFlag(cmd, "device") && authURL != "" && tryOpenBrowser(authURL) {
+		fmt.Fprintln(cmd.OutOrStdout(), "Browser opened for authorization.")
+	} else if authURL != "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "Visit: %s\n", authURL)
+	}
+	if userCode != "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "Code: %s\n", userCode)
+	}
+	fmt.Fprint(cmd.OutOrStdout(), "Waiting for authorization")
+	for attempts := 0; attempts < 120; attempts++ {
+		time.Sleep(3 * time.Second)
+		fmt.Fprint(cmd.OutOrStdout(), ".")
+		statusData, statusErr := c.Get("/api/admin/providers/login/" + url.PathEscape(flowID))
+		if statusErr != nil {
+			continue
+		}
+		if err := json.Unmarshal(statusData, &result); err != nil {
+			continue
+		}
+		switch result["status"] {
+		case "complete":
+			fmt.Fprintln(cmd.OutOrStdout())
+			providerID, _ = result["provider_id"].(string)
+			SuccessMsg(cmd, "Provider '%s' authenticated successfully.", providerID)
+			return nil
+		case "error", "expired", "canceled":
+			fmt.Fprintln(cmd.OutOrStdout())
+			return fmt.Errorf("authentication failed: %v", result["error"])
+		}
+	}
+	fmt.Fprintln(cmd.OutOrStdout())
+	return fmt.Errorf("authentication timed out")
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -173,7 +346,10 @@ var providerListCmd = &cobra.Command{
 			id, _ := p["id"].(string)
 			pType, _ := p["type"].(string)
 			name, _ := p["name"].(string)
-			alias, _ := p["subtitle"].(string)
+			alias, _ := p["alias"].(string)
+			if alias == "" {
+				alias, _ = p["subtitle"].(string)
+			}
 			auth, _ := p["authStatus"].(string)
 			active := "no"
 			if v, ok := p["isActive"].(bool); ok && v {
@@ -551,7 +727,7 @@ var providerDeleteCmd = &cobra.Command{
 			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Cancelled.")
 			return nil
 		}
-		data, err := c.Delete("/api/admin/providers/" + id)
+		data, err := c.Delete("/api/admin/providers/" + url.PathEscape(id))
 		if err != nil {
 			return err
 		}
@@ -576,7 +752,7 @@ var providerActivateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		data, err := c.Post("/api/admin/providers/"+id+"/activate", nil)
+		data, err := c.Post("/api/admin/providers/"+url.PathEscape(id)+"/activate", nil)
 		if err != nil {
 			return err
 		}
@@ -601,7 +777,7 @@ var providerDeactivateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		data, err := c.Post("/api/admin/providers/"+id+"/deactivate", nil)
+		data, err := c.Post("/api/admin/providers/"+url.PathEscape(id)+"/deactivate", nil)
 		if err != nil {
 			return err
 		}
@@ -644,7 +820,7 @@ var providerSwitchCmd = &cobra.Command{
 
 var providerRenameCmd = &cobra.Command{
 	Use:   "rename <id>",
-	Short: "Rename a provider or update its subtitle",
+	Short: "Rename a provider or update its alias",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := NewClient(cmd)
@@ -653,18 +829,25 @@ var providerRenameCmd = &cobra.Command{
 			return err
 		}
 		name := getStringFlag(cmd, "name")
+		alias := getStringFlag(cmd, "alias")
 		subtitle := getStringFlag(cmd, "subtitle")
-		if name == "" && subtitle == "" {
-			return fmt.Errorf("at least one of --name or --subtitle is required")
+		if alias != "" && subtitle != "" && alias != subtitle {
+			return fmt.Errorf("--alias and --subtitle must match when both are supplied")
+		}
+		if alias == "" {
+			alias = subtitle
+		}
+		if name == "" && alias == "" {
+			return fmt.Errorf("at least one of --name or --alias is required")
 		}
 		body := map[string]interface{}{}
 		if name != "" {
 			body["name"] = name
 		}
-		if subtitle != "" {
-			body["subtitle"] = subtitle
+		if alias != "" {
+			body["alias"] = alias
 		}
-		data, err := c.Patch("/api/admin/providers/"+id+"/name", body)
+		data, err := c.Patch("/api/admin/providers/"+url.PathEscape(id)+"/name", body)
 		if err != nil {
 			return err
 		}
@@ -747,7 +930,7 @@ var providerUsageCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		data, err := c.Get("/api/admin/providers/" + id + "/usage")
+		data, err := c.Get("/api/admin/providers/" + url.PathEscape(id) + "/usage")
 		if err != nil {
 			return err
 		}

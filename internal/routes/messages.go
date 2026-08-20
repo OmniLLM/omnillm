@@ -118,7 +118,11 @@ func handleMessages(c *gin.Context) {
 	if log.Logger.GetLevel() <= zerolog.DebugLevel {
 		resolveStart = time.Now()
 	}
-	attempts := resolveRequestedModelsForRequest(requestIDStr, canonicalRequest.Model, canonicalRequest)
+	attempts, err := resolveRequestedModelsForRequest(requestIDStr, canonicalRequest.Model, canonicalRequest)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"type": "error", "error": gin.H{"type": "invalid_request_error", "message": err.Error()}})
+		return
+	}
 	logLatencyProbe(requestIDStr, "anthropic_resolve_requested_models", resolveStart)
 	executor := providerdispatch.NewExecutor(providerdispatch.ApplyGitHubCopilotSingleUpstreamMode, providerdispatch.DefaultUpstreamAPI)
 	resolveFailed := false

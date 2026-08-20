@@ -62,6 +62,7 @@ func handleGetProviders(c *gin.Context) {
 				"id":         provider.GetInstanceID(),
 				"type":       provider.GetID(),
 				"name":       name,
+				"alias":      subtitle,
 				"subtitle":   subtitle,
 				"isActive":   providerRegistry.IsActiveProvider(provider.GetInstanceID()),
 				"authStatus": authStatus,
@@ -106,6 +107,12 @@ func handleSwitchProvider(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "providerId is required"})
 		return
 	}
+	resolvedID, err := resolveProviderReference(providerID)
+	if err != nil {
+		writeProviderReferenceError(c, providerID, err)
+		return
+	}
+	providerID = resolvedID
 
 	providerRegistry := registry.GetProviderRegistry()
 	provider, err := providerRegistry.SetActive(providerID)
@@ -739,13 +746,34 @@ func handleSetProviderPriorities(c *gin.Context) {
 	}
 
 	instanceStore := database.NewProviderInstanceStore()
-	for id, priority := range req.Priorities {
+	canonicalPriorities := make(map[string]int, len(req.Priorities))
+	for reference, priority := range req.Priorities {
+		id, resolveErr := resolveProviderReference(reference)
+		if resolveErr != nil {
+			writeProviderReferenceError(c, reference, resolveErr)
+			return
+		}
+		if _, duplicate := canonicalPriorities[id]; duplicate {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "multiple priority entries resolve to provider " + id})
+			return
+		}
+		canonicalPriorities[id] = priority
+	}
+	for id, priority := range canonicalPriorities {
 		record, err := instanceStore.Get(id)
-		if err != nil || record == nil {
-			continue
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve provider " + id})
+			return
+		}
+		if record == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Provider " + id + " not found"})
+			return
 		}
 		record.Priority = priority
-		instanceStore.Save(record)
+		if err := instanceStore.Save(record); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update provider priority"})
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -1260,14 +1288,22 @@ func handleRenameProvider(c *gin.Context) {
 
 	var req struct {
 		Name     *string `json:"name"`
+		Alias    *string `json:"alias"`
 		Subtitle *string `json:"subtitle"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
+	if req.Alias != nil && req.Subtitle != nil && strings.TrimSpace(*req.Alias) != strings.TrimSpace(*req.Subtitle) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "alias and subtitle must match when both are provided"})
+		return
+	}
+	if req.Alias != nil {
+		req.Subtitle = req.Alias
+	}
 	if req.Name == nil && req.Subtitle == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "At least one of 'name' or 'subtitle' must be provided"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "At least one of 'name' or 'alias' must be provided"})
 		return
 	}
 
@@ -1307,7 +1343,7 @@ func handleRenameProvider(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "name": record.Name, "subtitle": record.Subtitle})
+	c.JSON(http.StatusOK, gin.H{"success": true, "name": record.Name, "alias": record.Subtitle, "subtitle": record.Subtitle})
 }
 
 func handleActivateProvider(c *gin.Context) {

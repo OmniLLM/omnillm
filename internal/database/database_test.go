@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -242,6 +243,59 @@ func TestTokenStoreCRUD(t *testing.T) {
 	}
 	if err := store.Delete("provider-1"); err != nil {
 		t.Fatalf("delete failed: %v", err)
+	}
+}
+
+func TestClearRefreshTokenIfMatchesPreservesNewerToken(t *testing.T) {
+	const instanceID = "provider-token-rotation"
+	if err := NewProviderInstanceStore().Save(&ProviderInstanceRecord{
+		InstanceID: instanceID,
+		ProviderID: "openai",
+		Name:       "OpenAI",
+	}); err != nil {
+		t.Fatalf("save provider instance: %v", err)
+	}
+	t.Cleanup(func() { _ = NewProviderInstanceStore().Delete(instanceID) })
+
+	store := NewTokenStore()
+	if err := store.Save(instanceID, map[string]any{
+		"access_token": "access", "refresh_token": "newer-refresh", "account_id": "account",
+	}); err != nil {
+		t.Fatalf("save token record: %v", err)
+	}
+
+	cleared, err := store.ClearRefreshTokenIfMatches(instanceID, "rejected-refresh")
+	if err != nil {
+		t.Fatalf("clear mismatched refresh token: %v", err)
+	}
+	if cleared {
+		t.Fatal("mismatched refresh token was cleared")
+	}
+	record, err := store.Get(instanceID)
+	if err != nil {
+		t.Fatalf("get preserved token record: %v", err)
+	}
+	var data map[string]any
+	if err := json.Unmarshal([]byte(record.TokenData), &data); err != nil {
+		t.Fatalf("decode preserved token record: %v", err)
+	}
+	if data["refresh_token"] != "newer-refresh" {
+		t.Fatalf("refresh token = %#v, want newer-refresh", data["refresh_token"])
+	}
+
+	cleared, err = store.ClearRefreshTokenIfMatches(instanceID, "newer-refresh")
+	if err != nil || !cleared {
+		t.Fatalf("clear matching refresh token = %v, %v", cleared, err)
+	}
+	record, err = store.Get(instanceID)
+	if err != nil {
+		t.Fatalf("get retired token record: %v", err)
+	}
+	if err := json.Unmarshal([]byte(record.TokenData), &data); err != nil {
+		t.Fatalf("decode retired token record: %v", err)
+	}
+	if data["refresh_token"] != "" || data["access_token"] != "access" || data["account_id"] != "account" {
+		t.Fatalf("retired token record = %#v", data)
 	}
 }
 

@@ -137,7 +137,11 @@ func (h *chatCompletionHandler) handleChatCompletions(c *gin.Context) {
 	}
 
 	// Resolve providers for the requested model
-	attempts := resolveRequestedModelsForRequest(requestIDStr, canonicalRequest.Model, canonicalRequest)
+	attempts, err := resolveRequestedModelsForRequest(requestIDStr, canonicalRequest.Model, canonicalRequest)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"message": err.Error(), "type": "invalid_provider_reference"}})
+		return
+	}
 	executor := providerdispatch.NewExecutor(providerdispatch.ApplyGitHubCopilotSingleUpstreamMode, providerdispatch.DefaultUpstreamAPI)
 	resolveFailed := false
 	lastErr := executor.TryAttempts(

@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -171,6 +173,22 @@ func TestTokenRequestsSurfaceOAuthErrors(t *testing.T) {
 	}
 }
 
+func TestTokenResponseErrorsDoNotExposeRawCredentialBody(t *testing.T) {
+	old := oauthHTTPClient
+	t.Cleanup(func() { oauthHTTPClient = old })
+	const credentialSentinel = "refresh-secret-must-not-leak"
+	oauthHTTPClient = &http.Client{Transport: openAIRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"refresh_token":"` + credentialSentinel + `"}`)), Header: make(http.Header)}, nil
+	})}
+	_, err := RefreshAccessToken("submitted-refresh")
+	if err == nil {
+		t.Fatal("expected missing access token error")
+	}
+	if strings.Contains(err.Error(), credentialSentinel) {
+		t.Fatalf("token error exposed response credential: %v", err)
+	}
+}
+
 type openAIRoundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f openAIRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
@@ -324,6 +342,158 @@ func TestRefreshTokenErrorsWithoutRefreshToken(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "no refresh token") {
 		t.Errorf("error = %v, want it to mention the missing refresh token", err)
+	}
+}
+
+func TestRefreshTokenRecoversFromNewerDurableRotatedToken(t *testing.T) {
+	saveTestProviderInstance(t, "openai-rotation-recovery")
+	p := NewProvider("openai-rotation-recovery", "")
+	p.accessToken = "old-access"
+	p.refreshToken = "consumed-refresh"
+	p.expiresAt = time.Now().Add(-time.Hour).Unix()
+	if err := p.SaveToDB(); err != nil {
+		t.Fatalf("save initial tokens: %v", err)
+	}
+
+	oldClient := oauthHTTPClient
+	t.Cleanup(func() { oauthHTTPClient = oldClient })
+	var requests atomic.Int32
+	oauthHTTPClient = &http.Client{Transport: openAIRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+		var payload map[string]string
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode token request: %v", err)
+		}
+		switch requests.Add(1) {
+		case 1:
+			if payload["refresh_token"] != "consumed-refresh" {
+				t.Fatalf("first refresh token = %q", payload["refresh_token"])
+			}
+			if err := database.NewTokenStore().Save(p.instanceID, map[string]interface{}{
+				"access_token": "winner-access", "refresh_token": "winner-refresh",
+			}); err != nil {
+				t.Fatalf("persist winning rotation: %v", err)
+			}
+			return &http.Response{StatusCode: http.StatusUnauthorized, Body: io.NopCloser(strings.NewReader(`{"error":{"message":"Your refresh token has already been used to generate a new access token. Please try signing in again.","type":"invalid_request_error","code":"refresh_token_already_used"}}`)), Header: make(http.Header)}, nil
+		case 2:
+			if payload["refresh_token"] != "winner-refresh" {
+				t.Fatalf("recovery refresh token = %q, want winner-refresh", payload["refresh_token"])
+			}
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"access_token":"recovered-access","refresh_token":"recovered-refresh"}`)), Header: make(http.Header)}, nil
+		default:
+			t.Fatalf("unexpected token request %d", requests.Load())
+			return nil, nil
+		}
+	})}
+
+	if err := p.RefreshToken(); err != nil {
+		t.Fatalf("RefreshToken: %v", err)
+	}
+	if requests.Load() != 2 {
+		t.Fatalf("token requests = %d, want 2", requests.Load())
+	}
+	if p.accessToken != "recovered-access" || p.refreshToken != "recovered-refresh" {
+		t.Fatalf("recovered tokens = %q, %q", p.accessToken, p.refreshToken)
+	}
+}
+
+func TestRefreshTokenRetiresRejectedTokenAndRequiresSignIn(t *testing.T) {
+	saveTestProviderInstance(t, "openai-rotation-terminal")
+	p := NewProvider("openai-rotation-terminal", "")
+	p.accessToken = "still-usable-access"
+	p.refreshToken = "consumed-refresh"
+	p.expiresAt = time.Now().Add(-time.Hour).Unix()
+	if err := p.SaveToDB(); err != nil {
+		t.Fatalf("save initial tokens: %v", err)
+	}
+
+	oldClient := oauthHTTPClient
+	t.Cleanup(func() { oauthHTTPClient = oldClient })
+	var requests atomic.Int32
+	oauthHTTPClient = &http.Client{Transport: openAIRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		requests.Add(1)
+		return &http.Response{StatusCode: http.StatusUnauthorized, Body: io.NopCloser(strings.NewReader(`{"error":{"message":"Your refresh token has already been used to generate a new access token. Please try signing in again.","type":"invalid_request_error","code":"refresh_token_already_used"}}`)), Header: make(http.Header)}, nil
+	})}
+
+	err := p.RefreshToken()
+	if err == nil || !strings.Contains(err.Error(), "sign in again") {
+		t.Fatalf("RefreshToken error = %v, want sign-in guidance", err)
+	}
+	if strings.Contains(err.Error(), "failed to parse token response") {
+		t.Fatalf("nested OAuth error was misclassified: %v", err)
+	}
+	if p.refreshToken != "" {
+		t.Fatalf("refresh token = %q, want retired", p.refreshToken)
+	}
+	if p.accessToken != "still-usable-access" {
+		t.Fatalf("access token = %q, want preserved", p.accessToken)
+	}
+	if err := p.RefreshToken(); err == nil || !strings.Contains(err.Error(), "no refresh token") {
+		t.Fatalf("second RefreshToken error = %v", err)
+	}
+	if requests.Load() != 1 {
+		t.Fatalf("token requests = %d, want 1", requests.Load())
+	}
+
+	record, err := database.NewTokenStore().Get(p.instanceID)
+	if err != nil {
+		t.Fatalf("load persisted tokens: %v", err)
+	}
+	var persisted map[string]interface{}
+	if err := json.Unmarshal([]byte(record.TokenData), &persisted); err != nil {
+		t.Fatalf("decode persisted tokens: %v", err)
+	}
+	if persisted["refresh_token"] != "" {
+		t.Fatalf("persisted refresh token = %#v, want empty", persisted["refresh_token"])
+	}
+	if persisted["access_token"] != "still-usable-access" {
+		t.Fatalf("persisted access token = %#v, want preserved", persisted["access_token"])
+	}
+}
+
+func TestConcurrentRefreshTokenUsesOneRotatingExchange(t *testing.T) {
+	saveTestProviderInstance(t, "openai-concurrent-refresh")
+	p := NewProvider("openai-concurrent-refresh", "")
+	p.refreshToken = "single-use-refresh"
+	if err := p.SaveToDB(); err != nil {
+		t.Fatalf("save initial tokens: %v", err)
+	}
+
+	oldClient := oauthHTTPClient
+	t.Cleanup(func() { oauthHTTPClient = oldClient })
+	var requests atomic.Int32
+	requestStarted := make(chan struct{})
+	releaseRequest := make(chan struct{})
+	oauthHTTPClient = &http.Client{Transport: openAIRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		if requests.Add(1) == 1 {
+			close(requestStarted)
+		}
+		<-releaseRequest
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"access_token":"new-access","refresh_token":"new-refresh"}`)), Header: make(http.Header)}, nil
+	})}
+
+	const callers = 16
+	errors := make(chan error, callers)
+	var ready sync.WaitGroup
+	ready.Add(callers)
+	start := make(chan struct{})
+	for range callers {
+		go func() {
+			ready.Done()
+			<-start
+			errors <- p.RefreshToken()
+		}()
+	}
+	ready.Wait()
+	close(start)
+	<-requestStarted
+	close(releaseRequest)
+	for range callers {
+		if err := <-errors; err != nil {
+			t.Fatalf("concurrent RefreshToken: %v", err)
+		}
+	}
+	if requests.Load() != 1 {
+		t.Fatalf("token requests = %d, want 1", requests.Load())
 	}
 }
 

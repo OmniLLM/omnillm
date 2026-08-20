@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -51,6 +52,42 @@ func RedirectURI() string {
 }
 
 var oauthHTTPClient = shared.DefaultHTTPClient(30 * time.Second)
+
+// tokenEndpointError is a sanitized error returned by OpenAI's OAuth token
+// endpoint. It deliberately excludes the raw response body.
+type tokenEndpointError struct {
+	Status  int
+	Type    string
+	Code    string
+	Message string
+}
+
+func (e *tokenEndpointError) Error() string {
+	details := make([]string, 0, 3)
+	if e.Type != "" {
+		details = append(details, "type="+e.Type)
+	}
+	if e.Code != "" {
+		details = append(details, "code="+e.Code)
+	}
+	if e.Message != "" {
+		details = append(details, "message="+e.Message)
+	}
+	if len(details) == 0 {
+		return fmt.Sprintf("openai: token request failed (status %d)", e.Status)
+	}
+	return fmt.Sprintf("openai: token request failed (status %d): %s", e.Status, strings.Join(details, ", "))
+}
+
+func (e *tokenEndpointError) refreshTokenAlreadyUsed() bool {
+	return e.Code == "refresh_token_already_used" ||
+		strings.Contains(strings.ToLower(e.Message), "refresh token has already been used")
+}
+
+func isRefreshTokenAlreadyUsed(err error) bool {
+	var endpointErr *tokenEndpointError
+	return errors.As(err, &endpointErr) && endpointErr.refreshTokenAlreadyUsed()
+}
 
 // PKCE is the provider-compatible alias for a shared S256 PKCE pair.
 type PKCE = oauthcode.PKCE
@@ -111,20 +148,50 @@ func postToken(payload map[string]string) (*TokenResponse, error) {
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, decodeTokenEndpointError(resp.StatusCode, raw)
+	}
 
 	t, err := oauthcode.DecodeTokenResponse(raw)
 	if err != nil {
-		return nil, fmt.Errorf("openai: failed to parse token response (status %d): %s",
-			resp.StatusCode, truncate(string(raw), 200))
+		return nil, fmt.Errorf("openai: failed to parse successful token response (status %d): %w",
+			resp.StatusCode, err)
 	}
 	if t.Error != "" {
 		return nil, fmt.Errorf("openai: token request failed: %s — %s", t.Error, t.ErrorDesc)
 	}
 	if t.AccessToken == "" {
-		return nil, fmt.Errorf("openai: no access_token in response (status %d): %s",
-			resp.StatusCode, truncate(string(raw), 200))
+		return nil, fmt.Errorf("openai: no access_token in response (status %d)", resp.StatusCode)
 	}
 	return t, nil
+}
+
+func decodeTokenEndpointError(status int, raw []byte) error {
+	var envelope struct {
+		Error            json.RawMessage `json:"error"`
+		ErrorDescription string          `json:"error_description"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return &tokenEndpointError{Status: status}
+	}
+
+	endpointErr := &tokenEndpointError{Status: status, Message: envelope.ErrorDescription}
+	var errorText string
+	if err := json.Unmarshal(envelope.Error, &errorText); err == nil {
+		endpointErr.Type = errorText
+		return endpointErr
+	}
+	var nested struct {
+		Message string `json:"message"`
+		Type    string `json:"type"`
+		Code    string `json:"code"`
+	}
+	if err := json.Unmarshal(envelope.Error, &nested); err == nil {
+		endpointErr.Message = nested.Message
+		endpointErr.Type = nested.Type
+		endpointErr.Code = nested.Code
+	}
+	return endpointErr
 }
 
 // ExchangeCode swaps an authorization code for access + refresh tokens.
@@ -211,11 +278,4 @@ func ClaimsFromTokenResponse(t *TokenResponse) *Claims {
 		}
 	}
 	return nil
-}
-
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
 }
