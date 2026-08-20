@@ -47,7 +47,12 @@ func configureRootCommand() {
 
 	// Server
 	commands.StartCmd.GroupID = "server"
+	commands.StopCmd.GroupID = "server"
+	commands.RestartCmd.GroupID = "server"
 	rootCmd.AddCommand(commands.StartCmd)
+	rootCmd.AddCommand(commands.StopCmd)
+	rootCmd.AddCommand(commands.RestartCmd)
+	rootCmd.AddCommand(commands.ServeChildCmd)
 
 	// Providers
 	commands.AuthCmd.GroupID = "providers"

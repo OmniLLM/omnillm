@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -25,6 +26,7 @@ import (
 	"omnillm/internal/database"
 	"omnillm/internal/lib/ratelimit"
 	"omnillm/internal/lib/responsecache"
+	"omnillm/internal/lifecycle"
 	alibabapkg "omnillm/internal/providers/alibaba"
 	antigravitypkg "omnillm/internal/providers/antigravity"
 	azurepkg "omnillm/internal/providers/azure"
@@ -61,6 +63,7 @@ type StartOptions struct {
 	AllowedChromeExtensionIDs []string
 	ResponseCacheRedisURL     string
 	ResponseCacheRedisPrefix  string
+	Ready                     func() error `json:"-"`
 }
 
 func RunServer(options StartOptions) error {
@@ -170,9 +173,35 @@ func RunServer(options StartOptions) error {
 		IdleTimeout:       120 * time.Second,
 	}
 
+	listener, err := net.Listen("tcp", bindAddr)
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", bindAddr, err)
+	}
+	lifecyclePath, err := lifecycle.DefaultPath()
+	if err != nil {
+		_ = listener.Close()
+		return err
+	}
+	registration, err := lifecycle.Register(lifecyclePath)
+	if err != nil {
+		_ = listener.Close()
+		return fmt.Errorf("register server lifecycle: %w", err)
+	}
+	defer func() {
+		if err := registration.Close(); err != nil {
+			log.Error().Err(err).Msg("Failed to remove server lifecycle state")
+		}
+	}()
+	if options.Ready != nil {
+		if err := options.Ready(); err != nil {
+			_ = listener.Close()
+			return fmt.Errorf("report server readiness: %w", err)
+		}
+	}
+
 	serverErr := make(chan error, 1)
 	go func() {
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := srv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverErr <- err
 		}
 		close(serverErr)

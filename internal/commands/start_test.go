@@ -39,6 +39,19 @@ func TestStartCmdDefaults(t *testing.T) {
 	}
 }
 
+func TestRestartCmdUsesStartDefaults(t *testing.T) {
+	port, err := RestartCmd.Flags().GetInt("port")
+	if err != nil {
+		t.Fatalf("get restart port flag: %v", err)
+	}
+	if port != 5000 {
+		t.Fatalf("restart port default = %d", port)
+	}
+	if RestartCmd.Flags().Lookup("response-cache-redis-url") == nil {
+		t.Fatal("restart is missing start response-cache flags")
+	}
+}
+
 func TestResponseCacheRedisEnvironmentOverride(t *testing.T) {
 	t.Setenv("OMNILLM_RESPONSE_CACHE_REDIS_URL", "rediss://user:secret@example.test:6380/2")
 	t.Setenv("OMNILLM_RESPONSE_CACHE_REDIS_PREFIX", "team-a")

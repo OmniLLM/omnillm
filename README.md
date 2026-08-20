@@ -77,6 +77,17 @@ make build-go
 $HOME/.local/bin/omnillm start
 ```
 
+`start` waits until the server is ready, then returns while the server continues
+in the background. Manage that process with the same binary:
+
+```sh
+omnillm restart
+omnillm stop
+```
+
+Use `omnillm start --foreground` (or `restart --foreground`) when a container,
+service manager, or debugger must remain attached to the server process.
+
 Windows PowerShell:
 
 ```powershell
@@ -138,6 +149,9 @@ Start it with:
 ```sh
 omnillm start
 ```
+
+This starts a managed background process. Use `omnillm start --foreground` for
+attached execution under a supervisor.
 
 ### Development mode
 

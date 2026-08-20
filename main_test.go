@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 )
 
@@ -15,6 +16,11 @@ func TestRootCommandTreeExecutes(t *testing.T) {
 
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("execute root command: %v", err)
+	}
+	for _, command := range []string{"start", "stop", "restart"} {
+		if !strings.Contains(output.String(), command) {
+			t.Fatalf("root help does not advertise %q:\n%s", command, output.String())
+		}
 	}
 
 	providerModel, _, err := rootCmd.Find([]string{"provider", "model"})

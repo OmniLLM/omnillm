@@ -27,7 +27,10 @@ Configuration precedence (highest to lowest):
 The exact-response cache stores payloads in optional Redis/Valkey. Redis failures
 are fail-open: model serving continues without a SQLite cache fallback.
 
-The inbound --api-key defaults to a generated key stored in ~/.config/omnillm/api-key.`,
+The inbound --api-key defaults to a generated key stored in ~/.config/omnillm/api-key.
+
+By default, the command waits for readiness and leaves the server running in the
+background. Use --foreground when running under a service manager or container.`,
 	Example: `  # Start with defaults (port 5000, github-copilot provider)
   omnillm start
 
@@ -41,7 +44,10 @@ The inbound --api-key defaults to a generated key stored in ~/.config/omnillm/ap
   omnillm start --rate-limit 3 --wait
 
   # Print the Claude Code launch command after starting
-  omnillm start --claude-code`,
+  omnillm start --claude-code
+
+  # Stay attached for Docker, systemd, or debugging
+  omnillm start --foreground`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		port, err := cmd.Flags().GetInt("port")
 		if err != nil {
@@ -159,7 +165,14 @@ The inbound --api-key defaults to a generated key stored in ~/.config/omnillm/ap
 			ResponseCacheRedisPrefix:  redisPrefix,
 		}
 
-		return server.RunServer(options)
+		foreground, err := cmd.Flags().GetBool("foreground")
+		if err != nil {
+			return fmt.Errorf("get foreground flag: %w", err)
+		}
+		if foreground {
+			return server.RunServer(options)
+		}
+		return startBackground(cmd, options)
 	},
 }
 
@@ -171,24 +184,29 @@ func environmentOverride(fallback, name string) string {
 }
 
 func init() {
-	StartCmd.Flags().IntP("port", "p", 5000, "Port to listen on")
-	StartCmd.Flags().String("host", "127.0.0.1", "IP or hostname to bind the server to")
-	StartCmd.Flags().BoolP("verbose", "v", false, "Enable verbose logging")
-	StartCmd.Flags().StringP("account-type", "a", "individual", "Account type to use (individual, business, enterprise)")
-	StartCmd.Flags().Bool("manual", false, "Enable manual request approval")
-	StartCmd.Flags().IntP("rate-limit", "r", 0, "Rate limit in seconds between requests")
-	StartCmd.Flags().BoolP("wait", "w", false, "Wait instead of error when rate limit is hit")
-	StartCmd.Flags().Int("max-concurrent", 0, "Max concurrent in-flight proxy requests (0 = unlimited); excess requests get HTTP 503")
-	StartCmd.Flags().StringP("github-token", "g", "", "Provide GitHub token directly")
-	StartCmd.Flags().BoolP("claude-code", "c", false, "Generate a command to launch Claude Code with proxy config")
-	StartCmd.Flags().Bool("console", false, "Automatically open the admin console in your default browser")
-	StartCmd.Flags().Bool("show-token", false, "Show tokens on fetch and refresh")
-	StartCmd.Flags().Bool("proxy-env", false, "Initialize proxy from environment variables")
-	StartCmd.Flags().String("provider", "github-copilot", "Provider to use (github-copilot, antigravity, alibaba, etc.)")
-	StartCmd.Flags().String("api-key", "", "Inbound API key for protecting server routes")
-	StartCmd.Flags().Bool("allow-local-endpoints", false, "Allow localhost/private OpenAI-compatible endpoints")
-	StartCmd.Flags().Bool("enable-config-edit", false, "Allow editing external config files via admin API")
-	StartCmd.Flags().StringSlice("allow-chrome-extension", nil, "Allow specific Chrome extension IDs for CORS (repeat flag or pass comma-separated IDs)")
-	StartCmd.Flags().String("response-cache-redis-url", "redis://127.0.0.1:6379/0", "Redis URL for exact-response cache storage")
-	StartCmd.Flags().String("response-cache-redis-prefix", "omnillm", "Redis key prefix for exact-response cache isolation")
+	addStartFlags(StartCmd)
+}
+
+func addStartFlags(cmd *cobra.Command) {
+	cmd.Flags().IntP("port", "p", 5000, "Port to listen on")
+	cmd.Flags().String("host", "127.0.0.1", "IP or hostname to bind the server to")
+	cmd.Flags().BoolP("verbose", "v", false, "Enable verbose logging")
+	cmd.Flags().StringP("account-type", "a", "individual", "Account type to use (individual, business, enterprise)")
+	cmd.Flags().Bool("manual", false, "Enable manual request approval")
+	cmd.Flags().IntP("rate-limit", "r", 0, "Rate limit in seconds between requests")
+	cmd.Flags().BoolP("wait", "w", false, "Wait instead of error when rate limit is hit")
+	cmd.Flags().Int("max-concurrent", 0, "Max concurrent in-flight proxy requests (0 = unlimited); excess requests get HTTP 503")
+	cmd.Flags().StringP("github-token", "g", "", "Provide GitHub token directly")
+	cmd.Flags().BoolP("claude-code", "c", false, "Generate a command to launch Claude Code with proxy config")
+	cmd.Flags().Bool("console", false, "Automatically open the admin console in your default browser")
+	cmd.Flags().Bool("show-token", false, "Show tokens on fetch and refresh")
+	cmd.Flags().Bool("proxy-env", false, "Initialize proxy from environment variables")
+	cmd.Flags().String("provider", "github-copilot", "Provider to use (github-copilot, antigravity, alibaba, etc.)")
+	cmd.Flags().String("api-key", "", "Inbound API key for protecting server routes")
+	cmd.Flags().Bool("allow-local-endpoints", false, "Allow localhost/private OpenAI-compatible endpoints")
+	cmd.Flags().Bool("enable-config-edit", false, "Allow editing external config files via admin API")
+	cmd.Flags().StringSlice("allow-chrome-extension", nil, "Allow specific Chrome extension IDs for CORS (repeat flag or pass comma-separated IDs)")
+	cmd.Flags().String("response-cache-redis-url", "redis://127.0.0.1:6379/0", "Redis URL for exact-response cache storage")
+	cmd.Flags().String("response-cache-redis-prefix", "omnillm", "Redis key prefix for exact-response cache isolation")
+	cmd.Flags().Bool("foreground", false, "Run attached to the current terminal instead of in the background")
 }
