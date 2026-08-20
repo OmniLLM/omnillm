@@ -164,7 +164,7 @@ func readState(path string) (State, error) {
 }
 
 func processState(pid int) (State, error) {
-	executable, err := filepath.EvalSymlinks(filepath.Join("/proc", strconv.Itoa(pid), "exe"))
+	executable, err := processExecutable(pid)
 	if err != nil {
 		return State{}, err
 	}
@@ -181,4 +181,20 @@ func processState(pid int) (State, error) {
 		return State{}, errors.New("process stat missing start time")
 	}
 	return State{PID: pid, Executable: executable, StartID: fields[19]}, nil
+}
+
+func processExecutable(pid int) (string, error) {
+	executable, err := os.Readlink(filepath.Join("/proc", strconv.Itoa(pid), "exe"))
+	if err != nil {
+		return "", err
+	}
+	executable = strings.TrimSuffix(executable, " (deleted)")
+	resolved, err := filepath.EvalSymlinks(executable)
+	if err == nil {
+		return resolved, nil
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return filepath.Clean(executable), nil
+	}
+	return "", err
 }

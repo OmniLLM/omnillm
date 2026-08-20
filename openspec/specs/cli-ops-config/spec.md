@@ -38,10 +38,12 @@ and administer providers, provider authentication, provider models, virtual
 models, settings, status, logs, usage, synchronization, and Redis-backed
 exact-response caching. CLI-managed start and restart operations SHALL run the
 server in the background by default and SHALL offer an explicit foreground
-mode. The canonical provider workflow SHALL place login and model operations
-below `omnillm provider`, and the CLI MUST continue accepting the previous root
-`auth`, root `model`, and `provider add` forms as deprecated hidden
-compatibility shims.
+mode. Managed lifecycle identity MUST remain valid when the running executable
+has been replaced in place, while still rejecting PID reuse and unrelated
+processes. The canonical provider workflow SHALL place login and model
+operations below `omnillm provider`, and the CLI MUST continue accepting the
+previous root `auth`, root `model`, and `provider add` forms as deprecated
+hidden compatibility shims.
 
 #### Scenario: Login creates a provider
 - **WHEN** an operator runs `omnillm provider login <provider-type>` and the argument does not resolve to an existing provider
@@ -90,6 +92,14 @@ compatibility shims.
 #### Scenario: Stop a running server
 - **WHEN** an operator invokes `omnillm stop` and lifecycle state identifies a live OmniLLM server started by the same operator
 - **THEN** the CLI requests graceful termination, waits for the process to exit within a bounded interval, and removes the lifecycle state
+
+#### Scenario: Restart after executable replacement
+- **WHEN** an operator reinstalls or atomically replaces `omnillm` while its managed background server remains running and then invokes `omnillm restart`
+- **THEN** the CLI recognizes and terminates that same live process before starting its replacement on the requested address
+
+#### Scenario: Reused PID is not managed
+- **WHEN** lifecycle state refers to a PID whose process start ID or normalized executable path differs from the recorded identity
+- **THEN** the CLI treats the state as stale and does not signal that process
 
 #### Scenario: Stop without a managed server
 - **WHEN** an operator invokes `omnillm stop` and no valid live OmniLLM server is identified
