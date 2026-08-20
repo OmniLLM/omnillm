@@ -55,7 +55,7 @@ Canonical responses and streams SHALL be serializable independently of the inbou
 - **THEN** serialization succeeds without relying on retained OpenAI wire state
 
 ### Requirement: Tool-call fidelity
-Translation SHALL preserve tool-call identifiers, names, required arguments, non-empty optional arguments, original supported result values, and result relationships across response emission and later multi-turn ingestion. Before client-facing emission, translation SHALL omit an object property whose value is an empty string only when the selected tool's declared input schema identifies that property as optional; translation SHALL otherwise preserve the model-emitted arguments unchanged.
+Translation SHALL preserve tool-call identifiers, names, required arguments, non-empty optional arguments, original supported result values, and result relationships across response emission and later multi-turn ingestion. Before client-facing emission, translation SHALL omit an object property whose value is an empty string only when the selected tool's declared input schema identifies that property as optional; translation SHALL otherwise preserve the model-emitted arguments unchanged except for an explicitly selected client-compatibility policy whose exact argument repair and schema authorization are defined by the client-facing gateway contract.
 
 #### Scenario: Streamed arguments
 - **WHEN** tool arguments arrive as partial JSON deltas
@@ -88,6 +88,10 @@ Translation SHALL preserve tool-call identifiers, names, required arguments, non
 #### Scenario: Cached tool-call replay
 - **WHEN** a normalized streamed tool call is stored and replayed from the response cache
 - **THEN** replay emits the same identifiers, ordering, and normalized arguments as the original response
+
+#### Scenario: Selected client compatibility policy
+- **WHEN** a client-facing gateway contract explicitly selects a compatibility repair and the selected tool schema authorizes its replacement value
+- **THEN** translation applies only that exact repair and preserves all other model-emitted arguments unchanged
 
 ### Requirement: Tool-use semantic normalization
 Canonical response normalization SHALL treat the presence of valid tool-call content as tool use when provider stop metadata is less specific, so downstream serializers expose a consistent tool-loop contract.

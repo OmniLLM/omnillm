@@ -83,6 +83,97 @@ func TestNormalizeResponseCopyOnWrite(t *testing.T) {
 	}
 }
 
+func TestNormalizeResponseClaudeCodePlanAgentType(t *testing.T) {
+	sentinel := ClaudeCodePlanAgentTypeSentinel
+	tests := []struct {
+		name       string
+		toolName   string
+		value      interface{}
+		property   map[string]interface{}
+		enabled    bool
+		want       interface{}
+		wantRepair bool
+	}{
+		{"enum authorizes exact sentinel", "Agent", sentinel, map[string]interface{}{"type": "string", "enum": []interface{}{"Explore", "Plan"}}, true, "Plan", true},
+		{"const authorizes exact sentinel", "Agent", sentinel, map[string]interface{}{"type": "string", "const": "Plan"}, true, "Plan", true},
+		{"policy disabled", "Agent", sentinel, map[string]interface{}{"type": "string", "enum": []interface{}{"Plan"}}, false, sentinel, false},
+		{"other tool", "Other", sentinel, map[string]interface{}{"type": "string", "enum": []interface{}{"Plan"}}, true, sentinel, false},
+		{"near match", "Agent", sentinel + " ", map[string]interface{}{"type": "string", "enum": []interface{}{"Plan"}}, true, sentinel + " ", false},
+		{"non string", "Agent", 7, map[string]interface{}{"type": "string", "enum": []interface{}{"Plan"}}, true, 7, false},
+		{"enum excludes plan", "Agent", sentinel, map[string]interface{}{"type": "string", "enum": []interface{}{"Explore"}}, true, sentinel, false},
+		{"wrong property type", "Agent", sentinel, map[string]interface{}{"type": "integer", "enum": []interface{}{"Plan"}}, true, sentinel, false},
+		{"composed schema uncertain", "Agent", sentinel, map[string]interface{}{"oneOf": []interface{}{map[string]interface{}{"const": "Plan"}}}, true, sentinel, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			arguments := map[string]interface{}{"subagent_type": tt.value, "prompt": "keep"}
+			response := &cif.CanonicalResponse{Content: []cif.CIFContentPart{cif.CIFToolCallPart{
+				Type: "tool_call", ToolCallID: "call_plan", ToolName: tt.toolName, ToolArguments: arguments,
+			}}}
+			tools := []cif.CIFTool{{Name: tt.toolName, ParametersSchema: objectSchema(map[string]interface{}{
+				"subagent_type": tt.property, "prompt": map[string]interface{}{"type": "string"},
+			}, "subagent_type", "prompt")}}
+			repairs := 0
+			got := NormalizeResponseWithPolicy(response, tools, CompatibilityPolicy{
+				ClaudeCodePlanAgentType: tt.enabled,
+				OnRepair: func(repair Repair) {
+					repairs++
+					if repair.Reason != ClaudeCodePlanAgentTypeRepair || repair.ToolCallID != "call_plan" || repair.ToolName != tt.toolName {
+						t.Fatalf("unexpected repair metadata: %#v", repair)
+					}
+				},
+			})
+			gotArgs := got.Content[0].(cif.CIFToolCallPart).ToolArguments
+			if !reflect.DeepEqual(gotArgs["subagent_type"], tt.want) || gotArgs["prompt"] != "keep" {
+				t.Fatalf("arguments = %#v, want subagent_type %#v", gotArgs, tt.want)
+			}
+			wantRepairs := 0
+			if tt.wantRepair {
+				wantRepairs = 1
+			}
+			if repairs != wantRepairs {
+				t.Fatalf("repairs = %d, want %d", repairs, wantRepairs)
+			}
+			if arguments["subagent_type"] != tt.value {
+				t.Fatalf("original arguments mutated: %#v", arguments)
+			}
+		})
+	}
+}
+
+func TestNormalizeStreamClaudeCodePlanAgentType(t *testing.T) {
+	input := make(chan cif.CIFStreamEvent, 8)
+	repairs := 0
+	out := NormalizeStreamWithPolicy(context.Background(), input, []cif.CIFTool{{
+		Name: "Agent",
+		ParametersSchema: objectSchema(map[string]interface{}{
+			"subagent_type": map[string]interface{}{"type": "string", "enum": []interface{}{"Plan", "Explore"}},
+			"prompt":        map[string]interface{}{"type": "string"},
+		}, "subagent_type", "prompt"),
+	}}, CompatibilityPolicy{ClaudeCodePlanAgentType: true, OnRepair: func(Repair) { repairs++ }})
+	input <- toolAnnouncement(4, "call_plan", "Agent")
+	cut := len(ClaudeCodePlanAgentTypeSentinel) / 2
+	input <- argumentDelta(4, `{"subagent_type":"`+ClaudeCodePlanAgentTypeSentinel[:cut])
+	input <- argumentDelta(4, ClaudeCodePlanAgentTypeSentinel[cut:]+`","prompt":"keep"}`)
+	input <- cif.CIFContentBlockStop{Type: "content_block_stop", Index: 4}
+	close(input)
+
+	var arguments string
+	for event := range out {
+		if delta, ok := event.(cif.CIFContentDelta); ok {
+			if value, ok := delta.Delta.(cif.ToolArgumentsDelta); ok {
+				arguments = value.PartialJSON
+			}
+		}
+	}
+	if arguments != `{"prompt":"keep","subagent_type":"Plan"}` {
+		t.Fatalf("stream arguments = %q", arguments)
+	}
+	if repairs != 1 {
+		t.Fatalf("repairs = %d, want 1", repairs)
+	}
+}
+
 func TestNormalizeJSONPreservesLargeInteger(t *testing.T) {
 	schema := objectSchema(map[string]interface{}{"optional": map[string]interface{}{}, "integer": map[string]interface{}{}})
 	got := NormalizeJSON(`{"integer":9007199254740993,"optional":""}`, schema)

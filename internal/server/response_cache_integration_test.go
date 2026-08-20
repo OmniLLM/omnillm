@@ -183,6 +183,44 @@ func TestResponseCacheCrossDialectAndStreamingReplay(t *testing.T) {
 	}
 }
 
+func TestResponseCacheClaudeCodePlanAgentTypeParity(t *testing.T) {
+	srv, _ := newResponseCacheTestServer(t)
+	model := "cache-claude-code-plan-agent"
+	calls := 0
+	registerStubProvider(t, model, func(_ context.Context, _ *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+		calls++
+		return planAgentResponse(model), nil
+	}, nil)
+
+	headers := map[string]string{
+		"anthropic-version": "2023-06-01",
+		"User-Agent":        "claude-cli/2.1.235 (external, cli)",
+	}
+	first := postJSON(t, srv.URL+"/v1/messages", claudeCodeAgentRequestBody(t, model, false), headers)
+	firstBody := readBody(t, first)
+	if first.StatusCode != http.StatusOK || first.Header.Get(responsecache.BypassHeader) != "miss" || !strings.Contains(firstBody, `"subagent_type":"Plan"`) {
+		t.Fatalf("live response status=%d cache=%q body=%s", first.StatusCode, first.Header.Get(responsecache.BypassHeader), firstBody)
+	}
+
+	second := postJSON(t, srv.URL+"/v1/messages", claudeCodeAgentRequestBody(t, model, false), headers)
+	secondBody := readBody(t, second)
+	if second.StatusCode != http.StatusOK || second.Header.Get(responsecache.BypassHeader) != "hit" || !strings.Contains(secondBody, `"subagent_type":"Plan"`) {
+		t.Fatalf("cached response status=%d cache=%q body=%s", second.StatusCode, second.Header.Get(responsecache.BypassHeader), secondBody)
+	}
+	if strings.Contains(secondBody, "scriptPath not found") || calls != 1 {
+		t.Fatalf("cached parity failed: calls=%d body=%s", calls, secondBody)
+	}
+
+	stream := postJSON(t, srv.URL+"/v1/messages", claudeCodeAgentRequestBody(t, model, true), headers)
+	streamBody := readBody(t, stream)
+	if stream.StatusCode != http.StatusOK || stream.Header.Get(responsecache.BypassHeader) != "hit" || !strings.Contains(streamBody, `\"subagent_type\":\"Plan\"`) {
+		t.Fatalf("cached stream status=%d cache=%q body=%s", stream.StatusCode, stream.Header.Get(responsecache.BypassHeader), streamBody)
+	}
+	if strings.Contains(streamBody, "scriptPath not found") || calls != 1 {
+		t.Fatalf("cached stream parity failed: calls=%d body=%s", calls, streamBody)
+	}
+}
+
 func TestResponseCacheFailureFallsThroughAllGenerationRoutes(t *testing.T) {
 	enableResponseCacheForTest(t)
 	restore := responsecache.ConfigureStore(nil)
