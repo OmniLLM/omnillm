@@ -71,6 +71,78 @@ func TestReadRejectsMalformedAndMismatchedState(t *testing.T) {
 	}
 }
 
+func TestProcessStateSurvivesExecutableReplacement(t *testing.T) {
+	temporaryDirectory := t.TempDir()
+	executable := filepath.Join(temporaryDirectory, "managed-server")
+	replacement := filepath.Join(temporaryDirectory, "replacement")
+	copyExecutable(t, "/bin/sleep", executable)
+	copyExecutable(t, "/bin/sleep", replacement)
+
+	command := exec.Command(executable, "30")
+	if err := command.Start(); err != nil {
+		t.Fatalf("start copied executable: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = command.Process.Kill()
+		_ = command.Wait()
+	})
+
+	before, err := processState(command.Process.Pid)
+	if err != nil {
+		t.Fatalf("identify process before replacement: %v", err)
+	}
+	if err := os.Rename(replacement, executable); err != nil {
+		t.Fatalf("replace executable: %v", err)
+	}
+	procExecutable, err := os.Readlink(filepath.Join("/proc", strconv.Itoa(command.Process.Pid), "exe"))
+	if err != nil {
+		t.Fatalf("read replaced proc executable: %v", err)
+	}
+	if !strings.HasSuffix(procExecutable, " (deleted)") {
+		t.Skipf("platform does not mark replaced executables deleted: %q", procExecutable)
+	}
+
+	after, err := processState(command.Process.Pid)
+	if err != nil {
+		t.Fatalf("identify process after replacement: %v", err)
+	}
+	if after != before {
+		t.Fatalf("process identity changed after replacement: before=%#v after=%#v", before, after)
+	}
+
+	data, err := json.Marshal(before)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(temporaryDirectory, "server.json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Read(path); err != nil {
+		t.Fatalf("read lifecycle after executable replacement: %v", err)
+	}
+}
+
+func copyExecutable(t *testing.T, source, destination string) {
+	t.Helper()
+	input, err := os.Open(source)
+	if err != nil {
+		t.Fatalf("open executable source: %v", err)
+	}
+	defer input.Close()
+	output, err := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o755)
+	if err != nil {
+		t.Fatalf("create executable copy: %v", err)
+	}
+	if _, err := io.Copy(output, input); err != nil {
+		_ = output.Close()
+		t.Fatalf("copy executable: %v", err)
+	}
+	if err := output.Close(); err != nil {
+		t.Fatalf("close executable copy: %v", err)
+	}
+}
+
 func TestStopTerminatesManagedProcess(t *testing.T) {
 	command := exec.Command("sleep", "30")
 	if err := command.Start(); err != nil {
