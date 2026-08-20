@@ -70,11 +70,13 @@ func configureRootCommand() {
 	commands.StatusCmd.GroupID = "admin"
 	commands.LogsCmd.GroupID = "admin"
 	commands.UsageCmd.GroupID = "admin"
+	commands.CacheCmd.GroupID = "admin"
 	rootCmd.AddCommand(commands.ConfigCmd)
 	rootCmd.AddCommand(commands.SettingsCmd)
 	rootCmd.AddCommand(commands.StatusCmd)
 	rootCmd.AddCommand(commands.LogsCmd)
 	rootCmd.AddCommand(commands.UsageCmd)
+	rootCmd.AddCommand(commands.CacheCmd)
 	rootCmd.AddCommand(commands.CheckUsageCmd)
 	rootCmd.AddCommand(commands.SyncNamesCmd)
 

@@ -23,12 +23,17 @@ func handleGetResponseCache(c *gin.Context) {
 		log.Warn().Err(err).Msg("Failed to read response cache stats")
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"enabled":     cfg.Enabled,
-		"ttl_seconds": int(cfg.TTL.Seconds()),
-		"entries":     stats.Entries,
-		"total_hits":  stats.TotalHits,
-		"backend":     "redis",
-		"available":   available,
+		"enabled":         cfg.Enabled,
+		"ttl_seconds":     int(cfg.TTL.Seconds()),
+		"entries":         stats.Entries,
+		"total_hits":      stats.TotalHits,
+		"payload_bytes":   stats.PayloadBytes,
+		"lookup_hits":     stats.LookupHits,
+		"lookup_misses":   stats.LookupMisses,
+		"lookup_hit_rate": stats.LookupHitRate,
+		"stats_since":     stats.StatsSince,
+		"backend":         "redis",
+		"available":       available,
 	})
 }
 

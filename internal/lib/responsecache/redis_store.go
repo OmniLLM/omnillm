@@ -34,16 +34,30 @@ redis.call('PEXPIRE', KEYS[1], ARGV[5])
 return 1
 `)
 	getScript = redis.NewScript(`
+local function record_lookup(field)
+  redis.call('HINCRBY', KEYS[2], field, 1)
+  redis.call('HSETNX', KEYS[2], 'stats_since_ms', ARGV[2])
+end
 local values = redis.call('HMGET', KEYS[1],
   'response_data', 'model_id', 'created_at_ms', 'schema_version')
 if not values[1] and not values[2] and not values[3] and not values[4] then
+  record_lookup('lookup_misses')
   return nil
 end
-if not values[1] or not values[2] or not values[3] or values[4] ~= ARGV[1] then
+local json_ok, decoded_json = false, nil
+if values[1] then
+  json_ok, decoded_json = pcall(cjson.decode, values[1])
+end
+local valid_json = json_ok and decoded_json ~= nil
+if not values[1] or not valid_json or not values[2] or values[2] == '' or
+   not values[3] or not tonumber(values[3]) or values[4] ~= ARGV[1] then
+  redis.call('DEL', KEYS[1])
+  record_lookup('lookup_misses')
   return {'__omnillm_malformed__'}
 end
 local hits = redis.call('HINCRBY', KEYS[1], 'hit_count', 1)
 redis.call('HSET', KEYS[1], 'last_hit_at_ms', ARGV[2])
+record_lookup('lookup_hits')
 return {values[1], values[2], values[3], tostring(hits), ARGV[2]}
 `)
 )
@@ -87,7 +101,9 @@ func (c RedisStoreConfig) normalized() (RedisStoreConfig, error) {
 type RedisStore struct {
 	client redis.UniversalClient
 	config RedisStoreConfig
+	root   string
 	entry  string
+	stats  string
 
 	clearMu sync.RWMutex
 	stateMu sync.Mutex
@@ -116,10 +132,13 @@ func NewRedisStore(client redis.UniversalClient, config RedisStoreConfig) (*Redi
 	if err != nil {
 		return nil, err
 	}
+	root := normalized.Prefix + ":response-cache:v1:"
 	store := &RedisStore{
 		client: client,
 		config: normalized,
-		entry:  normalized.Prefix + ":response-cache:v1:entry:",
+		root:   root,
+		entry:  root + "entry:",
+		stats:  root + "stats",
 		state:  circuitState{available: true},
 		stop:   make(chan struct{}),
 		done:   make(chan struct{}),
@@ -158,10 +177,12 @@ func (s *RedisStore) Get(ctx context.Context, key string) (*Record, error) {
 	if err := s.beginCommand(); err != nil {
 		return nil, err
 	}
+	s.clearMu.RLock()
+	defer s.clearMu.RUnlock()
 	commandCtx, cancel := s.commandContext(ctx)
 	defer cancel()
 	now := time.Now().UTC()
-	result, err := getScript.Run(commandCtx, s.client, []string{redisKey}, redisSchemaVersion, now.UnixMilli()).Result()
+	result, err := getScript.Run(commandCtx, s.client, []string{redisKey, s.stats}, redisSchemaVersion, now.UnixMilli()).Result()
 	if errors.Is(err, redis.Nil) {
 		s.finishCommand(ctx, nil)
 		return nil, nil
@@ -226,12 +247,15 @@ func (s *RedisStore) Save(ctx context.Context, key, modelID, responseData string
 	return err
 }
 
-// Stats scans only this store's versioned namespace and pipelines metadata
-// reads in bounded batches.
+// Stats scans only this store's versioned entry namespace and pipelines metadata
+// reads in bounded batches. PayloadBytes measures encoded canonical response data,
+// not Redis allocator overhead.
 func (s *RedisStore) Stats(ctx context.Context) (Stats, error) {
 	if err := s.beginCommand(); err != nil {
 		return Stats{}, err
 	}
+	s.clearMu.RLock()
+	defer s.clearMu.RUnlock()
 	commandCtx, cancel := s.commandContext(ctx)
 	defer cancel()
 	var stats Stats
@@ -244,10 +268,10 @@ func (s *RedisStore) Stats(ctx context.Context) (Stats, error) {
 		}
 		for start := 0; start < len(keys); start += s.config.BatchSize {
 			end := min(start+s.config.BatchSize, len(keys))
-			commands := make([]*redis.StringCmd, 0, end-start)
+			commands := make([]*redis.SliceCmd, 0, end-start)
 			_, err = s.client.Pipelined(commandCtx, func(pipe redis.Pipeliner) error {
 				for _, key := range keys[start:end] {
-					commands = append(commands, pipe.HGet(commandCtx, key, "hit_count"))
+					commands = append(commands, pipe.HMGet(commandCtx, key, "hit_count", "response_data"))
 				}
 				return nil
 			})
@@ -255,17 +279,43 @@ func (s *RedisStore) Stats(ctx context.Context) (Stats, error) {
 				s.finishCommand(ctx, err)
 				return Stats{}, err
 			}
-			stats.Entries += int64(len(commands))
 			for _, command := range commands {
-				hits, parseErr := command.Int64()
-				if parseErr == nil {
-					stats.TotalHits += hits
+				values, commandErr := command.Result()
+				if commandErr != nil || len(values) != 2 || values[1] == nil {
+					continue
+				}
+				stats.Entries++
+				stats.PayloadBytes += int64(len(stringValue(values[1])))
+				if values[0] != nil {
+					hits, parseErr := strconv.ParseInt(stringValue(values[0]), 10, 64)
+					if parseErr == nil {
+						stats.TotalHits += hits
+					}
 				}
 			}
 		}
 		cursor = next
 		if cursor == 0 {
 			break
+		}
+	}
+
+	lookupValues, err := s.client.HMGet(commandCtx, s.stats, "lookup_hits", "lookup_misses", "stats_since_ms").Result()
+	if err != nil {
+		s.finishCommand(ctx, err)
+		return Stats{}, err
+	}
+	if len(lookupValues) == 3 {
+		stats.LookupHits = parseOptionalInt64(lookupValues[0])
+		stats.LookupMisses = parseOptionalInt64(lookupValues[1])
+		observations := stats.LookupHits + stats.LookupMisses
+		if observations > 0 {
+			rate := float64(stats.LookupHits) / float64(observations)
+			stats.LookupHitRate = &rate
+			if sinceMillis, parseErr := strconv.ParseInt(stringValue(lookupValues[2]), 10, 64); lookupValues[2] != nil && parseErr == nil {
+				since := time.UnixMilli(sinceMillis).UTC()
+				stats.StatsSince = &since
+			}
 		}
 	}
 	s.finishCommand(ctx, nil)
@@ -315,6 +365,10 @@ func (s *RedisStore) Clear(ctx context.Context) (int64, error) {
 		if discovered == 0 {
 			break
 		}
+	}
+	if err := s.client.Del(commandCtx, s.stats).Err(); err != nil {
+		s.finishCommand(ctx, err)
+		return removed, err
 	}
 	s.finishCommand(ctx, nil)
 	return removed, nil
@@ -442,6 +496,17 @@ func validatePrefix(prefix string) error {
 		return fmt.Errorf("response cache Redis prefix contains invalid character %q", char)
 	}
 	return nil
+}
+
+func parseOptionalInt64(value interface{}) int64 {
+	if value == nil {
+		return 0
+	}
+	parsed, err := strconv.ParseInt(stringValue(value), 10, 64)
+	if err != nil || parsed < 0 {
+		return 0
+	}
+	return parsed
 }
 
 func stringValue(value interface{}) string {

@@ -112,8 +112,8 @@ func TestRedisStoreConcurrentHitAccounting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stats: %v", err)
 	}
-	if stats != (Stats{Entries: 1, TotalHits: readers}) {
-		t.Fatalf("Stats = %#v, want one entry and %d hits", stats, readers)
+	if stats.Entries != 1 || stats.TotalHits != readers || stats.LookupHits != readers || stats.LookupMisses != 0 || stats.LookupHitRate == nil || *stats.LookupHitRate != 1 || stats.StatsSince == nil {
+		t.Fatalf("Stats = %#v, want one entry and %d lookup hits", stats, readers)
 	}
 }
 
@@ -159,6 +159,13 @@ func TestRedisStoreMalformedEntriesAreMissesAndRemoved(t *testing.T) {
 	if server.Exists(redisKey) {
 		t.Fatal("malformed entry was not removed")
 	}
+	stats, err := store.Stats(ctx)
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if stats.LookupHits != 0 || stats.LookupMisses != 1 || stats.LookupHitRate == nil || *stats.LookupHitRate != 0 || stats.StatsSince == nil {
+		t.Fatalf("malformed-entry stats = %#v, want one lookup miss", stats)
+	}
 }
 
 func TestRedisStoreStatsClearNamespaceAndBatches(t *testing.T) {
@@ -182,7 +189,11 @@ func TestRedisStoreStatsClearNamespaceAndBatches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stats: %v", err)
 	}
-	if stats != (Stats{Entries: 7, TotalHits: 28}) {
+	wantPayloadBytes := int64(0)
+	for i := 1; i <= 7; i++ {
+		wantPayloadBytes += int64(len(fmt.Sprintf(`{"n":%d}`, i)))
+	}
+	if stats.Entries != 7 || stats.TotalHits != 28 || stats.PayloadBytes != wantPayloadBytes || stats.LookupHits != 28 || stats.LookupMisses != 0 || stats.LookupHitRate == nil || *stats.LookupHitRate != 1 || stats.StatsSince == nil {
 		t.Fatalf("Stats = %#v", stats)
 	}
 	removed, err := store.Clear(ctx)
@@ -201,6 +212,52 @@ func TestRedisStoreStatsClearNamespaceAndBatches(t *testing.T) {
 	}
 	if value, err := server.Get("other:response-cache:v1:entry:" + digest(1)); err != nil || value != "keep" {
 		t.Fatalf("other namespace changed: (%q, %v)", value, err)
+	}
+}
+
+func TestRedisStoreLookupStatsWindowMissHitAndNamespaceIsolation(t *testing.T) {
+	store, server := newTestRedisStore(t, "window")
+	ctx := context.Background()
+	if stats, err := store.Stats(ctx); err != nil || stats != (Stats{}) {
+		t.Fatalf("initial Stats = (%#v, %v)", stats, err)
+	}
+	if _, err := store.Get(ctx, digest(501)); err != nil {
+		t.Fatalf("miss: %v", err)
+	}
+	if err := store.Save(ctx, digest(502), "model", `{"ok":true}`, time.Minute); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if _, err := store.Get(ctx, digest(502)); err != nil {
+		t.Fatalf("hit: %v", err)
+	}
+	server.HSet("other:response-cache:v1:stats", "lookup_hits", "99", "lookup_misses", "77", "stats_since_ms", "1")
+
+	stats, err := store.Stats(ctx)
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if stats.LookupHits != 1 || stats.LookupMisses != 1 || stats.LookupHitRate == nil || *stats.LookupHitRate != 0.5 || stats.StatsSince == nil {
+		t.Fatalf("Stats = %#v, want isolated 1/1 window", stats)
+	}
+}
+
+func TestRedisStoreBackendFailureDoesNotCountLookup(t *testing.T) {
+	store, server := newTestRedisStore(t, "failure_count")
+	ctx := context.Background()
+	server.Close()
+	if _, err := store.Get(ctx, digest(601)); err == nil {
+		t.Fatal("Get succeeded after Redis shutdown")
+	}
+	if err := server.Restart(); err != nil {
+		t.Fatalf("Restart: %v", err)
+	}
+	time.Sleep(25 * time.Millisecond)
+	stats, err := store.Stats(ctx)
+	if err != nil {
+		t.Fatalf("Stats after recovery: %v", err)
+	}
+	if stats.LookupHits != 0 || stats.LookupMisses != 0 || stats.StatsSince != nil {
+		t.Fatalf("backend failure changed lookup stats: %#v", stats)
 	}
 }
 

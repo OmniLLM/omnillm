@@ -93,7 +93,7 @@ authentication by provider type and existing-instance re-authentication.
 - **THEN** the provider cache is bypassed and the persisted model view is updated
 
 ### Requirement: Runtime status and settings
-The system SHALL report active providers and enabled model counts and SHALL allow authenticated operators to manage runtime log level and Redis-backed response-cache settings, statistics, availability, and namespace-scoped clearing.
+The system SHALL report active providers and enabled model counts and SHALL allow authenticated operators to manage runtime log level and Redis-backed response-cache settings, statistics, availability, and namespace-scoped clearing. The response-cache settings response SHALL preserve its existing fields and add live payload bytes, namespace lookup-hit and lookup-miss counts, lookup hit rate, and statistics-window start without exposing Redis credentials.
 
 #### Scenario: Runtime log-level update
 - **WHEN** an authenticated operator sets a supported log level
@@ -101,19 +101,19 @@ The system SHALL report active providers and enabled model counts and SHALL allo
 
 #### Scenario: Cache settings response
 - **WHEN** an authenticated operator reads response-cache settings
-- **THEN** the response includes the existing enabled, TTL, entry-count, and total-hit fields plus additive backend and availability fields
+- **THEN** the response includes enabled, TTL, backend, availability, entry count, compatibility total hits, live payload bytes, lookup hits, lookup misses, lookup hit rate, and statistics-window start
 
 #### Scenario: Cache statistics unavailable
 - **WHEN** Redis statistics cannot be read
-- **THEN** the endpoint returns HTTP 200 with durable settings, neutral statistics, backend marked unavailable, and no Redis credentials
+- **THEN** the endpoint returns HTTP 200 with durable settings, zero numeric statistics, null lookup hit rate and statistics-window start, backend marked unavailable, and no Redis credentials
 
 #### Scenario: Cache clear
 - **WHEN** an authenticated operator clears the response cache while Redis is available
-- **THEN** only response entries in the configured OmniLLM namespace are removed and success with the removed count is reported
+- **THEN** only response entries and statistics in the configured OmniLLM namespace are removed and success with the removed entry count is reported
 
 #### Scenario: Cache clear unavailable
 - **WHEN** an authenticated operator clears the response cache while Redis is unavailable
-- **THEN** the endpoint returns a server error and does not claim that cached entries were removed
+- **THEN** the endpoint returns a server error and does not claim that cached entries or statistics were removed
 
 ### Requirement: Virtual model management
 The system SHALL provide authenticated create, read, update, rename, list, and delete operations for virtual models and their upstream definitions.

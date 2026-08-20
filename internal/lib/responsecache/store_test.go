@@ -18,6 +18,7 @@ type recordingStore struct {
 	getCtx    context.Context
 	saveCtx   context.Context
 	saves     int
+	gets      int
 	savedTTL  time.Duration
 	savedData string
 	available bool
@@ -27,7 +28,23 @@ func (s *recordingStore) Get(ctx context.Context, _ string) (*Record, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.getCtx = ctx
+	s.gets++
 	return s.record, s.getErr
+}
+
+func TestDisabledGetBypassesLookupAccounting(t *testing.T) {
+	store := &recordingStore{available: true}
+	restore := ConfigureStore(store)
+	defer restore()
+	req := baseReq()
+	if got := GetContext(context.Background(), Config{Enabled: false}, req, mustKey(t, req)); got != nil {
+		t.Fatalf("disabled GetContext = %#v, want miss", got)
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if store.gets != 0 {
+		t.Fatalf("disabled cache performed %d store lookups", store.gets)
+	}
 }
 
 func (s *recordingStore) Save(ctx context.Context, _, _, responseData string, ttl time.Duration) error {

@@ -191,6 +191,7 @@ OmniLLM 为 Chat Completions、Anthropic Messages 和 OpenAI Responses 提供可
 docker run --rm --name omnillm-redis -p 6379:6379 redis:8-alpine
 omnillm start --response-cache-redis-url redis://127.0.0.1:6379/0
 omnillm settings set response-cache on --ttl 60
+omnillm cache stats
 ```
 
 `redis://user:password@host:6379/0` 和 `rediss://user:password@host:6380/0` URL 支持认证与 TLS。OmniLLM 不会返回或记录包含凭据的 URL。在容器中，`127.0.0.1` 指向应用容器本身，而不是同组的 Redis 服务；请使用其服务主机名，例如 `redis://redis:6379/0`。
@@ -199,7 +200,9 @@ Redis 是可选的加速基础设施。如果 URL 解析、启动 ping、认证�
 
 可通过 `X-OmniLLM-Cache` 请求头逐请求覆盖：`bypass` 跳过读取并强制刷新（仍会写入），`off` 同时跳过读取和写入。管理统计与清理操作仅作用于带版本的 OmniLLM 命名空间，不会清空无关 Redis 数据。
 
-该精确响应缓存与**提供商提示词缓存**彼此独立。提示词缓存指令不会启用或改变精确响应缓存；除非另有独立的精确响应条目命中，提供商提示词缓存命中仍会执行上游推理；精确响应命中也不会被报告为提供商提示词缓存活动。
+`omnillm cache stats` 会报告当前规范响应负载字节数、查找命中与未命中次数、命中率，以及当前 Redis 统计窗口的开始时间。只有符合条件的精确响应查找才计数；绕过请求和 Redis 故障不计数。清理响应缓存命名空间会同时重置统计窗口与计数器。`total_hits` 仍是当前存活条目所附命中数的兼容聚合，因此会随条目过期而下降。使用 `--output json` 可查看完整的已认证设置响应。
+
+该精确响应缓存与**提供商提示词缓存**彼此独立。提示词缓存指令不会启用或改变精确响应缓存；除非另有独立的精确响应条目命中，提供商提示词缓存命中仍会执行上游推理；精确响应命中也不会被报告为提供商提示词缓存活动。使用 `omnillm usage` 查看提供商提示词缓存的请求与令牌指标；使用 `omnillm cache stats` 查看本地精确响应查找统计。
 
 Redis 条目使用 OmniLLM 带版本的命名空间和规范响应格式。该格式不与 LiteLLM 的 Redis 缓存格式逐字节兼容，两者不能互换使用。
 

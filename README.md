@@ -209,6 +209,7 @@ Start a local service, then enable the cache:
 docker run --rm --name omnillm-redis -p 6379:6379 redis:8-alpine
 omnillm start --response-cache-redis-url redis://127.0.0.1:6379/0
 omnillm settings set response-cache on --ttl 60
+omnillm cache stats
 ```
 
 `redis://user:password@host:6379/0` and `rediss://user:password@host:6380/0` URLs support authentication and TLS. OmniLLM never returns or logs the credential-bearing URL. In a container, `127.0.0.1` identifies that application container rather than a sibling Redis service; use its service hostname, for example `redis://redis:6379/0`.
@@ -217,7 +218,9 @@ Redis is optional acceleration infrastructure. If URL parsing, startup ping, aut
 
 Per-request override via the `X-OmniLLM-Cache` header: `bypass` skips the read and forces a refresh (still writes), `off` skips both read and write. Administrative statistics and clear operations are restricted to the versioned OmniLLM namespace and do not flush unrelated Redis data.
 
-This exact-response cache is separate from **provider prompt caching**. Prompt-cache directives do not enable or alter exact-response caching, a provider prompt-cache hit still requires upstream inference unless an independent exact-response entry is served, and an exact-response hit is not reported as provider prompt-cache activity.
+`omnillm cache stats` reports live canonical payload bytes and lookup hits, misses, hit rate, and the start of the current Redis-backed statistics window. Hits and misses count eligible exact-response lookups; bypassed requests and Redis failures do not count. Clearing the response-cache namespace resets the window and counters. `total_hits` remains the compatibility aggregate attached to currently live entries, so it can decrease as entries expire. Use `--output json` for the complete authenticated settings response.
+
+This exact-response cache is separate from **provider prompt caching**. Prompt-cache directives do not enable or alter exact-response caching, a provider prompt-cache hit still requires upstream inference unless an independent exact-response entry is served, and an exact-response hit is not reported as provider prompt-cache activity. Use `omnillm usage` for provider prompt-cache request and token metrics; use `omnillm cache stats` for local exact-response lookup statistics.
 
 Redis entries use OmniLLM's versioned namespace and canonical response format. They are not byte-for-byte compatible with LiteLLM's Redis cache format and must not be treated as interchangeable.
 
