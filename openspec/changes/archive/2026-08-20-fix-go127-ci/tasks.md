@@ -12,4 +12,4 @@
 ## 3. Verification and Archive
 
 - [x] 3.1 Run local OpenSpec and focused regression checks.
-- [ ] 3.2 Archive the change and require green PR checks before merge.
+- [x] 3.2 Archive the change and require green PR checks before merge.
