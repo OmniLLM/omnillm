@@ -44,6 +44,7 @@ type memoryResponseCacheStore struct {
 	mu      sync.Mutex
 	records map[string]*responsecache.Record
 	hits    int64
+	stats   *responsecache.Stats
 }
 
 func newMemoryResponseCacheStore() *memoryResponseCacheStore {
@@ -71,6 +72,9 @@ func (s *memoryResponseCacheStore) Save(_ context.Context, key, modelID, data st
 func (s *memoryResponseCacheStore) Stats(context.Context) (responsecache.Stats, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.stats != nil {
+		return *s.stats, nil
+	}
 	return responsecache.Stats{Entries: int64(len(s.records)), TotalHits: s.hits}, nil
 }
 func (s *memoryResponseCacheStore) Clear(context.Context) (int64, error) {
@@ -819,15 +823,20 @@ func TestResponseCacheAdminDegradedAndClearFailure(t *testing.T) {
 		t.Fatalf("settings status %d: %s", response.StatusCode, body)
 	}
 	var status struct {
-		Backend   string `json:"backend"`
-		Available bool   `json:"available"`
-		Entries   int64  `json:"entries"`
-		TotalHits int64  `json:"total_hits"`
+		Backend       string     `json:"backend"`
+		Available     bool       `json:"available"`
+		Entries       int64      `json:"entries"`
+		TotalHits     int64      `json:"total_hits"`
+		PayloadBytes  int64      `json:"payload_bytes"`
+		LookupHits    int64      `json:"lookup_hits"`
+		LookupMisses  int64      `json:"lookup_misses"`
+		LookupHitRate *float64   `json:"lookup_hit_rate"`
+		StatsSince    *time.Time `json:"stats_since"`
 	}
 	if err := json.Unmarshal([]byte(body), &status); err != nil {
 		t.Fatalf("decode settings: %v", err)
 	}
-	if status.Backend != "redis" || status.Available || status.Entries != 0 || status.TotalHits != 0 {
+	if status.Backend != "redis" || status.Available || status.Entries != 0 || status.TotalHits != 0 || status.PayloadBytes != 0 || status.LookupHits != 0 || status.LookupMisses != 0 || status.LookupHitRate != nil || status.StatsSince != nil {
 		t.Fatalf("unexpected degraded status: %+v", status)
 	}
 
@@ -843,5 +852,53 @@ func TestResponseCacheAdminDegradedAndClearFailure(t *testing.T) {
 	defer clearResponse.Body.Close()
 	if clearResponse.StatusCode != http.StatusInternalServerError {
 		t.Fatalf("clear status = %d", clearResponse.StatusCode)
+	}
+}
+
+func TestResponseCacheAdminStatisticsFieldsAndAuthentication(t *testing.T) {
+	srv, store := newResponseCacheTestServer(t)
+	since := time.Date(2026, time.August, 20, 8, 0, 0, 0, time.UTC)
+	rate := 0.75
+	store.mu.Lock()
+	store.stats = &responsecache.Stats{
+		Entries:       2,
+		TotalHits:     7,
+		PayloadBytes:  1536,
+		LookupHits:    3,
+		LookupMisses:  1,
+		LookupHitRate: &rate,
+		StatsSince:    &since,
+	}
+	store.mu.Unlock()
+
+	unauthorized, err := http.Get(srv.URL + "/api/admin/settings/response-cache")
+	if err != nil {
+		t.Fatalf("unauthorized request: %v", err)
+	}
+	unauthorized.Body.Close()
+	if unauthorized.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthorized status = %d, want 401", unauthorized.StatusCode)
+	}
+
+	response := getWithAuth(t, srv.URL+"/api/admin/settings/response-cache")
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("settings status = %d", response.StatusCode)
+	}
+	var status struct {
+		Entries       int64      `json:"entries"`
+		TotalHits     int64      `json:"total_hits"`
+		PayloadBytes  int64      `json:"payload_bytes"`
+		LookupHits    int64      `json:"lookup_hits"`
+		LookupMisses  int64      `json:"lookup_misses"`
+		LookupHitRate *float64   `json:"lookup_hit_rate"`
+		StatsSince    *time.Time `json:"stats_since"`
+		Available     bool       `json:"available"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&status); err != nil {
+		t.Fatalf("decode settings: %v", err)
+	}
+	if status.Entries != 2 || status.TotalHits != 7 || status.PayloadBytes != 1536 || status.LookupHits != 3 || status.LookupMisses != 1 || status.LookupHitRate == nil || *status.LookupHitRate != rate || status.StatsSince == nil || !status.StatsSince.Equal(since) || !status.Available {
+		t.Fatalf("unexpected statistics response: %+v", status)
 	}
 }

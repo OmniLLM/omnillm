@@ -25,10 +25,16 @@ type Record struct {
 	LastHitAt    *time.Time
 }
 
-// Stats contains live, namespace-scoped cache totals.
+// Stats contains live, namespace-scoped cache totals and lookup activity for
+// the current Redis-backed statistics window.
 type Stats struct {
-	Entries   int64
-	TotalHits int64
+	Entries       int64
+	TotalHits     int64
+	PayloadBytes  int64
+	LookupHits    int64
+	LookupMisses  int64
+	LookupHitRate *float64
+	StatsSince    *time.Time
 }
 
 // Store is the context-aware storage contract for exact-match responses.
