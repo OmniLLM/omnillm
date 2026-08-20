@@ -476,11 +476,11 @@
       <div class="eyebrow">OmniLLM architecture overview</div>
       <h1>One gateway, one coding client, one shared control plane.</h1>
       <p class="lede">
-        OmniLLM and OmniProxy expose the same server-backed gateway surface, while OmniCode is the coding-focused CLI that consumes that server over HTTP.
-        This page shows the three layers as a single visual flow.
+        OmniLLM exposes the server-backed gateway surface, while OmniCode is the coding-focused CLI that consumes that server over HTTP.
+        This page shows the layers as a single visual flow.
       </p>
       <div class="meta">
-        <div class="pill">Gateway: <strong>omnillm</strong> / <strong>omniproxy</strong></div>
+        <div class="pill">Gateway: <strong>omnillm</strong></div>
         <div class="pill">Coding CLI: <strong>omnicode</strong></div>
         <div class="pill">Shared core: <strong>CIF</strong>, providers, sessions, admin APIs</div>
       </div>
@@ -490,12 +490,12 @@
       <div class="diagram-header">
         <div>
           <h2>Architecture diagram</h2>
-          <p>Gateway binaries feed a shared control plane, and OmniCode sits on top as the interactive coding client.</p>
+          <p>The gateway binary feeds a shared control plane, and OmniCode sits on top as the interactive coding client.</p>
         </div>
       </div>
 
       <div class="diagram-canvas">
-        <div class="lane-label lane-left">gateway binaries</div>
+        <div class="lane-label lane-left">gateway binary</div>
         <div class="lane-label lane-mid">shared core</div>
         <div class="lane-label lane-right">coding client</div>
 
@@ -521,12 +521,12 @@
 
         <div class="diagram-grid">
         <div class="diagram-box">
-          <div class="diagram-label">Gateway binaries</div>
-          <h2>omnillm / omniproxy</h2>
-          <p>Both entrypoints share the same Cobra command tree and start the same backend server.</p>
+          <div class="diagram-label">Gateway binary</div>
+          <h2>omnillm</h2>
+          <p>The canonical entrypoint provides the Cobra command tree and starts the backend server.</p>
           <div class="diagram-node">
             <strong>Entry layer</strong>
-            <span>main.go or cmd/omniproxy/main.go</span>
+            <span>main.go</span>
           </div>
           <ul>
             <li>Starts server + admin UI</li>
@@ -574,7 +574,7 @@
       <div class="support">
         <div class="mini">
           <strong>Start point</strong>
-          <span>Launch omnillm or omniproxy first. They expose the backend contract that all clients consume.</span>
+          <span>Launch omnillm first. It exposes the backend contract that all clients consume.</span>
         </div>
         <div class="mini">
           <strong>Interaction point</strong>
@@ -586,13 +586,13 @@
         </div>
         <div class="mini">
           <strong>One sentence</strong>
-          <span>OmniLLM/OmniProxy are the platform; OmniCode is the coding client on top of that platform.</span>
+          <span>OmniLLM is the platform; OmniCode is the coding client on top of that platform.</span>
         </div>
       </div>
     </section>
 
     <div class="footer-note">
-      Source anchors: README.md, main.go, cmd/omniproxy/main.go, cmd/omnicode/main.go, internal/server/server.go, internal/omnicode/app.go.
+      Source anchors: README.md, main.go, internal/server/server.go.
     </div>
   </main>
 </body>

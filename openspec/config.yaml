@@ -1,7 +1,7 @@
 schema: spec-driven
 
 context: |
-  OmniLLM is a Go 1.25 LLM gateway with a Bun/React administration console,
+  OmniLLM is a Go 1.27 LLM gateway with a Bun/React administration console,
   a Tauri desktop shell, and SQLite persistence. Canonical Intermediate Format
   (CIF) is the internal request/response boundary between API ingestion,
   provider dispatch, and output serialization.

@@ -46,7 +46,7 @@ pub async fn start_backend(app: tauri::AppHandle) -> Result<BackendInfo, String>
 
     let cmd = app
         .shell()
-        .sidecar("omniproxy")
+        .sidecar("omnillm")
         .map_err(|e| format!("sidecar lookup: {}", e))?
         .args([
             "start",
@@ -68,16 +68,16 @@ pub async fn start_backend(app: tauri::AppHandle) -> Result<BackendInfo, String>
         while let Some(event) = rx.recv().await {
             match event {
                 CommandEvent::Stdout(line) => {
-                    log::info!(target: "omniproxy", "{}", String::from_utf8_lossy(&line));
+                    log::info!(target: "omnillm", "{}", String::from_utf8_lossy(&line));
                 }
                 CommandEvent::Stderr(line) => {
-                    log::warn!(target: "omniproxy", "{}", String::from_utf8_lossy(&line));
+                    log::warn!(target: "omnillm", "{}", String::from_utf8_lossy(&line));
                 }
                 CommandEvent::Error(err) => {
-                    log::error!(target: "omniproxy", "{}", err);
+                    log::error!(target: "omnillm", "{}", err);
                 }
                 CommandEvent::Terminated(p) => {
-                    log::warn!(target: "omniproxy", "terminated: {:?}", p);
+                    log::warn!(target: "omnillm", "terminated: {:?}", p);
                 }
                 _ => {}
             }

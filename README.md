@@ -12,16 +12,15 @@ OmniLLM sits between your apps, agents, coding tools, and upstream model provide
 
 The practical result is simple: point your client at OmniLLM once, then switch providers, add failover, expose a web admin console, manage tool configs, and inspect usage without rewriting client code.
 
-## Binaries
+## Binary
 
-This repo currently ships two user-facing entrypoints:
+This repo ships one user-facing entrypoint:
 
 | Binary | Entry point | Role |
 |---|---|---|
 | `omnillm` | `main.go` | Main server and admin CLI. Starts the gateway, manages providers, models, virtual models, chat, settings, config files, and logs. |
-| `omniproxy` | `cmd/omniproxy/main.go` | Proxy-oriented entrypoint that mirrors the OmniLLM command surface for running the gateway. |
 
-If you only need the gateway, start with `omnillm`. If your workflow expects the proxy-branded binary, use `omniproxy`. The coding-focused `omnicode` CLI now lives in its own dedicated repository.
+Use `omnillm` for the gateway and all administration commands. The coding-focused `omnicode` CLI lives in its own dedicated repository.
 
 ## Why This Exists
 
@@ -68,13 +67,13 @@ Runtime defaults:
 Prerequisites:
 
 - Bun 1.2+
-- Go 1.25+
+- Go 1.27+
 
 Build and run the main binary:
 
 ```sh
-make build-go
-$HOME/.local/bin/omnillm start
+make install
+omnillm start
 ```
 
 `start` waits until the server is ready, then returns while the server continues
@@ -91,21 +90,11 @@ service manager, or debugger must remain attached to the server process.
 Windows PowerShell:
 
 ```powershell
-make build-go
-$env:USERPROFILE\.local\bin\omnillm.exe start
+make install
+omnillm.exe start
 ```
 
-For Bun-based workflows such as frontend builds, linting, tests, or dev mode, use `make deps` to install dependencies explicitly, or just run the relevant `make` target and let it install dependencies automatically when needed.
-
-### Run `omniproxy`
-
-The repo also includes a dedicated proxy entrypoint:
-
-```sh
-go run ./cmd/omniproxy start
-```
-
-Use it when you want the proxy-specific binary name without changing the server behavior.
+Use the direct Bun scripts for frontend builds, linting, tests, and development.
 
 ### API key behavior
 
@@ -165,21 +154,25 @@ Start both with:
 bun run dev
 ```
 
-Useful scripts:
+Useful commands:
 
 ```sh
-make help
-make deps
-make build-go
-make build-frontend
-make dev
-make dev-frontend
-make start
-make status
-make restart REBUILD=--rebuild
+bun install
+bun run build
+bun run lint:all
+bun run typecheck
+bun test
+bun run dev
+bun run dev:frontend
+omnillm status
+omnillm restart
+omnillm logs --follow
 ```
 
-The `make` targets wrap the same Bun-based workflows for Linux and Windows. On Windows, use PowerShell or Command Prompt with `make` available in `PATH`. Bun-backed targets automatically run `bun install` when dependencies are missing or when `bun.lock` or `package.json` changes.
+Make is limited to `make build`, `make install`, `make uninstall`,
+`make build-desktop-sidecar`, `make build-desktop`, and `make desktop-dev`.
+`make uninstall` removes installed `omnillm` and stale legacy `omniproxy`
+executables from Go's binary installation directory.
 
 The `bun run omni` wrapper is a development manager around the backend binary and Vite server. It is not the same thing as the production runtime path.
 
@@ -338,8 +331,6 @@ The main `omnillm` binary includes:
 - `chat`
 - `logs`
 
-`omniproxy` mirrors the same server-oriented flow under a proxy-specific binary name.
-
 ### Provider management
 
 Use one provider namespace for initial login, re-authentication, and model management:
@@ -361,7 +352,7 @@ Without `--new`, `provider login <type-or-provider>` re-authenticates the refere
 
 Provider arguments use the same deterministic lookup as model routing: exact instance ID first, then unique case-insensitive alias, then unique case-insensitive display name. Ambiguous aliases or names fail and identify the matching instance IDs. The former root `auth`, root `model`, and `provider add` forms remain accepted as hidden deprecated compatibility commands for existing automation.
 
-Selected `start` flags for the server binaries:
+Selected `start` flags for the server binary:
 
 | Flag | Default | Purpose |
 |---|---|---|
@@ -383,7 +374,6 @@ Selected `start` flags for the server binaries:
 | Path | Role |
 |---|---|
 | `main.go` | main `omnillm` CLI entrypoint |
-| `cmd/omniproxy/` | proxy-oriented CLI entrypoint |
 | `internal/server/` | server bootstrap, auth, admin UI registration |
 | `internal/routes/` | OpenAI, Anthropic, Responses, admin, metering, chat, config, and virtual model handlers |
 | `internal/providers/` | provider implementations and adapters |
@@ -409,7 +399,7 @@ Client or tool
 
 Back-end stack:
 
-- Go 1.25
+- Go 1.27
 - Gin
 - Cobra
 - zerolog

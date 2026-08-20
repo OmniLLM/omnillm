@@ -4,7 +4,7 @@ A Tauri-based desktop wrapper around the existing OmniLLM admin UI.
 
 The desktop app:
 
-- launches the bundled `omniproxy` binary as a sidecar on a free localhost port
+- launches the bundled `omnillm` binary as a sidecar on a free localhost port
 - generates or reuses a per-install API key under `~/.config/omnillm/desktop-api-key`
 - mounts the same React admin UI from `../frontend/src` inside a WebView
 - routes all API calls through the local sidecar via a runtime bridge
@@ -13,7 +13,6 @@ The desktop app:
 The Go backend is **also** still usable as a standalone binary:
 
 - `omnillm start`
-- `omniproxy start`
 - packaged-runtime mode (port 5000 serving `/admin/`)
 - dev mode (Go on 5002 + Vite on 5080)
 
@@ -23,8 +22,8 @@ The Go backend is **also** still usable as a standalone binary:
 make desktop-dev
 ```
 
-This builds the host-target `omniproxy` binary into
-`desktop/src-tauri/binaries/omniproxy-<rust-host-triple>` and runs `tauri dev`.
+This builds the host-target `omnillm` binary into
+`desktop/src-tauri/binaries/omnillm-<rust-host-triple>` and runs `tauri dev`.
 
 ## Build
 

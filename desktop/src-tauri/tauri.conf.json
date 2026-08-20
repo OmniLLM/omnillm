@@ -35,7 +35,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": ["binaries/omniproxy"],
+    "externalBin": ["binaries/omnillm"],
     "category": "DeveloperTool",
     "shortDescription": "Unified LLM gateway desktop app",
     "longDescription": "OmniLLM desktop wraps the same admin UI as the web version, with a bundled proxy backend."

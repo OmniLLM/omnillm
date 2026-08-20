@@ -12,7 +12,7 @@
       "identifier": "shell:allow-execute",
       "allow": [
         {
-          "name": "binaries/omniproxy",
+          "name": "binaries/omnillm",
           "sidecar": true,
           "args": true
         }
@@ -22,7 +22,7 @@
       "identifier": "shell:allow-spawn",
       "allow": [
         {
-          "name": "binaries/omniproxy",
+          "name": "binaries/omnillm",
           "sidecar": true,
           "args": true
         }

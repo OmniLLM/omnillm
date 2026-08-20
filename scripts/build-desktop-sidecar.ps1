@@ -9,7 +9,7 @@ if (-not $hostTriple) {
   exit 1
 }
 
-$out = "desktop/src-tauri/binaries/omniproxy-$hostTriple.exe"
+$out = "desktop/src-tauri/binaries/omnillm-$hostTriple.exe"
 Write-Host "Building $out"
-& go build -o $out ./cmd/omniproxy
+& go build -o $out .
 exit $LASTEXITCODE

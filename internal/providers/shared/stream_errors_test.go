@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"testing"
+	"time"
 )
 
 func TestIsBenignStreamEndError(t *testing.T) {
@@ -41,20 +42,17 @@ func TestIsBenignStreamEndError(t *testing.T) {
 }
 
 func TestDefaultHTTPTransportConfiguresHTTP2Keepalive(t *testing.T) {
-	tr := DefaultHTTPTransport()
+	tr, h2 := defaultHTTPTransport()
 	if !tr.ForceAttemptHTTP2 {
 		t.Fatal("expected ForceAttemptHTTP2")
 	}
-	if tr.TLSClientConfig == nil {
-		t.Fatal("expected ConfigureTransports to install a TLS config for h2")
+	if h2 == nil {
+		t.Fatal("expected an HTTP/2 transport")
 	}
-	var hasH2 bool
-	for _, p := range tr.TLSClientConfig.NextProtos {
-		if p == "h2" {
-			hasH2 = true
-		}
+	if h2.ReadIdleTimeout != 30*time.Second {
+		t.Fatalf("ReadIdleTimeout = %v, want 30s", h2.ReadIdleTimeout)
 	}
-	if !hasH2 {
-		t.Fatalf("expected h2 in NextProtos, got %v", tr.TLSClientConfig.NextProtos)
+	if h2.PingTimeout != 15*time.Second {
+		t.Fatalf("PingTimeout = %v, want 15s", h2.PingTimeout)
 	}
 }

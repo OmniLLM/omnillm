@@ -1,6 +1,6 @@
 // OmniLLM desktop entrypoint (library form for Tauri v2).
 //
-// Starts the bundled `omniproxy` sidecar, waits for it to be healthy, then
+// Starts the bundled `omnillm` sidecar, waits for it to be healthy, then
 // exposes its baseUrl + api key to the WebView via the
 // `desktop_backend_info` Tauri command. The shared React admin UI mounts
 // after that and behaves identically to the browser build.

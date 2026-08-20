@@ -33,15 +33,15 @@ Read operations SHALL support table and JSON output, default to table, and retur
 
 ### Requirement: Server operation and administration
 
-The CLI and repository operator workflows SHALL provide commands to start,
-stop, and restart the server and administer providers, provider authentication,
-provider models, virtual models, settings, status, logs, usage,
-synchronization, and Redis-backed exact-response caching. CLI-managed start and
-restart operations SHALL run the server in the background by default and SHALL
-offer an explicit foreground mode. The canonical provider workflow SHALL place
-login and model operations below `omnillm provider`, and the CLI MUST continue
-accepting the previous root `auth`, root `model`, and `provider add` forms as
-deprecated hidden compatibility shims.
+The `omnillm` CLI SHALL provide commands to start, stop, and restart the server
+and administer providers, provider authentication, provider models, virtual
+models, settings, status, logs, usage, synchronization, and Redis-backed
+exact-response caching. CLI-managed start and restart operations SHALL run the
+server in the background by default and SHALL offer an explicit foreground
+mode. The canonical provider workflow SHALL place login and model operations
+below `omnillm provider`, and the CLI MUST continue accepting the previous root
+`auth`, root `model`, and `provider add` forms as deprecated hidden
+compatibility shims.
 
 #### Scenario: Login creates a provider
 - **WHEN** an operator runs `omnillm provider login <provider-type>` and the argument does not resolve to an existing provider
@@ -76,16 +76,16 @@ deprecated hidden compatibility shims.
 - **THEN** the explicitly supplied flag value is used
 
 #### Scenario: Redis-enabled Make startup
-- **WHEN** an operator invokes the documented Redis-enabled Make startup target with `OMNILLM_RESPONSE_CACHE_REDIS_URL` inherited from the process environment
-- **THEN** the managed OmniLLM backend receives that URL as its response-cache Redis endpoint without evaluating the URL as recipe shell source while the normal backend, frontend, host, and port startup workflow is preserved
+- **WHEN** an operator needs to start OmniLLM with a Redis response-cache endpoint
+- **THEN** the operator invokes `omnillm start` with the canonical environment variable or flag rather than a Make lifecycle target
 
 #### Scenario: Redis-enabled Make startup default
-- **WHEN** an operator invokes the Redis-enabled Make startup target without a response-cache Redis URL in the environment
-- **THEN** the backend uses the documented local Redis endpoint
+- **WHEN** an operator starts OmniLLM directly without a response-cache Redis URL
+- **THEN** the CLI uses the documented local Redis endpoint without requiring a Make wrapper
 
 #### Scenario: Redis startup help
-- **WHEN** an operator runs the Make help target
-- **THEN** the Redis-enabled startup target, canonical Redis URL environment variable, local default, and runnable examples are displayed
+- **WHEN** an operator reads current startup documentation
+- **THEN** it documents the direct `omnillm` Redis configuration and does not advertise a Redis-specific Make target
 
 #### Scenario: Stop a running server
 - **WHEN** an operator invokes `omnillm stop` and lifecycle state identifies a live OmniLLM server started by the same operator
@@ -204,4 +204,82 @@ automation.
 - **WHEN** automation invokes `provider rename` without `--name` or `--alias`
 - **THEN** the CLI fails validation without prompting or sending a rename
   request
+
+### Requirement: Canonical command binary
+
+Repository build, installation, and documentation workflows MUST produce and
+advertise `omnillm` as the sole supported Go command binary and MUST NOT build,
+install, or advertise an `omniproxy` command binary.
+
+#### Scenario: Build and install commands
+
+- **WHEN** an operator runs a supported repository Go build or installation workflow
+- **THEN** the workflow produces or installs `omnillm` without producing or installing `omniproxy`
+
+#### Scenario: Current command documentation
+
+- **WHEN** an operator reads current repository usage or architecture documentation
+- **THEN** command examples and entrypoint descriptions identify `omnillm` and do not offer `omniproxy`
+
+#### Scenario: Go package discovery
+
+- **WHEN** Go tooling enumerates buildable packages in the repository
+- **THEN** no `cmd/omniproxy` command package is present
+
+### Requirement: Canonical Go toolchain
+
+Current repository module, container, continuous-integration, and
+documentation configuration MUST consistently require Go 1.27 or newer.
+
+#### Scenario: Repository Go build
+
+- **WHEN** a contributor, CI job, or container build resolves the repository Go toolchain
+- **THEN** it uses the Go 1.27 module requirement rather than an older Go release
+
+#### Scenario: Current development documentation
+
+- **WHEN** a contributor reads the current setup or architecture documentation
+- **THEN** Go 1.27 or newer is identified as the supported toolchain
+
+### Requirement: Minimal Make orchestration
+
+The repository Makefile MUST be limited to building, installing, and
+uninstalling the canonical `omnillm` binary and orchestrating desktop sidecar
+workflows, and MUST NOT wrap OmniLLM lifecycle, Bun development, validation,
+release, or container commands.
+
+#### Scenario: Server lifecycle
+
+- **WHEN** an operator starts, stops, restarts, inspects, or follows logs for the packaged gateway
+- **THEN** current documentation directs the operator to `omnillm` rather than a Make target
+
+#### Scenario: Canonical binary build
+
+- **WHEN** a contributor runs `make build`
+- **THEN** the root Go package is compiled as `omnillm` under `.build/bin` for the host platform
+
+#### Scenario: Canonical binary installation
+
+- **WHEN** a contributor runs `make install`
+- **THEN** the root Go package is installed through `go install .` using the configured Go installation path
+
+#### Scenario: Canonical binary uninstallation
+
+- **WHEN** a contributor runs `make uninstall`
+- **THEN** only the installed `omnillm` executable and any stale legacy `omniproxy` executable are removed from Go's effective binary installation directory and absent executables are treated as success
+
+#### Scenario: Retained Make surface
+
+- **WHEN** a contributor inspects public Make targets
+- **THEN** only `build`, `install`, `uninstall`, `build-desktop-sidecar`, `build-desktop`, and `desktop-dev` are available
+
+#### Scenario: Desktop workflows
+
+- **WHEN** a contributor invokes a retained desktop Make target
+- **THEN** `build-desktop-sidecar`, `build-desktop`, and `desktop-dev` continue to provide cross-platform desktop orchestration
+
+#### Scenario: Direct development tools
+
+- **WHEN** a contributor tests, lints, releases, or runs a container outside desktop packaging
+- **THEN** current documentation uses the direct Bun, release-script, or Docker command
 
