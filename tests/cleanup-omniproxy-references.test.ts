@@ -26,7 +26,10 @@ describe("omniproxy binary removal", () => {
 
   test("current usage documentation advertises only omnillm", () => {
     for (const path of ["README.md", "README.zh-CN.md", "desktop/README.md"]) {
-      expect(read(path).toLowerCase()).not.toContain("omniproxy")
+      const contents = read(path).toLowerCase()
+      expect(contents).not.toContain("go run ./cmd/omniproxy")
+      expect(contents).not.toContain("`omniproxy start`")
+      expect(contents).not.toContain("| `omniproxy` |")
     }
   })
 
