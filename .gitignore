@@ -27,8 +27,6 @@ pages/admin/
 /omnillm.exe
 /omnicode
 /omnicode.exe
-/omniproxy
-/omniproxy.exe
 
 # build temp directory
 .build/
@@ -53,7 +51,7 @@ pages/admin/
 /.tmp-live-tests/
 
 # runtime logs
-omniproxy-*.log
+omnillm-*.log
 
 # generated memory logs
 memory/*.md

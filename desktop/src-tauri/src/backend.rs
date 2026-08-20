@@ -1,9 +1,9 @@
-// Sidecar lifecycle for the bundled `omniproxy` backend.
+// Sidecar lifecycle for the bundled `omnillm` backend.
 //
 // Responsibilities:
 //   * pick a free localhost port
 //   * load or create a per-install API key
-//   * spawn the bundled `omniproxy` binary
+//   * spawn the bundled `omnillm` binary
 //   * poll /healthz until ready
 //   * cleanly shut the child down on app exit
 //
@@ -37,7 +37,7 @@ pub type SharedBackendState = Arc<Mutex<BackendState>>;
 
 /// Bind to 127.0.0.1:0 and return the OS-assigned port.
 ///
-/// We drop the listener before returning so the spawned `omniproxy` can
+/// We drop the listener before returning so the spawned `omnillm` can
 /// claim the port immediately. There is a tiny race window between drop
 /// and child bind, which is acceptable here because the desktop app is
 /// the only thing on the user's machine racing for that port.

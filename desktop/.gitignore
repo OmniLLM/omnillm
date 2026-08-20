@@ -1,7 +1,7 @@
 # Build artifacts
 dist/
 src-tauri/target/
-src-tauri/binaries/omniproxy*
+src-tauri/binaries/omnillm*
 
 # Tauri generated
 src-tauri/gen/

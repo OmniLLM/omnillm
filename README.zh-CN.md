@@ -10,14 +10,13 @@ OmniLLM 位于应用、智能体、编程工具与上游模型提供商之间。
 
 ## 二进制入口
 
-当前仓库面向用户的两个主要入口分别是：
+当前仓库面向用户提供一个入口：
 
 | 二进制 | 入口文件 | 作用 |
 |---|---|---|
 | `omnillm` | `main.go` | 主服务与管理 CLI。用于启动网关、管理提供商、模型、虚拟模型、聊天、设置、配置文件和日志。 |
-| `omniproxy` | `cmd/omniproxy/main.go` | 面向代理场景的入口，命令能力与 OmniLLM 服务端流程保持一致。 |
 
-如果你只需要网关本身，优先使用 `omnillm`。如果你的部署或脚本希望使用代理命名，则使用 `omniproxy`。面向编程场景的 `omnicode` CLI 现在已经迁移到独立仓库。
+使用 `omnillm` 启动网关并执行全部管理命令。面向编程场景的 `omnicode` CLI 已迁移到独立仓库。
 
 ## 这个项目解决什么问题
 
@@ -64,33 +63,23 @@ bunx omnillm@latest start
 前置要求：
 
 - Bun 1.2+
-- Go 1.25+
+- Go 1.27+
 
 构建并运行主二进制：
 
 ```sh
-make build-go
-$HOME/.local/bin/omnillm start
+make install
+omnillm start
 ```
 
 Windows PowerShell：
 
 ```powershell
-make build-go
-$env:USERPROFILE\.local\bin\omnillm.exe start
+make install
+omnillm.exe start
 ```
 
-对于前端构建、lint、测试或开发模式这类依赖 Bun 的流程，你可以显式运行 `make deps` 安装依赖，也可以直接执行对应的 `make` 目标，让它在需要时自动安装依赖。
-
-### 运行 `omniproxy`
-
-仓库也提供一个独立的代理入口：
-
-```sh
-go run ./cmd/omniproxy start
-```
-
-它适合那些希望使用代理命名，但又不想改变服务端行为的场景。
+前端构建、lint、测试和开发模式请直接使用对应的 Bun 脚本。
 
 ### API 密钥行为
 
@@ -147,21 +136,25 @@ omnillm start
 bun run dev
 ```
 
-常用脚本：
+常用命令：
 
 ```sh
-make help
-make deps
-make build-go
-make build-frontend
-make dev
-make dev-frontend
-make start
-make status
-make restart REBUILD=--rebuild
+bun install
+bun run build
+bun run lint:all
+bun run typecheck
+bun test
+bun run dev
+bun run dev:frontend
+omnillm status
+omnillm restart
+omnillm logs --follow
 ```
 
-这些 `make` 目标对 Linux 和 Windows 使用同一套 Bun 驱动流程。在 Windows 上，请使用已经把 `make` 加入 `PATH` 的 PowerShell 或命令提示符。所有依赖 Bun 的目标会在缺少依赖，或 `bun.lock` / `package.json` 发生变化时自动执行 `bun install`。
+Make 仅提供 `make build`、`make install`、`make uninstall`、
+`make build-desktop-sidecar`、`make build-desktop` 和 `make desktop-dev`。
+`make uninstall` 会从 Go 的二进制安装目录中删除已安装的 `omnillm`，
+以及遗留的 `omniproxy` 可执行文件。
 
 其中 `bun run omni` 是开发环境管理器，用来同时管理后端二进制和 Vite 服务，不等同于生产或发布时的运行方式。
 
@@ -311,8 +304,6 @@ OmniLLM 可以统一管理 Claude Code、Codex、Droid、OpenCode、AMP 等工�
 - `chat`
 - `logs`
 
-`omniproxy` 在代理语义下复用了相同的服务端流程。
-
 服务端二进制常用 `start` 参数：
 
 | 参数 | 默认值 | 用途 |
@@ -333,7 +324,6 @@ OmniLLM 可以统一管理 Claude Code、Codex、Droid、OpenCode、AMP 等工�
 | 路径 | 作用 |
 |---|---|
 | `main.go` | `omnillm` CLI 主入口 |
-| `cmd/omniproxy/` | proxy 形态入口 |
 | `internal/server/` | 服务启动、认证、管理 UI 注册 |
 | `internal/routes/` | OpenAI、Anthropic、Responses、admin、metering、chat、config、virtual model 路由处理 |
 | `internal/providers/` | 各提供商实现与适配器 |
@@ -359,7 +349,7 @@ OmniLLM 可以统一管理 Claude Code、Codex、Droid、OpenCode、AMP 等工�
 
 后端技术栈：
 
-- Go 1.25
+- Go 1.27
 - Gin
 - Cobra
 - zerolog

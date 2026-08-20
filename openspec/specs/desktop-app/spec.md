@@ -50,9 +50,33 @@ The WebView SHALL display loading state until backend information is available, 
 - **THEN** the WebView shows the error and a retry control without mounting the console
 
 ### Requirement: Sidecar output handling
-The desktop process SHALL continuously drain and log sidecar standard output, standard error, process errors, and termination events.
+
+The desktop process SHALL continuously drain and log `omnillm` sidecar
+standard output, standard error, process errors, and termination events.
 
 #### Scenario: Sidecar writes output
-- **WHEN** the child emits output on either pipe
+
+- **WHEN** the `omnillm` child emits output on either pipe
 - **THEN** the desktop process consumes it so the child cannot block on full pipes
+
+### Requirement: Desktop build orchestration
+
+The repository SHALL retain cross-platform Make targets for building the
+canonical `omnillm` sidecar, building the packaged desktop application, and
+running desktop development mode.
+
+#### Scenario: Sidecar build
+
+- **WHEN** a contributor runs `make build-desktop-sidecar`
+- **THEN** the platform-specific script builds `omnillm-<rust-host-triple>` in the Tauri binaries directory
+
+#### Scenario: Desktop package build
+
+- **WHEN** a contributor runs `make build-desktop`
+- **THEN** the sidecar is built before the Tauri package build runs
+
+#### Scenario: Desktop development
+
+- **WHEN** a contributor runs `make desktop-dev`
+- **THEN** the sidecar is built before Tauri development mode starts
 

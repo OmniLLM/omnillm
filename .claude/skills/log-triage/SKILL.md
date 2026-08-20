@@ -96,7 +96,7 @@ Only implement after the repository's OpenSpec proposal is validated and approve
 Verify:
 
 ```bash
-make lint && make typecheck && make test
+bun run lint:all && bun run typecheck && bun test
 ```
 
 ## 5. Report
