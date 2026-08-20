@@ -7,7 +7,7 @@
 
 - [x] 2.1 Add advanced CodeQL configuration using the `go.mod` toolchain.
 - [x] 2.2 Narrow the removed-binary documentation regression to active usage.
-- [ ] 2.3 Disable incompatible GitHub default CodeQL setup after pushing the workflow.
+- [x] 2.3 Disable incompatible GitHub default CodeQL setup after pushing the workflow.
 
 ## 3. Verification and Archive
 
