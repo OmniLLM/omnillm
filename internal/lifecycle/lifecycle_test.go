@@ -75,10 +75,19 @@ func TestProcessStateSurvivesExecutableReplacement(t *testing.T) {
 	temporaryDirectory := t.TempDir()
 	executable := filepath.Join(temporaryDirectory, "managed-server")
 	replacement := filepath.Join(temporaryDirectory, "replacement")
-	copyExecutable(t, "/bin/sleep", executable)
-	copyExecutable(t, "/bin/sleep", replacement)
+	testExecutable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("get test executable: %v", err)
+	}
+	copyExecutable(t, testExecutable, executable)
+	copyExecutable(t, testExecutable, replacement)
 
-	command := exec.Command(executable, "30")
+	command := exec.Command(executable, "-test.run=^TestLifecycleHelperProcess$")
+	command.Env = append(os.Environ(), "OMNILLM_LIFECYCLE_HELPER=1")
+	ready, err := command.StdoutPipe()
+	if err != nil {
+		t.Fatalf("open helper stdout: %v", err)
+	}
 	if err := command.Start(); err != nil {
 		t.Fatalf("start copied executable: %v", err)
 	}
@@ -86,6 +95,10 @@ func TestProcessStateSurvivesExecutableReplacement(t *testing.T) {
 		_ = command.Process.Kill()
 		_ = command.Wait()
 	})
+	buffer := make([]byte, 6)
+	if _, err := io.ReadFull(ready, buffer); err != nil {
+		t.Fatalf("wait for helper readiness: %v", err)
+	}
 
 	before, err := processState(command.Process.Pid)
 	if err != nil {
@@ -93,13 +106,6 @@ func TestProcessStateSurvivesExecutableReplacement(t *testing.T) {
 	}
 	if err := os.Rename(replacement, executable); err != nil {
 		t.Fatalf("replace executable: %v", err)
-	}
-	procExecutable, err := os.Readlink(filepath.Join("/proc", strconv.Itoa(command.Process.Pid), "exe"))
-	if err != nil {
-		t.Fatalf("read replaced proc executable: %v", err)
-	}
-	if !strings.HasSuffix(procExecutable, " (deleted)") {
-		t.Skipf("platform does not mark replaced executables deleted: %q", procExecutable)
 	}
 
 	after, err := processState(command.Process.Pid)
@@ -121,6 +127,17 @@ func TestProcessStateSurvivesExecutableReplacement(t *testing.T) {
 	if _, err := Read(path); err != nil {
 		t.Fatalf("read lifecycle after executable replacement: %v", err)
 	}
+}
+
+func TestLifecycleHelperProcess(t *testing.T) {
+	if os.Getenv("OMNILLM_LIFECYCLE_HELPER") != "1" {
+		return
+	}
+	if _, err := os.Stdout.Write([]byte("ready\n")); err != nil {
+		os.Exit(2)
+	}
+	time.Sleep(30 * time.Second)
+	os.Exit(0)
 }
 
 func copyExecutable(t *testing.T, source, destination string) {
