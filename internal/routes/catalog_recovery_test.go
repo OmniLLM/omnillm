@@ -16,6 +16,7 @@ type refreshCatalogProvider struct {
 }
 
 func (p *refreshCatalogProvider) GetInstanceID() string { return p.id }
+func (p *refreshCatalogProvider) GetName() string       { return p.id }
 func (p *refreshCatalogProvider) GetID() string         { return "catalog-test" }
 func (p *refreshCatalogProvider) GetModels() (*types.ModelsResponse, error) {
 	p.calls++
@@ -50,6 +51,11 @@ func TestAdminRefreshRepairsGenerationCatalog(t *testing.T) {
 }
 
 func TestCatalogLifecycleConfigAndTokens(t *testing.T) {
+	t.Cleanup(func() {
+		reg := registry.GetProviderRegistry()
+		_ = reg.Remove("catalog-mutations")
+		reg.WaitForPendingSaves()
+	})
 	p := &refreshCatalogProvider{id: "catalog-mutations", models: &types.ModelsResponse{Data: []types.Model{{ID: "old"}}}}
 	if err := database.NewProviderInstanceStore().Save(&database.ProviderInstanceRecord{InstanceID: p.id, ProviderID: p.GetID(), Name: p.id}); err != nil {
 		t.Fatal(err)

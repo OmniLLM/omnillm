@@ -38,6 +38,7 @@ import (
 	openaipkg "omnillm/internal/providers/openai"
 	openaicompatprovider "omnillm/internal/providers/openaicompatprovider"
 	"omnillm/internal/providers/types"
+	typesafepkg "omnillm/internal/providers/typesafe"
 	"omnillm/internal/registry"
 	"omnillm/internal/routes"
 )
@@ -377,6 +378,7 @@ func buildRouter(port int, apiKey string, chatOptions routes.ChatCompletionOptio
 	routes.SetupEmbeddingRoutes(v1)
 	routes.SetupMessageRoutes(v1)
 	routes.SetupResponseRoutes(v1)
+	routes.SetupSystemOneRoutes(v1)
 
 	// Admin routes
 	adminPublic := r.Group("/api/admin")
@@ -544,6 +546,12 @@ func registerDefaultProviders(reg *registry.ProviderRegistry, options StartOptio
 				provider = p
 			case "kimi":
 				p := kimipkg.NewProvider(inst.InstanceID, inst.Name)
+				if err := p.LoadFromDB(); err != nil {
+					log.Warn().Err(err).Str("instance", inst.InstanceID).Msg("Failed to load provider token")
+				}
+				provider = p
+			case "typesafe":
+				p := typesafepkg.NewProvider(inst.InstanceID, inst.Name)
 				if err := p.LoadFromDB(); err != nil {
 					log.Warn().Err(err).Str("instance", inst.InstanceID).Msg("Failed to load provider token")
 				}

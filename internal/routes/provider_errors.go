@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"omnillm/internal/systemone"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -74,6 +75,9 @@ func shouldFallbackToNonStreaming(err error) bool {
 }
 
 func providerFailureStatus(err error) int {
+	if errors.Is(err, systemone.ErrUnsupported) {
+		return http.StatusBadRequest
+	}
 	if isAuthenticationError(err) {
 		return http.StatusUnauthorized
 	}

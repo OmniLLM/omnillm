@@ -9,7 +9,7 @@ import (
 
 func TestCompatibilityProviderManifestMatchesDispatchDefaults(t *testing.T) {
 	for _, row := range testcompat.ProviderStrategies() {
-		if row.UpstreamShape == testcompat.ShapeClaude || row.UpstreamShape == testcompat.ShapeGemini ||
+		if row.UpstreamShape == testcompat.ShapeSystemOne || row.UpstreamShape == testcompat.ShapeClaude || row.UpstreamShape == testcompat.ShapeGemini ||
 			row.Provider == "github-copilot" || row.Provider == "openai-compatible" || row.Provider == "openai" {
 			// Dynamic and provider-native strategies are selected by their adapters.
 			continue

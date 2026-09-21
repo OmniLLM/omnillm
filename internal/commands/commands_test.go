@@ -35,7 +35,7 @@ func TestAuthCmdIsGenericProviderAuth(t *testing.T) {
 }
 
 func TestSupportedAuthProviderTypes(t *testing.T) {
-	expected := []string{"github-copilot", "openai-compatible", "alibaba", "azure-openai", "google", "antigravity", "openai", "kimi", "codex"}
+	expected := []string{"github-copilot", "openai-compatible", "alibaba", "azure-openai", "google", "antigravity", "openai", "kimi", "typesafe", "codex"}
 	if len(supportedAuthProviderTypes) != len(expected) {
 		t.Fatalf("supportedAuthProviderTypes length = %d, want %d", len(supportedAuthProviderTypes), len(expected))
 	}

@@ -7,6 +7,7 @@ type UpstreamShape string
 type StreamingStrategy string
 
 const (
+	ShapeSystemOne UpstreamShape = "systemone"
 	ShapeChat      UpstreamShape = "chat_completions"
 	ShapeResponses UpstreamShape = "responses"
 	ShapeClaude    UpstreamShape = "claude"
@@ -33,6 +34,9 @@ type ProviderStrategy struct {
 
 func ProviderStrategies() []ProviderStrategy {
 	return []ProviderStrategy{
+		{Name: "typesafe-systemone", Provider: providertypes.ProviderTypeSafe, Model: "jev-latest", UpstreamShape: ShapeSystemOne, StreamingStrategy: "unsupported",
+			Tools:     Capability{NotApplicableReason: "System One evaluates typed questions; native tool calls are unsupported"},
+			Streaming: Capability{NotApplicableReason: "System One returns a single JSON evaluation"}},
 		strategy("copilot-chat", providertypes.ProviderGitHubCopilot, "claude-opus-4.7", ShapeChat, StreamNative),
 		strategy("copilot-responses", providertypes.ProviderGitHubCopilot, "gpt-5.5", ShapeResponses, StreamNative),
 		strategy("copilot-claude-stream", providertypes.ProviderGitHubCopilot, "claude-opus-4.7", ShapeClaude, StreamNative),

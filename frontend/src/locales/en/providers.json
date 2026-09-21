@@ -48,5 +48,12 @@
     "followInstructions": "Follow the auth instructions above",
     "created": "Created {{name}}",
     "prioritiesUpdated": "Priorities updated"
+  },
+  "typesafe": {
+    "description": "Jev evaluates text and structured state with Noul, Choice, and Score through System One. Chat generation and native tool calls are unsupported.",
+    "apiKey": "TypeSafe API key",
+    "connect": "Connect TypeSafe",
+    "cancel": "Cancel",
+    "failed": "Unable to connect TypeSafe. Check your API key and try again."
   }
 }

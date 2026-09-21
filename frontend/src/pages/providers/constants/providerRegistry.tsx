@@ -8,6 +8,7 @@ export const PROVIDER_ACCENT: Record<string, string> = {
   "azure-openai": "#0078d4",
   google: "#4285f4",
   kimi: "#e040fb",
+  typesafe: "#6366f1",
   codex: "#6e40c9",
   openai: "#74aa9c",
   "openai-compatible": "#10b981",
@@ -109,6 +110,7 @@ export const TYPE_NAMES: Record<string, string> = {
   "azure-openai": "Azure OpenAI",
   google: "Google Gemini",
   kimi: "Kimi (Moonshot)",
+  typesafe: "TypeSafe",
   codex: "Codex",
   openai: "OpenAI (ChatGPT)",
 }
@@ -121,6 +123,7 @@ export const PROVIDER_TYPES = [
   "azure-openai",
   "google",
   "kimi",
+  "typesafe",
   "codex",
   "openai",
   "openai-compatible",

@@ -7,6 +7,7 @@ import (
 	"omnillm/internal/lib/catalogcache"
 	"omnillm/internal/providers/types"
 	"omnillm/internal/registry"
+	"omnillm/internal/systemone"
 	"sort"
 	"strings"
 	"time"
@@ -97,8 +98,27 @@ func SortProvidersByPriority(providers []types.Provider) []types.Provider {
 //
 //nolint:gocyclo // model resolution involves multiple fallback strategies
 func ResolveProvidersForModel(requestedModel, normalizedModel, providerID string, cache *ModelCache) (*ResolvedModelRoute, error) {
+	return resolveProvidersForOperation(requestedModel, normalizedModel, providerID, cache, false)
+}
+
+// ResolveEvaluationProviders applies the same identity and ordering rules to native evaluations.
+func ResolveEvaluationProviders(requestedModel, normalizedModel, providerID string, cache *ModelCache) (*ResolvedModelRoute, error) {
+	return resolveProvidersForOperation(requestedModel, normalizedModel, providerID, cache, true)
+}
+
+func resolveProvidersForOperation(requestedModel, normalizedModel, providerID string, cache *ModelCache, evaluation bool) (*ResolvedModelRoute, error) {
 	reg := registry.GetProviderRegistry()
-	activeProviders := reg.GetActiveProviders()
+	activeProviders := make([]types.Provider, 0)
+	for _, p := range reg.GetActiveProviders() {
+		_, native := p.(systemone.Evaluator)
+		if native != evaluation {
+			if p.GetInstanceID() == providerID && !evaluation {
+				return nil, systemone.ErrUnsupported
+			}
+			continue
+		}
+		activeProviders = append(activeProviders, p)
+	}
 
 	// If a specific provider is requested, filter to only that provider.
 	if providerID != "" {
@@ -119,6 +139,9 @@ func ResolveProvidersForModel(requestedModel, normalizedModel, providerID string
 	}
 
 	if len(activeProviders) == 0 {
+		if len(reg.GetActiveProviders()) > 0 {
+			return &ResolvedModelRoute{CandidateProviders: []types.Provider{}}, nil
+		}
 		return nil, fmt.Errorf("no active providers available")
 	}
 
