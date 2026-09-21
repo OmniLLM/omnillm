@@ -100,3 +100,11 @@ code changes. An unchanged `ace041d` checkout passed twenty focused repetitions
 and its full server suite; the initial failures were not reproduced there, so
 their cause remains unconfirmed. The PR must also pass remote CI before merging.
 The changed-file scan found no matches for the supplied TypeSafe credential.
+
+The first PR CI run exposed a missing persistence barrier in the TypeSafe test
+helper: requests and model-state writes could run before asynchronous provider
+registration reached the database, yielding a 404 or foreign-key failure. A
+50-repeat local System One run reproduced the foreign-key failure twice. Waiting
+for pending registry saves after test-provider activation made all 50 repetitions
+pass. This correction changes only the test setup and remains within the approved
+deterministic gateway/routing verification tasks.

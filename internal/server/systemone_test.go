@@ -55,6 +55,8 @@ func registerEvaluationStub(t *testing.T) *evaluationStub {
 	if _, err := reg.AddActive(p.id); err != nil {
 		t.Fatal(err)
 	}
+	// Requests and model-state writes depend on the persisted provider record.
+	reg.WaitForPendingSaves()
 	t.Cleanup(func() {
 		_ = reg.Remove(p.id)
 		reg.WaitForPendingSaves()
