@@ -17,6 +17,7 @@ const (
 	ProviderAzureOpenAI      ProviderID = "azure-openai"
 	ProviderGoogle           ProviderID = "google"
 	ProviderKimi             ProviderID = "kimi"
+	ProviderTypeSafe         ProviderID = "typesafe"
 	ProviderOpenAICompatible ProviderID = "openai-compatible"
 	ProviderModelScope       ProviderID = "alibaba-modelscope"
 	// ProviderCodex authenticates with an OpenAI platform API key.
@@ -35,6 +36,7 @@ func SupportedProviderIDs() []ProviderID {
 		ProviderAzureOpenAI,
 		ProviderGoogle,
 		ProviderKimi,
+		ProviderTypeSafe,
 		ProviderOpenAICompatible,
 		ProviderModelScope,
 		ProviderCodex,

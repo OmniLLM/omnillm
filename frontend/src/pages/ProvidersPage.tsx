@@ -1,6 +1,7 @@
-/* eslint-disable @typescript-eslint/no-unnecessary-condition,@typescript-eslint/no-floating-promises,no-nested-ternary,unicorn/consistent-function-scoping */
 import { Eye, EyeOff } from "lucide-react"
+/* eslint-disable @typescript-eslint/no-unnecessary-condition,@typescript-eslint/no-floating-promises,no-nested-ternary,unicorn/consistent-function-scoping */
 import { useCallback, useEffect, useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
 
 import {
   activateProvider,
@@ -45,6 +46,8 @@ import {
   PROVIDER_TYPES as PROVIDER_TYPE_IDS,
   TYPE_NAMES,
 } from "@/pages/providers/constants/providerRegistry"
+
+import { TypeSafeForm } from "../components/TypeSafeForm"
 
 const _log = createLogger("providers-page")
 
@@ -2834,6 +2837,7 @@ function ProviderCard({
   priorityIndex: number
   multiProvider: boolean
 }) {
+  const { t } = useTranslation("providers")
   const confirm = useConfirm()
   const [showAuthForm, setShowAuthForm] = useState(false)
   const [editingName, setEditingName] = useState(false)
@@ -3293,6 +3297,11 @@ function ProviderCard({
         </div>
       </div>
 
+      {provider.type === "typesafe" && (
+        <p style={{ padding: "0 18px", color: "var(--color-text-secondary)" }}>
+          {t("typesafe.description")}
+        </p>
+      )}
       {/* Auth form inlined */}
       {showAuthForm && (
         <div
@@ -3301,6 +3310,13 @@ function ProviderCard({
             padding: "0 18px 18px",
           }}
         >
+          {provider.type === "typesafe" && (
+            <TypeSafeForm
+              onSubmit={handleAuthSubmit}
+              onCancel={() => setShowAuthForm(false)}
+              submitting={false}
+            />
+          )}
           {provider.type === "alibaba" && (
             <AlibabaAuthForm
               onSubmit={handleAuthSubmit}
@@ -3707,6 +3723,7 @@ function AddProviderFlow({
             <AddFlowGoogleForm {...authFormProps} />
           )}
           {selectedType === "kimi" && <AddFlowKimiForm {...authFormProps} />}
+          {selectedType === "typesafe" && <TypeSafeForm {...authFormProps} />}
           {selectedType === "openai-compatible" && (
             <AddFlowOpenAICompatibleForm {...authFormProps} />
           )}
@@ -4744,6 +4761,7 @@ function AddFlowOpenAICompatibleForm({
 // ─── Add Provider Modal ───────────────────────────────────────────────────────
 
 const PROVIDER_TYPES = [
+  { id: "typesafe", name: "TypeSafe", desc: "Jev · System One" },
   {
     id: "github-copilot",
     name: "GitHub Copilot",

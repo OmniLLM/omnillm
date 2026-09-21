@@ -122,6 +122,9 @@ func handleModels(c *gin.Context) {
 			}
 			if model.Capabilities != nil {
 				openaiModel["capabilities"] = model.Capabilities
+				if model.Capabilities["generation"] == false {
+					openaiModel["api_shape"] = "systemone"
+				}
 			}
 			if model.Name != "" {
 				openaiModel["display_name"] = model.Name

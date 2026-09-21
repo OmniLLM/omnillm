@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access,@typescript-eslint/no-unnecessary-condition,@typescript-eslint/no-floating-promises,no-nested-ternary,@typescript-eslint/restrict-template-expressions */
 import {
   Send as SendIcon,
   Bot,
@@ -8,6 +7,7 @@ import {
   MessageSquare,
   Loader2,
 } from "lucide-react"
+/* eslint-disable @typescript-eslint/no-unsafe-member-access,@typescript-eslint/no-unnecessary-condition,@typescript-eslint/no-floating-promises,no-nested-ternary,@typescript-eslint/restrict-template-expressions */
 import { useEffect, useState, useRef, useCallback, useMemo } from "react"
 import ReactMarkdown from "react-markdown"
 
@@ -28,6 +28,8 @@ import {
 import { EmptyState } from "@/components/EmptyState"
 import { ModelCombobox } from "@/components/ModelCombobox"
 import { createLogger } from "@/lib/logger"
+
+import { isGenerationModel } from "../lib/models"
 
 const _log = createLogger("chat-page")
 
@@ -161,10 +163,7 @@ export function ChatPage({ showToast }: ChatPageProps) {
   const messagesContainerRef = useRef<HTMLDivElement>(null)
 
   const availableModels = useMemo(
-    () =>
-      models.filter(
-        (model) => !model.api_shape || model.api_shape === apiShape,
-      ),
+    () => models.filter((model) => isGenerationModel(model, apiShape)),
     [models, apiShape],
   )
 
@@ -178,8 +177,8 @@ export function ChatPage({ showToast }: ChatPageProps) {
         ])
         const loadedModels = modelsRes.data || []
         setModels(loadedModels)
-        const initialModels = loadedModels.filter(
-          (model) => !model.api_shape || model.api_shape === apiShape,
+        const initialModels = loadedModels.filter((model) =>
+          isGenerationModel(model, apiShape),
         )
         if (initialModels.length > 0) setSelectedModel(initialModels[0].id)
         setSessions(sessionsRes)

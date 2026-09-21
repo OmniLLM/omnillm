@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -35,6 +36,7 @@ var supportedAuthProviders = []authProviderOption{
 	{Type: "antigravity", Label: "Antigravity (Google OAuth)"},
 	{Type: "openai", Label: "OpenAI (ChatGPT OAuth)"},
 	{Type: "kimi", Label: "Kimi"},
+	{Type: "typesafe", Label: "TypeSafe (System One)"},
 	{Type: "codex", Label: "OpenAI Codex"},
 }
 
@@ -47,10 +49,11 @@ var supportedAuthProviderTypes = []string{
 	"antigravity",
 	"openai",
 	"kimi",
+	"typesafe",
 	"codex",
 }
 
-const supportedAuthProviderTypesSummary = "github-copilot, openai-compatible, alibaba, azure-openai, google, antigravity, openai, kimi, and codex"
+const supportedAuthProviderTypesSummary = "github-copilot, openai-compatible, alibaba, azure-openai, google, antigravity, openai, kimi, typesafe, and codex"
 
 var ProviderCmd = &cobra.Command{
 	Use:   "provider",
@@ -373,6 +376,7 @@ var providerAddCmd = &cobra.Command{
 	Long: `Add a new provider instance. Supported types:
   github-copilot    GitHub Copilot (device-code OAuth or --token)
   openai-compatible Any OpenAI-compatible API (requires --endpoint and --api-key)
+  typesafe          TypeSafe System One (API key or TYPESAFE_API_KEY)
   alibaba           Alibaba DashScope (requires --api-key; optional --region, --plan)
   azure-openai      Azure OpenAI (requires --api-key)
   google            Google AI (requires --api-key)
@@ -399,6 +403,19 @@ func selectProviderTypeInteractive() (string, error) {
 }
 
 func promptForProviderAuth(cmd *cobra.Command, providerType string) error {
+	if providerType == "typesafe" {
+		key, _ := cmd.Flags().GetString("api-key")
+		if strings.TrimSpace(key) == "" {
+			key = strings.TrimSpace(os.Getenv("TYPESAFE_API_KEY"))
+		}
+		if key != "" {
+			return cmd.Flags().Set("api-key", key)
+		}
+		yes, _ := cmd.Flags().GetBool("yes")
+		if yes || !IsTerminalWriter(cmd.OutOrStdout()) {
+			return fmt.Errorf("TypeSafe API key is required; set TYPESAFE_API_KEY or --api-key")
+		}
+	}
 	yes, _ := cmd.Flags().GetBool("yes")
 	if yes {
 		return nil
@@ -427,7 +444,7 @@ func promptForProviderAuth(cmd *cobra.Command, providerType string) error {
 			providerPromptField{FlagName: "client-id", Label: "Google OAuth Client ID", Required: true},
 			providerPromptField{FlagName: "client-secret", Label: "Google OAuth Client Secret", Secret: true, Required: true},
 		)
-	case "google", "kimi", "codex":
+	case "google", "kimi", "codex", "typesafe":
 		return promptForMissingFields(cmd,
 			providerPromptField{FlagName: "api-key", Label: "API key", Secret: true, Required: true},
 		)

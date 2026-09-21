@@ -22,6 +22,7 @@ import (
 	openaipkg "omnillm/internal/providers/openai"
 	openaicompatprovider "omnillm/internal/providers/openaicompatprovider"
 	"omnillm/internal/providers/types"
+	typesafepkg "omnillm/internal/providers/typesafe"
 	"omnillm/internal/registry"
 	ghservice "omnillm/internal/services/github"
 )
@@ -578,6 +579,39 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 	case "kimi":
 		instanceID := providerRegistry.NextInstanceID(providerType)
 		prov := kimipkg.NewProvider(instanceID, "")
+
+		if err := createProvider(prov, func() error {
+			if err := prov.SetupAuth(&req); err != nil {
+				return fmt.Errorf("authentication failed: %w", err)
+			}
+			if err := providerRegistry.Register(prov, true); err != nil {
+				return fmt.Errorf("register provider: %w", err)
+			}
+			return nil
+		}); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": err.Error(),
+			})
+			return
+		}
+
+		log.Info().Str("type", providerType).Str("instance_id", prov.GetInstanceID()).Str("name", prov.GetName()).Msg("Auth-and-create: provider registered")
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"provider": gin.H{
+				"id":         prov.GetInstanceID(),
+				"type":       prov.GetID(),
+				"name":       prov.GetName(),
+				"isActive":   false,
+				"authStatus": "authenticated",
+			},
+		})
+
+	case "typesafe":
+		instanceID := providerRegistry.NextInstanceID(providerType)
+		prov := typesafepkg.NewProvider(instanceID, "")
 
 		if err := createProvider(prov, func() error {
 			if err := prov.SetupAuth(&req); err != nil {

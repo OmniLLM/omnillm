@@ -1,0 +1,42 @@
+{
+  "gateway_port": 53824,
+  "model": "gpt-6-astra",
+  "clients": [
+    {
+      "client": "codex",
+      "calls": 5,
+      "results": 5,
+      "sequential": true,
+      "matching_ids": true,
+      "terminal": "TYPESAFE_CLIENT_OK",
+      "exit": 0
+    },
+    {
+      "client": "claude",
+      "calls": 5,
+      "results": 5,
+      "sequential": true,
+      "matching_ids": true,
+      "terminal": "TYPESAFE_CLIENT_OK",
+      "exit": 0
+    },
+    {
+      "client": "droid",
+      "calls": 5,
+      "results": 5,
+      "sequential": true,
+      "matching_ids": true,
+      "terminal": "TYPESAFE_CLIENT_OK",
+      "exit": 0
+    },
+    {
+      "client": "copilot",
+      "calls": 5,
+      "results": 5,
+      "sequential": true,
+      "matching_ids": true,
+      "terminal": "TYPESAFE_CLIENT_OK",
+      "exit": 0
+    }
+  ]
+}

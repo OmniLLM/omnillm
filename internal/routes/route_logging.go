@@ -1,8 +1,10 @@
 package routes
 
 import (
+	"errors"
 	"net/http"
 	"omnillm/internal/cif"
+	"omnillm/internal/systemone"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
@@ -73,6 +75,9 @@ func writeProviderFailure(c *gin.Context, defaultType string, lastErr error) {
 	}
 
 	errMsg := "All providers failed"
+	if errors.Is(lastErr, systemone.ErrUnsupported) {
+		errMsg = systemone.ErrUnsupported.Error()
+	}
 	if lastErr != nil {
 		log.Error().Err(lastErr).
 			Str("request_id", c.GetString("request_id")).

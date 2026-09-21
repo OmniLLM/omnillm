@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"omnillm/internal/cif"
 	"omnillm/internal/lib/modelrouting"
+	"omnillm/internal/systemone"
 )
 
 type CandidateHandler func(candidate *Candidate, providerID string) error
@@ -60,6 +61,11 @@ func (e *Executor) TryAttempts(attempts []Attempt, request *cif.CanonicalRequest
 		}
 		prepared, err := e.PrepareCandidates(attempt, request, cache, resolve)
 		if err != nil {
+			if errors.Is(err, systemone.ErrUnsupported) {
+				lastErr = err
+				previousUnavailable = true
+				continue
+			}
 			if onError != nil {
 				onError(attempt, err)
 			}

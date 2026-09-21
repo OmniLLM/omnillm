@@ -48,5 +48,12 @@
     "followInstructions": "按照上方的身份验证说明操作",
     "created": "已创建 {{name}}",
     "prioritiesUpdated": "优先级已更新"
+  },
+  "typesafe": {
+    "description": "Jev 通过 System One 使用 Noul、Choice 和 Score 评估文本及结构化状态。不支持聊天生成或原生工具调用。",
+    "apiKey": "TypeSafe API 密钥",
+    "connect": "连接 TypeSafe",
+    "cancel": "取消",
+    "failed": "无法连接 TypeSafe，请检查 API 密钥后重试。"
   }
 }

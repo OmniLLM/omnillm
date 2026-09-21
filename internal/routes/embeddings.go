@@ -2,7 +2,9 @@ package routes
 
 import (
 	"net/http"
+	"omnillm/internal/lib/modelrouting"
 	"omnillm/internal/registry"
+	"omnillm/internal/systemone"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -38,8 +40,23 @@ func handleEmbeddings(c *gin.Context) {
 		return
 	}
 
+	if model, ok := payload["model"].(string); ok {
+		prefix, _ := modelrouting.ParseProviderPrefix(model)
+		if id, ok := lookupProviderPrefix(prefix); ok {
+			for _, p := range activeProviders {
+				if p.GetInstanceID() == id && p.GetID() == "typesafe" {
+					c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"message": systemone.ErrUnsupported.Error(), "type": "unsupported_capability"}})
+					return
+				}
+			}
+		}
+	}
 	var lastErr error
 	for _, provider := range activeProviders {
+		if provider.GetID() == "typesafe" {
+			lastErr = systemone.ErrUnsupported
+			continue
+		}
 		result, err := provider.CreateEmbeddings(payload)
 		if err != nil {
 			lastErr = err

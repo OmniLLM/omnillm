@@ -92,6 +92,7 @@ export interface Model {
 }
 
 export interface ModelInfo {
+  capabilities?: Record<string, unknown>
   id: string
   display_name?: string
   name?: string

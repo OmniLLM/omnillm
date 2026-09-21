@@ -33,7 +33,7 @@ var providerLoginFlows = struct {
 var supportedProviderLoginTypes = map[string]struct{}{
 	"github-copilot": {}, "openai-compatible": {}, "alibaba": {},
 	"azure-openai": {}, "google": {}, "antigravity": {}, "openai": {},
-	"kimi": {}, "codex": {}, "modelscope": {},
+	"kimi": {}, "typesafe": {}, "codex": {}, "modelscope": {},
 }
 
 func newProviderLoginFlow(flow providerLoginFlow) (string, error) {

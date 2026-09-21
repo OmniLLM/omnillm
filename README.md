@@ -268,6 +268,7 @@ The current codebase supports these provider families in user-facing flows:
 | Azure OpenAI | API key | Configurable endpoint and deployment-based models |
 | Google | API key | Generic Google provider |
 | Kimi | API key | Generic Kimi provider |
+| TypeSafe | API key | Native System One typed evaluations; no chat generation |
 | Codex | API key | OpenAI Codex provider integration |
 | OpenAI (ChatGPT) | ChatGPT OAuth (PKCE) | Browser sign-in; uses a ChatGPT subscription instead of an API key |
 | Antigravity | Google OAuth | Onboarded through the admin OAuth flow |
@@ -480,3 +481,77 @@ Useful docs in this repo:
 - [docs/CONFIG_TEMPLATES.md](docs/CONFIG_TEMPLATES.md)
 
 The `docs/` directory also contains a detailed history of critical provider, routing, streaming, and compatibility changes.
+
+### TypeSafe System One evaluations
+
+TypeSafe Jev returns typed judgments and probabilities using Noul, Choice, and
+Score questions. Register a TypeSafe account using an exported environment key:
+
+```bash
+set -a
+source ~/.config/typesafe/env
+set +a
+omnillm provider login --new typesafe
+omnillm provider activate <instance-id>
+```
+
+`TYPESAFE_API_KEY` supplies the upstream key; an explicit provider `--api-key`
+flag takes precedence. `OMNILLM_API_KEY` remains the gateway/admin credential.
+OmniLLM does not automatically source credential files. TypeSafe can also be
+added or re-authenticated from Providers in the admin console.
+
+Send native evaluation JSON to `/v1/systemone`, authenticated with your OmniLLM
+key. For example, with `OMNILLM_SERVER` and `OMNILLM_API_KEY` set:
+
+```python
+import json
+import os
+import urllib.request
+
+payload = {
+    "model": "jev-latest",
+    "state": {"message": "Please refund the duplicate charge."},
+    "questions": {
+        "refund": {"type": "noul", "instructions": "Is a refund requested?"},
+        "team": {
+            "type": "choice",
+            "instructions": "Which team should handle this?",
+            "criteria": {"billing": "Payment issues", "technical": "Software faults"},
+        },
+        "urgency": {
+            "type": "score",
+            "instructions": "How urgent is this request?",
+            "criteria": ["Routine", "Time-sensitive", "Immediate action needed"],
+        },
+    },
+}
+request = urllib.request.Request(
+    os.environ.get("OMNILLM_SERVER", "http://127.0.0.1:5000") + "/v1/systemone",
+    data=json.dumps(payload).encode(),
+    headers={
+        "Authorization": "Bearer " + os.environ["OMNILLM_API_KEY"],
+        "Content-Type": "application/json",
+    },
+)
+with urllib.request.urlopen(request, timeout=120) as response:
+    print(json.load(response))
+```
+
+The response preserves `model`, typed `answers`, probabilities, confidence, and
+`usage`. `/v1/models` discovers TypeSafe aliases and marks them with
+`api_shape: "systemone"`. Use `<instance-id-or-alias>/jev-latest` to select an
+account or `<instance-id-or-alias>/jev-1.13.0` to pin an upstream version.
+Evaluations appear in Metering with API shape `systemone` and bypass the
+exact-response cache.
+
+Jev does not support chat generation, streaming, embeddings, or native coding-agent
+tool loops. Those requests return an unsupported-capability error when explicitly
+routed to TypeSafe. Each eligible TypeSafe account is attempted at most once per
+request; callers should apply bounded exponential backoff for HTTP 429/529 and
+honor `Retry-After` when present.
+
+Run the isolated, credential-gated smoke after exporting the key:
+
+```bash
+OMNILLM_TYPESAFE_LIVE=1 go test ./internal/server -run '^TestTypeSafeLiveSmoke$' -v
+```

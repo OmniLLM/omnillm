@@ -1053,6 +1053,7 @@ export function MeteringPage({
               >
                 <option value="">{t("filters.all")}</option>
                 <option value="openai">openai</option>
+                <option value="systemone">systemone</option>
                 <option value="anthropic">anthropic</option>
                 <option value="responses">responses</option>
               </select>
