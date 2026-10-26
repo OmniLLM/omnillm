@@ -33,7 +33,7 @@ func handleResponses(c *gin.Context) {
 	body, err := readGatewayRequestBody(c.Request.Body)
 	if err != nil {
 		status, message := gatewayRequestBodyError(err)
-		log.Error().Err(err).Str("request_id", requestIDStr).Msg("Failed to read request body")
+		logRequestBodyFailure(c, "responses", err)
 		c.JSON(status, gin.H{
 			"error": gin.H{
 				"message": message,

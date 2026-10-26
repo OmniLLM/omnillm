@@ -20,6 +20,7 @@ func handleSystemOne(c *gin.Context) {
 	body, err := readGatewayRequestBody(c.Request.Body)
 	if err != nil {
 		status, message := gatewayRequestBodyError(err)
+		logRequestBodyFailure(c, "systemone", err)
 		writeSystemOneError(c, status, message)
 		return
 	}

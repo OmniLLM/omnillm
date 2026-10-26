@@ -312,7 +312,7 @@ func buildRouter(port int, apiKey string, chatOptions routes.ChatCompletionOptio
 
 		requestLogger.Info().
 			Str("method", c.Request.Method).
-			Str("path", c.Request.RequestURI).
+			Str("path", c.Request.URL.Path).
 			Int("status", status).
 			Int64("latency_ms", latencyMs).
 			Msg("HTTP")
