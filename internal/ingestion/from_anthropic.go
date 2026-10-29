@@ -440,7 +440,37 @@ func normalizeSchemaValue(value interface{}) interface{} {
 			if key == "$schema" || key == "patternProperties" {
 				continue
 			}
-			result[key] = normalizeSchemaValue(item)
+			switch key {
+			case "properties", "$defs", "definitions", "dependentSchemas", "dependencies":
+				if entries, ok := item.(map[string]interface{}); ok {
+					children := make(map[string]interface{}, len(entries))
+					for name, child := range entries {
+						children[name] = normalizeSchemaValue(child)
+					}
+					result[key] = children
+				} else {
+					result[key] = cloneSchemaValue(item)
+				}
+			case "items", "additionalItems", "additionalProperties", "unevaluatedItems", "unevaluatedProperties",
+				"contains", "propertyNames", "not", "if", "then", "else", "contentSchema",
+				"allOf", "anyOf", "oneOf", "prefixItems":
+				result[key] = normalizeSchemaValue(item)
+			default:
+				result[key] = cloneSchemaValue(item)
+			}
+		}
+
+		// Draft-07 tuples permit trailing items unless additionalItems constrains
+		// them. Draft 2020-12 expresses those same rules with prefixItems/items.
+		if tuple, ok := result["items"].([]interface{}); ok {
+			if _, modern := result["prefixItems"]; !modern {
+				result["prefixItems"] = tuple
+				delete(result, "items")
+				if trailing, present := result["additionalItems"]; present {
+					result["items"] = trailing
+					delete(result, "additionalItems")
+				}
+			}
 		}
 
 		if nullable, ok := result["nullable"].(bool); ok && nullable {
@@ -467,6 +497,26 @@ func normalizeSchemaValue(value interface{}) interface{} {
 		result := make([]interface{}, 0, len(typed))
 		for _, item := range typed {
 			result = append(result, normalizeSchemaValue(item))
+		}
+		return result
+	default:
+		return value
+	}
+}
+
+// Literal JSON values may contain schema-like keys without being schemas.
+func cloneSchemaValue(value interface{}) interface{} {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		result := make(map[string]interface{}, len(typed))
+		for key, item := range typed {
+			result[key] = cloneSchemaValue(item)
+		}
+		return result
+	case []interface{}:
+		result := make([]interface{}, len(typed))
+		for index, item := range typed {
+			result[index] = cloneSchemaValue(item)
 		}
 		return result
 	default:
