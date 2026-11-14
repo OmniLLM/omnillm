@@ -27,6 +27,16 @@ type Client struct {
 	stderr     io.Writer
 }
 
+type serverResponseError struct {
+	status  int
+	code    string
+	message string
+}
+
+func (e *serverResponseError) Error() string {
+	return fmt.Sprintf("server error (%d): %s", e.status, e.code)
+}
+
 // NewClient builds a Client from cobra persistent flags and environment variables.
 func NewClient(cmd *cobra.Command) *Client {
 	server := os.Getenv("OMNILLM_SERVER")
@@ -125,7 +135,8 @@ func (c *Client) do(method, path string, bodyObj any) ([]byte, error) {
 		var errResp map[string]interface{}
 		if jsonErr := json.Unmarshal(data, &errResp); jsonErr == nil {
 			if msg, ok := errResp["error"].(string); ok {
-				return nil, fmt.Errorf("server error (%d): %s", resp.StatusCode, msg)
+				message, _ := errResp["message"].(string)
+				return nil, &serverResponseError{status: resp.StatusCode, code: msg, message: message}
 			}
 			if msg, ok := errResp["message"].(string); ok {
 				return nil, fmt.Errorf("server error (%d): %s", resp.StatusCode, msg)

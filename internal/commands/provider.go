@@ -69,6 +69,7 @@ func init() {
 
 	// provider list
 	ProviderCmd.AddCommand(providerListCmd)
+	ProviderCmd.AddCommand(providerShowCmd)
 
 	// provider add
 	addProviderAuthFlags(providerAddCmd)
@@ -106,7 +107,7 @@ func init() {
 
 	for _, sub := range []*cobra.Command{
 		providerDeleteCmd, providerActivateCmd, providerDeactivateCmd,
-		providerSwitchCmd, providerRenameCmd, providerUsageCmd,
+		providerSwitchCmd, providerRenameCmd, providerUsageCmd, providerShowCmd,
 	} {
 		sub.ValidArgsFunction = providerIDCompletionFunc
 	}

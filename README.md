@@ -350,11 +350,18 @@ omnillm provider login my-google --api-key "$GOOGLE_API_KEY"
 omnillm provider rename google-instance-id --alias my-google
 omnillm provider model list my-google
 omnillm provider model refresh "Google Production"
+
+# Inspect a provider or an exact model ID (including IDs with slashes).
+omnillm provider show my-google
+omnillm provider model show my-google vendor/model
+omnillm provider model show my-google vendor/model --output json
 ```
 
 Without `--new`, `provider login <type-or-provider>` re-authenticates the referenced provider when it exists; otherwise a supported provider type starts new-provider authentication. Use `--new <type>` when you explicitly want another instance of that provider type.
 
 Provider arguments use the same deterministic lookup as model routing: exact instance ID first, then unique case-insensitive alias, then unique case-insensitive display name. Ambiguous aliases or names fail and identify the matching instance IDs. The former root `auth`, root `model`, and `provider add` forms remain accepted as hidden deprecated compatibility commands for existing automation.
+
+Both `show` commands support table output (the default) and `--output json` for a single detail object. Provider details deliberately omit configuration and credentials; model details reflect the available provider catalog, which may be cached.
 
 New provider instances receive a fixed-length UUID; existing IDs remain unchanged. In the Providers page, select **Edit ID** to change an instance ID. IDs may contain 1–64 ASCII letters, digits, periods, underscores, and hyphens, and must start with a letter or digit. The authenticated API also accepts `PATCH /api/admin/providers/<current-id>/identity` with `{"new_id":"custom-id"}`. If the provider is in use, retry after its requests or authentication finish.
 

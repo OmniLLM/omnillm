@@ -311,6 +311,17 @@ OmniLLM 可以统一管理 Claude Code、Codex、Droid、OpenCode、AMP 等工�
 - `chat`
 - `logs`
 
+查看单个提供商或模型的详细信息：
+
+```sh
+omnillm provider show my-google
+omnillm provider model show my-google vendor/model
+omnillm provider model show my-google vendor/model --output json
+```
+
+提供商参数支持实例 ID、别名或显示名称；模型 ID 精确匹配，支持斜杠。
+`show` 默认输出表格，`--output json` 返回单个详情对象。提供商详情不会输出配置或凭据；模型详情取自当前可用的提供商目录，可能来自缓存。
+
 服务端二进制常用 `start` 参数：
 
 | 参数 | 默认值 | 用途 |

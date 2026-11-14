@@ -1,0 +1,45 @@
+## MODIFIED Requirements
+
+### Requirement: Output formats
+Read operations SHALL support table and JSON output, default to table, and return raw server JSON when JSON is selected, except that the provider and model show commands SHALL return the selected detail object as specified by their inspection requirement.
+
+#### Scenario: JSON output selected
+- **WHEN** an operator uses `--output json` with a read operation other than provider or model show
+- **THEN** the CLI prints the server JSON without table rendering
+
+## ADDED Requirements
+
+### Requirement: Provider and model detail inspection
+The CLI SHALL provide `omnillm provider show <reference>` and `omnillm provider model show <reference> <model-id>` to inspect one configured provider or one of its catalog models. Provider references SHALL use exact instance ID, then unique case-insensitive alias, then unique case-insensitive display name, consistent with provider reference resolution. Model IDs SHALL match exactly, including embedded slashes. Both commands SHALL support table and JSON output. Provider details SHALL include the available ID, type, name, alias, authentication status, activation status, and model counts. Model details SHALL include available ID, name, enablement, description, token limits, and capabilities. The provider show command MUST omit configuration and unknown fields from both output formats so that credential material in those fields is not exposed.
+
+#### Scenario: Show provider by alias
+- **WHEN** an operator invokes `omnillm provider show` with a unique alias
+- **THEN** the CLI displays the matching provider's safe identity and status fields
+
+#### Scenario: Reference precedence
+- **WHEN** an exact instance ID and another provider's alias or name match the supplied reference
+- **THEN** the exact instance is shown
+
+#### Scenario: Ambiguous provider reference
+- **WHEN** the highest-precedence matching alias or display name belongs to multiple providers
+- **THEN** the command fails without choosing a provider and identifies the matching instance IDs
+
+#### Scenario: Show a namespaced model
+- **WHEN** an operator invokes `omnillm provider model show` with a provider reference and an exact model ID containing slashes
+- **THEN** the CLI displays that model's available catalog details without interpreting the slash as a provider boundary
+
+#### Scenario: Show JSON
+- **WHEN** an operator selects `--output json` for either show command
+- **THEN** the CLI prints one selected detail object rather than the list response; provider output contains only the approved safe fields
+
+#### Scenario: Missing provider or model
+- **WHEN** the requested provider or exact model ID does not exist
+- **THEN** the command returns a non-success result and an actionable not-found error
+
+#### Scenario: Provider configuration contains secrets
+- **WHEN** a provider list entry contains credential material in configuration or unknown fields
+- **THEN** neither table nor JSON provider show output contains those fields or their values
+
+#### Scenario: Existing model command compatibility
+- **WHEN** an operator invokes the hidden legacy root form `omnillm model show <reference> <model-id>`
+- **THEN** it performs the same inspection as `omnillm provider model show`
