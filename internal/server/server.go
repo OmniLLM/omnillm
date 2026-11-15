@@ -18,6 +18,7 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -574,8 +575,33 @@ func registerDefaultProviders(reg *registry.ProviderRegistry, options StartOptio
 		return nil
 	}
 
-	// No saved providers - register default
-	copilotProvider := copilot.NewGitHubCopilotProvider("github-copilot-1", "")
+	// No saved providers - reserve a random identity for the default instance.
+	var defaultID string
+	for range 16 {
+		id, err := uuid.NewRandom()
+		if err != nil {
+			return fmt.Errorf("generate default provider id: %w", err)
+		}
+		candidate := id.String()
+		if reg.IsRegistered(candidate) {
+			continue
+		}
+		created, err := instanceStore.Create(&database.ProviderInstanceRecord{
+			InstanceID: candidate,
+			ProviderID: string(types.ProviderGitHubCopilot),
+		})
+		if err != nil {
+			return fmt.Errorf("reserve default provider id: %w", err)
+		}
+		if created {
+			defaultID = candidate
+			break
+		}
+	}
+	if defaultID == "" {
+		return fmt.Errorf("unable to reserve a unique default provider id")
+	}
+	copilotProvider := copilot.NewGitHubCopilotProvider(defaultID, "")
 
 	// Try loading token from DB
 	copilotProvider.LoadFromDB()
@@ -587,12 +613,15 @@ func registerDefaultProviders(reg *registry.ProviderRegistry, options StartOptio
 		}
 	}
 
-	if err := reg.Register(copilotProvider, false); err != nil {
+	if err := reg.RegisterNew(copilotProvider, false); err != nil {
+		if cleanupErr := instanceStore.Delete(defaultID); cleanupErr != nil {
+			return fmt.Errorf("register default provider: %w; cleanup: %v", err, cleanupErr)
+		}
 		return fmt.Errorf("failed to register GitHub Copilot provider: %w", err)
 	}
 
 	// Always set copilot as active
-	if _, err := reg.SetActive("github-copilot-1"); err != nil {
+	if _, err := reg.SetActive(defaultID); err != nil {
 		log.Warn().Err(err).Msg("Failed to set GitHub Copilot as active provider")
 	}
 

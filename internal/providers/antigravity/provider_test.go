@@ -53,9 +53,11 @@ func TestGetModels(t *testing.T) {
 }
 
 func TestStreamBuildsConservativeGeminiPayload(t *testing.T) {
+	var gotAgent string
 	var gotBody []byte
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var err error
+		gotAgent = r.Header.Get("User-Agent")
 		gotBody, err = io.ReadAll(r.Body)
 		if err != nil {
 			t.Fatalf("read request body: %v", err)
@@ -67,8 +69,8 @@ func TestStreamBuildsConservativeGeminiPayload(t *testing.T) {
 
 	maxTokens := 128
 	request := &cif.CanonicalRequest{
-		Model:    "claude-sonnet-4-6",
-		Messages: []cif.CIFMessage{cif.CIFUserMessage{Role: "user", Content: []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: "ping"}}}},
+		Model:     "claude-sonnet-4-6",
+		Messages:  []cif.CIFMessage{cif.CIFUserMessage{Role: "user", Content: []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: "ping"}}}},
 		MaxTokens: &maxTokens,
 		Tools: []cif.CIFTool{{
 			Name: "Read",
@@ -85,6 +87,12 @@ func TestStreamBuildsConservativeGeminiPayload(t *testing.T) {
 	var payload map[string]interface{}
 	if err := json.Unmarshal(gotBody, &payload); err != nil {
 		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if gotAgent != "antigravity/2.6.0" || payload["userAgent"] != gotAgent {
+		t.Fatalf("client identity mismatch: header=%q body=%v", gotAgent, payload["userAgent"])
+	}
+	if payload["model"] != request.Model {
+		t.Fatal("model changed")
 	}
 	requestMap, ok := payload["request"].(map[string]interface{})
 	if !ok {
@@ -111,6 +119,9 @@ func TestStreamBuildsConservativeGeminiPayload(t *testing.T) {
 	}
 	if _, ok := decl["parameters"]; ok {
 		t.Fatal("expected nil tool schema to omit parameters field")
+	}
+	if _, ok := decl["parametersJsonSchema"]; ok {
+		t.Fatal("expected nil tool schema to omit parametersJsonSchema field")
 	}
 	if decl["name"] != "Read" {
 		t.Fatalf("unexpected tool name: %#v", decl["name"])

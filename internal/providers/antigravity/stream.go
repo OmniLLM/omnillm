@@ -25,6 +25,7 @@ func ParseAntigravitySSE(ctx context.Context, body io.ReadCloser, eventCh chan c
 	scanner.Buffer(make([]byte, 0, 4*1024), 4*1024*1024)
 
 	var streamStartSent bool
+	var toolCallsEmitted bool
 	var textIndex int
 	toolCallIndex := 1000
 
@@ -81,14 +82,19 @@ func ParseAntigravitySSE(ctx context.Context, body io.ReadCloser, eventCh chan c
 				}
 			} else if fcMap, ok := part["functionCall"].(map[string]interface{}); ok {
 				name, _ := fcMap["name"].(string)
+				id, _ := fcMap["id"].(string)
+				if id == "" {
+					id = fmt.Sprintf("call_%s", shared.RandomID())
+				}
 				args := shared.NormalizeToolArguments(fcMap["args"])
 				argsJSON, _ := json.Marshal(args)
+				toolCallsEmitted = true
 				eventCh <- cif.CIFContentDelta{
 					Type:  "content_delta",
 					Index: toolCallIndex,
 					ContentBlock: cif.CIFToolCallPart{
 						Type:          "tool_call",
-						ToolCallID:    fmt.Sprintf("call_%s", shared.RandomID()),
+						ToolCallID:    id,
 						ToolName:      name,
 						ToolArguments: args,
 					},
@@ -103,9 +109,13 @@ func ParseAntigravitySSE(ctx context.Context, body io.ReadCloser, eventCh chan c
 
 		if candidate.FinishReason != "" && candidate.FinishReason != "FINISH_REASON_UNSPECIFIED" {
 			usage := envelope.Response.UsageMetadata
+			reason := StopReason(candidate.FinishReason)
+			if toolCallsEmitted {
+				reason = cif.StopReasonToolUse
+			}
 			eventCh <- cif.CIFStreamEnd{
 				Type:       "stream_end",
-				StopReason: StopReason(candidate.FinishReason),
+				StopReason: reason,
 				Usage:      cif.UsageFromTotal(usage.PromptTokenCount, usage.CandidatesTokenCount, usage.CachedContentTokenCount),
 			}
 			return
@@ -121,7 +131,11 @@ func ParseAntigravitySSE(ctx context.Context, body io.ReadCloser, eventCh chan c
 	}
 
 	if streamStartSent {
-		eventCh <- cif.CIFStreamEnd{Type: "stream_end", StopReason: cif.StopReasonEndTurn}
+		reason := cif.StopReasonEndTurn
+		if toolCallsEmitted {
+			reason = cif.StopReasonToolUse
+		}
+		eventCh <- cif.CIFStreamEnd{Type: "stream_end", StopReason: reason}
 	}
 }
 

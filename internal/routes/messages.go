@@ -114,6 +114,12 @@ func handleMessages(c *gin.Context) {
 		}
 	}
 
+	providers, releaseProviders, ok := borrowModelProviders(c)
+	if !ok {
+		return
+	}
+	defer releaseProviders()
+
 	var resolveStart time.Time
 	if log.Logger.GetLevel() <= zerolog.DebugLevel {
 		resolveStart = time.Now()
@@ -130,7 +136,7 @@ func handleMessages(c *gin.Context) {
 		toDispatchAttempts(attempts),
 		canonicalRequest,
 		modelCache,
-		modelrouting.ResolveProvidersForModel,
+		modelrouting.ProviderResolver(providers),
 		nil,
 		func(attempt providerdispatch.Attempt, err error) {
 			resolveFailed = true

@@ -3,6 +3,7 @@ package routes
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -31,7 +32,12 @@ import (
 
 func handleGetProviders(c *gin.Context) {
 	providerRegistry := registry.GetProviderRegistry()
-	providers := providerRegistry.ListProviders()
+	providers, releaseProviders, err := providerRegistry.BorrowProviders()
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Provider identity is being updated; retry the request"})
+		return
+	}
+	defer releaseProviders()
 
 	providerList := make([]map[string]interface{}, len(providers))
 	instanceStore := database.NewProviderInstanceStore()
@@ -116,6 +122,12 @@ func handleSwitchProvider(c *gin.Context) {
 	providerID = resolvedID
 
 	providerRegistry := registry.GetProviderRegistry()
+	_, releaseProvider, err := providerRegistry.BorrowProvider(providerID)
+	if err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "Provider is unavailable or busy. Please retry."})
+		return
+	}
+	defer releaseProvider()
 	provider, err := providerRegistry.SetActive(providerID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
@@ -147,8 +159,6 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 		return
 	}
 
-	providerRegistry := registry.GetProviderRegistry()
-
 	// Cancel any existing active auth flow before starting a new one to prevent
 	// concurrent goroutines from corrupting the singleton activeAuthFlow state.
 	activeAuthFlowMu.Lock()
@@ -160,6 +170,22 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 		activeAuthFlow = nil
 	}
 	activeAuthFlowMu.Unlock()
+
+	var reservation *providerInstanceReservation
+	switch providerType {
+	case "alibaba", "alibaba-modelscope", "github-copilot", "codex", "azure-openai", "google", "kimi", "typesafe", "openai-compatible":
+		var err error
+		reservation, err = reserveRandomProvider(providerType)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "Failed to reserve a provider ID"})
+			return
+		}
+	}
+	defer func() {
+		if reservation != nil {
+			cleanupProviderReservation(reservation)
+		}
+	}()
 
 	switch providerType {
 
@@ -173,36 +199,10 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 			return
 		}
 
-		// API-key path — build provider with a canonical ID derived from the
-		// API key fields before persisting it.
-		suffix := req.APIKey
-		if len(suffix) > 6 {
-			suffix = suffix[len(suffix)-6:]
-		}
-
-		plan := strings.ToLower(strings.TrimSpace(req.Plan))
-		switch plan {
-		case "", "standard":
-			plan = "standard"
-		case "coding", "coding_plan", "coding-plan":
-			plan = "coding-plan"
-		default:
-			plan = "standard"
-		}
-		region := req.Region
-		if region == "" {
-			region = "global"
-		}
-		planSlug := strings.ReplaceAll(plan, "-plan", "")
-		canonicalID := "alibaba-" + planSlug + "-" + region + "-" + suffix
-
-		prov := alibabapkg.NewProvider(canonicalID, "")
-		if err := createProvider(prov, func() error {
+		prov := alibabapkg.NewProvider(reservation.instanceID, "")
+		if err := createReservedProvider(reservation, prov, func() error {
 			if err := prov.SetupAuth(&req); err != nil {
 				return fmt.Errorf("authentication failed: %w", err)
-			}
-			if err := providerRegistry.Register(prov, true); err != nil {
-				return fmt.Errorf("register provider: %w", err)
 			}
 			return nil
 		}); err != nil {
@@ -236,19 +236,10 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 			return
 		}
 
-		suffix := req.APIKey
-		if len(suffix) > 6 {
-			suffix = suffix[len(suffix)-6:]
-		}
-		canonicalID := "modelscope-" + suffix
-
-		prov := modelscopepkg.NewProvider(canonicalID, "")
-		if err := createProvider(prov, func() error {
+		prov := modelscopepkg.NewProvider(reservation.instanceID, "")
+		if err := createReservedProvider(reservation, prov, func() error {
 			if err := prov.SetupAuth(&req); err != nil {
 				return fmt.Errorf("authentication failed: %w", err)
-			}
-			if err := providerRegistry.Register(prov, true); err != nil {
-				return fmt.Errorf("register provider: %w", err)
 			}
 			return nil
 		}); err != nil {
@@ -274,7 +265,7 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 
 	// ——————————————————————————————————————————————————————————————
 	case "github-copilot":
-		cop := copilot.NewGitHubCopilotProvider("copilot-tmp", "")
+		cop := copilot.NewGitHubCopilotProvider(reservation.instanceID, "")
 
 		if req.Method == "oauth" || (req.GithubToken == "" && req.Token == "") {
 			deviceCode, err := cop.InitiateDeviceCodeFlow()
@@ -286,10 +277,9 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 				return
 			}
 
-			const pendingID = "copilot-pending"
-			copilotCtx, copilotCancel := context.WithCancel(context.Background())
-			activeAuthFlowMu.Lock()
-			activeAuthFlow = &authFlowState{
+			pendingID := reservation.instanceID
+			copilotCtx, copilotCancel := context.WithCancel(context.WithoutCancel(c.Request.Context()))
+			flow := &authFlowState{
 				ProviderID:     pendingID,
 				Status:         "awaiting_user",
 				InstructionURL: deviceCode.VerificationURI,
@@ -297,17 +287,25 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 				deviceCode:     deviceCode.DeviceCode,
 				cancelFn:       copilotCancel,
 			}
+			activeAuthFlowMu.Lock()
+			if activeAuthFlow != nil && activeAuthFlow.cancelFn != nil {
+				activeAuthFlow.cancelFn()
+			}
+			activeAuthFlow = flow
 			activeAuthFlowMu.Unlock()
 
 			dc := deviceCode
+			asyncReservation := reservation
+			reservation = nil
 			go func() {
 				defer copilotCancel()
-				if err := cop.PollAndCompleteDeviceCodeFlow(dc); err != nil {
+				defer cleanupProviderReservation(asyncReservation)
+				if err := cop.PollAndCompleteDeviceCodeFlowContext(copilotCtx, dc); err != nil {
 					if copilotCtx.Err() != nil {
 						return
 					}
 					activeAuthFlowMu.Lock()
-					if activeAuthFlow != nil && activeAuthFlow.ProviderID == pendingID {
+					if activeAuthFlow == flow {
 						activeAuthFlow.Status = "error"
 						activeAuthFlow.Error = err.Error()
 					}
@@ -316,33 +314,25 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 					return
 				}
 
-				// Derive canonical ID from the provider name which now contains the username
-				// e.g., "GitHub Copilot (octocat)" → "github-copilot-octocat"
-				canonicalID := deriveGitHubCopilotID(cop.GetName())
-				cop.SetInstanceID(canonicalID)
-
-				if err := createProvider(cop, func() error {
-					if err := cop.SaveToDB(); err != nil {
-						return fmt.Errorf("save GitHub Copilot token: %w", err)
-					}
-					return providerRegistry.Register(cop, true)
-				}); err != nil {
-					log.Error().Err(err).Str("provider", canonicalID).Msg("Auth-and-create: failed to persist GitHub Copilot provider")
-					activeAuthFlowMu.Lock()
-					if activeAuthFlow != nil && activeAuthFlow.ProviderID == pendingID {
-						activeAuthFlow.Status = "error"
-						activeAuthFlow.Error = err.Error()
-					}
+				canonicalID := asyncReservation.instanceID
+				activeAuthFlowMu.Lock()
+				if copilotCtx.Err() != nil || activeAuthFlow != flow {
 					activeAuthFlowMu.Unlock()
 					return
 				}
-
-				// Update status and provider ID atomically.
-				activeAuthFlowMu.Lock()
-				if activeAuthFlow != nil && activeAuthFlow.ProviderID == pendingID {
-					activeAuthFlow.ProviderID = canonicalID
-					activeAuthFlow.Status = "complete"
+				if err := createReservedProvider(asyncReservation, cop, func() error {
+					if err := cop.SaveToDB(); err != nil {
+						return fmt.Errorf("save GitHub Copilot token: %w", err)
+					}
+					return nil
+				}); err != nil {
+					activeAuthFlow.Status = "error"
+					activeAuthFlow.Error = err.Error()
+					activeAuthFlowMu.Unlock()
+					log.Error().Err(err).Str("provider", canonicalID).Msg("Auth-and-create: failed to persist GitHub Copilot provider")
+					return
 				}
+				activeAuthFlow.Status = "complete"
 				activeAuthFlowMu.Unlock()
 
 				log.Info().Str("provider", canonicalID).Msg("Auth-and-create: GitHub Copilot OAuth completed")
@@ -373,17 +363,9 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 			return
 		}
 
-		// Derive canonical ID from the provider name which now contains the username
-		// e.g., "GitHub Copilot (octocat)" → "github-copilot-octocat"
-		canonicalID := deriveGitHubCopilotID(cop.GetName())
-		cop.SetInstanceID(canonicalID)
-
-		if err := createProvider(cop, func() error {
+		if err := createReservedProvider(reservation, cop, func() error {
 			if err := cop.SaveToDB(); err != nil {
 				return fmt.Errorf("save provider credentials: %w", err)
-			}
-			if err := providerRegistry.Register(cop, true); err != nil {
-				return fmt.Errorf("register provider: %w", err)
 			}
 			return nil
 		}); err != nil {
@@ -415,17 +397,13 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 			return
 		}
 
-		canonicalID := providerRegistry.NextInstanceID("codex")
-		cdx := codexpkg.NewCodexProvider(canonicalID)
-		if err := createProvider(cdx, func() error {
+		cdx := codexpkg.NewCodexProvider(reservation.instanceID)
+		if err := createReservedProvider(reservation, cdx, func() error {
 			if err := cdx.SetupAuth(&req); err != nil {
 				return fmt.Errorf("Codex authentication failed: %w", err)
 			}
 			if err := cdx.SaveToDB(); err != nil {
 				return fmt.Errorf("save Codex credentials: %w", err)
-			}
-			if err := providerRegistry.Register(cdx, true); err != nil {
-				return fmt.Errorf("register Codex provider: %w", err)
 			}
 			return nil
 		}); err != nil {
@@ -468,10 +446,9 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 
 	// ——————————————————————————————————————————————————————————————
 	case "azure-openai":
-		instanceID := providerRegistry.NextInstanceID(providerType)
-		prov := azurepkg.NewProvider(instanceID, "")
+		prov := azurepkg.NewProvider(reservation.instanceID, "")
 
-		if err := createProvider(prov, func() error {
+		if err := createReservedProvider(reservation, prov, func() error {
 			if err := prov.SetupAuth(&req); err != nil {
 				return fmt.Errorf("authentication failed: %w", err)
 			}
@@ -485,9 +462,6 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 				}
 			}
 
-			if err := providerRegistry.Register(prov, true); err != nil {
-				return fmt.Errorf("register provider: %w", err)
-			}
 			return nil
 		}); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
@@ -543,15 +517,11 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 
 	// ——————————————————————————————————————————————————————————————
 	case "google":
-		instanceID := providerRegistry.NextInstanceID(providerType)
-		prov := googlepkg.NewProvider(instanceID, "")
+		prov := googlepkg.NewProvider(reservation.instanceID, "")
 
-		if err := createProvider(prov, func() error {
+		if err := createReservedProvider(reservation, prov, func() error {
 			if err := prov.SetupAuth(&req); err != nil {
 				return fmt.Errorf("authentication failed: %w", err)
-			}
-			if err := providerRegistry.Register(prov, true); err != nil {
-				return fmt.Errorf("register provider: %w", err)
 			}
 			return nil
 		}); err != nil {
@@ -577,15 +547,11 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 
 	// ——————————————————————————————————————————————————————————————
 	case "kimi":
-		instanceID := providerRegistry.NextInstanceID(providerType)
-		prov := kimipkg.NewProvider(instanceID, "")
+		prov := kimipkg.NewProvider(reservation.instanceID, "")
 
-		if err := createProvider(prov, func() error {
+		if err := createReservedProvider(reservation, prov, func() error {
 			if err := prov.SetupAuth(&req); err != nil {
 				return fmt.Errorf("authentication failed: %w", err)
-			}
-			if err := providerRegistry.Register(prov, true); err != nil {
-				return fmt.Errorf("register provider: %w", err)
 			}
 			return nil
 		}); err != nil {
@@ -610,15 +576,11 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 		})
 
 	case "typesafe":
-		instanceID := providerRegistry.NextInstanceID(providerType)
-		prov := typesafepkg.NewProvider(instanceID, "")
+		prov := typesafepkg.NewProvider(reservation.instanceID, "")
 
-		if err := createProvider(prov, func() error {
+		if err := createReservedProvider(reservation, prov, func() error {
 			if err := prov.SetupAuth(&req); err != nil {
 				return fmt.Errorf("authentication failed: %w", err)
-			}
-			if err := providerRegistry.Register(prov, true); err != nil {
-				return fmt.Errorf("register provider: %w", err)
 			}
 			return nil
 		}); err != nil {
@@ -644,15 +606,11 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 
 	// ——————————————————————————————————————————————————————————————
 	case "openai-compatible":
-		instanceID := openaicompatprovider.CanonicalInstanceID(req.Endpoint, req.APIKey)
-		prov := openaicompatprovider.NewProvider(instanceID, "")
+		prov := openaicompatprovider.NewProvider(reservation.instanceID, "")
 
-		if err := createProvider(prov, func() error {
+		if err := createReservedProvider(reservation, prov, func() error {
 			if err := prov.SetupAuth(&req); err != nil {
 				return fmt.Errorf("authentication failed: %w", err)
-			}
-			if err := providerRegistry.Register(prov, true); err != nil {
-				return fmt.Errorf("register provider: %w", err)
 			}
 			return nil
 		}); err != nil {
@@ -683,48 +641,17 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 	}
 }
 
-// deriveGitHubCopilotID extracts the GitHub username from the provider name
-// and generates a consistent instance ID.
-// Example: "GitHub Copilot (octocat)" → "github-copilot-octocat"
-func deriveGitHubCopilotID(name string) string {
-	// Look for pattern "GitHub Copilot (username)"
-	start := strings.Index(name, "(")
-	end := strings.Index(name, ")")
-	if start == -1 || end == -1 || end <= start+1 {
-		// Fallback if we can't extract username
-		providerRegistry := registry.GetProviderRegistry()
-		return providerRegistry.NextInstanceID("github-copilot")
-	}
-
-	username := strings.TrimSpace(name[start+1 : end])
-	if username == "" {
-		providerRegistry := registry.GetProviderRegistry()
-		return providerRegistry.NextInstanceID("github-copilot")
-	}
-
-	// Sanitize username: lowercase and replace non-alphanumeric with dashes
-	sanitized := strings.Map(func(r rune) rune {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
-			return r
-		}
-		return '-'
-	}, strings.ToLower(username))
-
-	// Remove leading/trailing dashes
-	sanitized = strings.Trim(sanitized, "-_")
-	if sanitized == "" {
-		providerRegistry := registry.GetProviderRegistry()
-		return providerRegistry.NextInstanceID("github-copilot")
-	}
-
-	return "github-copilot-" + sanitized
-}
-
 func handleDeleteProvider(c *gin.Context) {
 	providerID := c.Param("id")
+	providerMetadataMu.Lock()
+	defer providerMetadataMu.Unlock()
 
 	providerRegistry := registry.GetProviderRegistry()
 	if err := providerRegistry.Remove(providerID); err != nil {
+		if errors.Is(err, registry.ErrProviderBusy) {
+			c.JSON(http.StatusConflict, gin.H{"success": false, "message": "Provider is busy. Please retry."})
+			return
+		}
 		c.JSON(http.StatusNotFound, gin.H{
 			"success": false,
 			"message": err.Error(),
@@ -778,6 +705,14 @@ func handleSetProviderPriorities(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
+	_, releaseProviders, err := registry.GetProviderRegistry().BorrowProviders()
+	if err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "Provider identity is being updated; retry the request"})
+		return
+	}
+	defer releaseProviders()
+	providerMetadataMu.Lock()
+	defer providerMetadataMu.Unlock()
 
 	instanceStore := database.NewProviderInstanceStore()
 	canonicalPriorities := make(map[string]int, len(req.Priorities))
@@ -820,11 +755,12 @@ func handleListProviderModels(c *gin.Context) {
 	providerID := c.Param("id")
 
 	providerRegistry := registry.GetProviderRegistry()
-	provider, err := providerRegistry.GetProvider(providerID)
+	provider, releaseProvider, err := providerRegistry.BorrowProvider(providerID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
+	defer releaseProvider()
 
 	models, err := loadProviderModels(provider, false)
 	if err != nil {
@@ -931,11 +867,12 @@ func handleProviderAuth(c *gin.Context) {
 	}
 
 	providerRegistry := registry.GetProviderRegistry()
-	provider, err := providerRegistry.GetProvider(providerID)
+	provider, releaseProvider, err := providerRegistry.BorrowProvider(providerID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
+	defer releaseProvider()
 
 	cop, isCopilot := provider.(*copilot.GitHubCopilotProvider)
 
@@ -972,7 +909,7 @@ func handleProviderAuth(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": fmt.Sprintf("Authentication failed: %v", err)})
 			return
 		}
-		if err := providerRegistry.Register(aliProv, true); err != nil {
+		if err := providerRegistry.TouchProvider(providerID); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": fmt.Sprintf("Failed to update provider: %v", err)})
 			return
 		}
@@ -1001,7 +938,7 @@ func handleProviderAuth(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": fmt.Sprintf("Authentication failed: %v", err)})
 			return
 		}
-		if err := providerRegistry.Register(msProv, true); err != nil {
+		if err := providerRegistry.TouchProvider(providerID); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": fmt.Sprintf("Failed to update provider: %v", err)})
 			return
 		}
@@ -1019,9 +956,15 @@ func handleProviderAuth(c *gin.Context) {
 
 	// Handle OAuth device code flow for GitHub Copilot
 	if isCopilot && (req.Method == "oauth" || (req.GithubToken == "" && req.Token == "")) {
+		_, releaseFlow, err := providerRegistry.BorrowProvider(providerID)
+		if err != nil {
+			c.JSON(http.StatusConflict, gin.H{"error": "Provider is busy. Please retry."})
+			return
+		}
 		// Start device code flow in a goroutine, return immediately with requiresAuth
 		deviceCode, err := cop.InitiateDeviceCodeFlow()
 		if err != nil {
+			releaseFlow()
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"success": false,
 				"message": fmt.Sprintf("Failed to initiate OAuth: %v", err),
@@ -1030,9 +973,8 @@ func handleProviderAuth(c *gin.Context) {
 		}
 
 		// Set auth flow state to awaiting_user
-		copilotCtx, copilotCancel := context.WithCancel(context.Background())
-		activeAuthFlowMu.Lock()
-		activeAuthFlow = &authFlowState{
+		copilotCtx, copilotCancel := context.WithCancel(context.WithoutCancel(c.Request.Context()))
+		flow := &authFlowState{
 			ProviderID:     providerID,
 			Status:         "awaiting_user",
 			InstructionURL: deviceCode.VerificationURI,
@@ -1040,6 +982,11 @@ func handleProviderAuth(c *gin.Context) {
 			deviceCode:     deviceCode.DeviceCode,
 			cancelFn:       copilotCancel,
 		}
+		activeAuthFlowMu.Lock()
+		if activeAuthFlow != nil && activeAuthFlow.cancelFn != nil {
+			activeAuthFlow.cancelFn()
+		}
+		activeAuthFlow = flow
 		activeAuthFlowMu.Unlock()
 
 		// Start polling for the access token in a goroutine
@@ -1048,13 +995,14 @@ func handleProviderAuth(c *gin.Context) {
 		reg := providerRegistry
 		go func() {
 			defer copilotCancel()
-			if err := prov.PollAndCompleteDeviceCodeFlow(dc); err != nil {
+			defer releaseFlow()
+			if err := prov.PollAndCompleteDeviceCodeFlowContext(copilotCtx, dc); err != nil {
 				// Ignore if cancelled
 				if copilotCtx.Err() != nil {
 					return
 				}
 				activeAuthFlowMu.Lock()
-				if activeAuthFlow != nil && activeAuthFlow.ProviderID == providerID {
+				if activeAuthFlow == flow {
 					activeAuthFlow.Status = "error"
 					activeAuthFlow.Error = err.Error()
 				}
@@ -1062,22 +1010,26 @@ func handleProviderAuth(c *gin.Context) {
 				log.Error().Err(err).Str("provider", providerID).Msg("OAuth device code flow failed")
 				return
 			}
-
-			// Save token to database
+			activeAuthFlowMu.Lock()
+			if copilotCtx.Err() != nil || activeAuthFlow != flow {
+				activeAuthFlowMu.Unlock()
+				return
+			}
+			// Serialize final persistence with cancellation.
 			if err := prov.SaveToDB(); err != nil {
+				activeAuthFlow.Status = "error"
+				activeAuthFlow.Error = "Failed to save provider credentials"
+				activeAuthFlowMu.Unlock()
 				log.Error().Err(err).Str("provider", providerID).Msg("Failed to save token")
+				return
 			}
 
 			// Persist updated provider name to DB
-			if err := reg.Register(prov, true); err != nil {
+			if err := reg.TouchProvider(providerID); err != nil {
 				log.Warn().Err(err).Str("provider", providerID).Msg("Failed to update provider in registry")
 			}
 
-			// Mark complete
-			activeAuthFlowMu.Lock()
-			if activeAuthFlow != nil && activeAuthFlow.ProviderID == providerID {
-				activeAuthFlow.Status = "complete"
-			}
+			activeAuthFlow.Status = "complete"
 			activeAuthFlowMu.Unlock()
 
 			log.Info().Str("provider", providerID).Msg("GitHub Copilot OAuth completed")
@@ -1114,6 +1066,12 @@ func handleProviderAuth(c *gin.Context) {
 	if isCopilot {
 		if err := cop.SaveToDB(); err != nil {
 			log.Error().Err(err).Str("provider", providerID).Msg("Failed to save token to database")
+		}
+	} else if codex, ok := provider.(*codexpkg.CodexProvider); ok {
+		if err := codex.SaveToDB(); err != nil {
+			log.Error().Err(err).Str("provider", providerID).Msg("Failed to save token to database")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save provider credentials"})
+			return
 		}
 	}
 
@@ -1216,7 +1174,7 @@ func handleCompleteDeviceCode(c *gin.Context) {
 	}
 
 	// Poll for access token
-	if err := cop.PollAndCompleteDeviceCodeFlow(deviceCodeResp); err != nil {
+	if err := cop.PollAndCompleteDeviceCodeFlowContext(c.Request.Context(), deviceCodeResp); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
 			"error":   fmt.Sprintf("Failed to complete OAuth: %v", err),
@@ -1340,6 +1298,8 @@ func handleRenameProvider(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "At least one of 'name' or 'alias' must be provided"})
 		return
 	}
+	providerMetadataMu.Lock()
+	defer providerMetadataMu.Unlock()
 
 	instanceStore := database.NewProviderInstanceStore()
 	record, err := instanceStore.Get(providerID)

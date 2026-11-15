@@ -5,6 +5,7 @@ import "omnillm/internal/cif"
 // CIFMessagesToGemini converts CIF messages to the Google Gemini contents format.
 func CIFMessagesToGemini(messages []cif.CIFMessage) []map[string]interface{} {
 	var contents []map[string]interface{}
+	toolNamesByID := make(map[string]string)
 	for _, msg := range messages {
 		switch m := msg.(type) {
 		case cif.CIFSystemMessage:
@@ -17,11 +18,19 @@ func CIFMessagesToGemini(messages []cif.CIFMessage) []map[string]interface{} {
 				case cif.CIFTextPart:
 					parts = append(parts, map[string]interface{}{"text": p.Text})
 				case cif.CIFToolResultPart:
+					name := p.ToolName
+					if name == "" {
+						name = toolNamesByID[p.ToolCallID]
+					}
+					response := map[string]interface{}{
+						"name":     name,
+						"response": map[string]interface{}{"output": p.Content},
+					}
+					if p.ToolCallID != "" {
+						response["id"] = p.ToolCallID
+					}
 					parts = append(parts, map[string]interface{}{
-						"functionResponse": map[string]interface{}{
-							"name":     p.ToolName,
-							"response": map[string]interface{}{"output": p.Content},
-						},
+						"functionResponse": response,
 					})
 				case cif.CIFImagePart:
 					if p.Data != nil {
@@ -44,11 +53,16 @@ func CIFMessagesToGemini(messages []cif.CIFMessage) []map[string]interface{} {
 				case cif.CIFTextPart:
 					parts = append(parts, map[string]interface{}{"text": p.Text})
 				case cif.CIFToolCallPart:
+					call := map[string]interface{}{
+						"name": p.ToolName,
+						"args": p.ToolArguments,
+					}
+					if p.ToolCallID != "" {
+						call["id"] = p.ToolCallID
+						toolNamesByID[p.ToolCallID] = p.ToolName
+					}
 					parts = append(parts, map[string]interface{}{
-						"functionCall": map[string]interface{}{
-							"name": p.ToolName,
-							"args": p.ToolArguments,
-						},
+						"functionCall": call,
 					})
 				case cif.CIFThinkingPart:
 					parts = append(parts, map[string]interface{}{"text": p.Thinking})

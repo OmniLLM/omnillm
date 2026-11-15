@@ -40,8 +40,9 @@ func NewProvider(instanceID, name string) *Provider {
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}}
 }
-func (p *Provider) GetID() string         { return string(types.ProviderTypeSafe) }
-func (p *Provider) GetInstanceID() string { return p.instanceID }
+func (p *Provider) GetID() string           { return string(types.ProviderTypeSafe) }
+func (p *Provider) GetInstanceID() string   { return p.instanceID }
+func (p *Provider) SetInstanceID(id string) { p.instanceID = id }
 func (p *Provider) GetName() string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()

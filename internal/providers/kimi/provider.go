@@ -173,24 +173,16 @@ func SaveOAuthToken(instanceID string, td *TokenData) (newInstanceID, name, base
 	}
 
 	email := ExtractEmailFromJWT(td.AccessToken)
+	newInstanceID = instanceID
 	if email != "" {
-		safe := strings.ReplaceAll(email, "@", "-")
-		safe = strings.ReplaceAll(safe, ".", "-")
-		newInstanceID = "kimi-oauth-" + region + "-" + safe
 		name = "Kimi (" + email + ")"
 	} else {
-		suffix := ShortTokenSuffix(td.AccessToken)
-		newInstanceID = "kimi-oauth-" + region + "-" + suffix
-		name = "Kimi OAuth (" + suffix + ")"
+		name = "Kimi OAuth (" + region + ")"
 	}
 
 	tokenStore := database.NewTokenStore()
 	if err := tokenStore.Save(newInstanceID, td); err != nil {
 		return "", "", "", fmt.Errorf("kimi: failed to save OAuth token: %w", err)
-	}
-
-	if instanceID != newInstanceID {
-		_ = tokenStore.Delete(instanceID)
 	}
 
 	log.Info().

@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"omnillm/internal/lib/catalogstate"
@@ -108,4 +109,21 @@ func (ts *TokenStore) GetAllByProvider(providerID string) ([]TokenRecord, error)
 		records = append(records, record)
 	}
 	return records, rows.Err()
+}
+
+// SaveIfUnchanged replaces a credential snapshot without overwriting concurrent OAuth.
+func (ts *TokenStore) SaveIfUnchanged(ctx context.Context, instanceID, previous string, data map[string]interface{}) (bool, error) {
+	encoded, err := json.Marshal(data)
+	if err != nil {
+		return false, err
+	}
+	result, err := ts.db.db.ExecContext(ctx, `UPDATE tokens SET token_data = ?, updated_at = datetime('now') WHERE instance_id = ? AND token_data = ?`, string(encoded), instanceID, previous)
+	if err != nil {
+		return false, err
+	}
+	count, err := result.RowsAffected()
+	if err == nil && count > 0 {
+		catalogstate.Invalidate(instanceID)
+	}
+	return count > 0, err
 }

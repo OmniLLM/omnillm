@@ -14,8 +14,10 @@ import (
 type ProviderRegistry struct {
 	mu              sync.RWMutex
 	saveMu          sync.Mutex
+	persistenceMu   sync.Mutex
 	saveWG          sync.WaitGroup
 	providers       map[string]types.Provider
+	lifecycles      map[string]*providerLifecycle
 	activeProvider  types.Provider
 	activeProviders map[string]struct{}
 	instanceStore   *database.ProviderInstanceStore
@@ -56,9 +58,32 @@ func GetProviderRegistry() *ProviderRegistry {
 }
 
 func (pr *ProviderRegistry) Register(provider types.Provider, saveConfig bool) error {
+	return pr.register(provider, saveConfig, false)
+}
+
+// RegisterNew registers a new instance without replacing an existing provider.
+func (pr *ProviderRegistry) RegisterNew(provider types.Provider, saveConfig bool) error {
+	return pr.register(provider, saveConfig, true)
+}
+
+func (pr *ProviderRegistry) register(provider types.Provider, saveConfig, requireNew bool) error {
 	pr.mu.Lock()
-	catalogstate.Invalidate(provider.GetInstanceID())
-	pr.providers[provider.GetInstanceID()] = provider
+	id := provider.GetInstanceID()
+	if _, exists := pr.providers[id]; exists {
+		if requireNew {
+			pr.mu.Unlock()
+			return fmt.Errorf("provider %q already exists", id)
+		}
+		lifecycle := pr.lifecycleLocked(id)
+		if lifecycle.exclusive || lifecycle.borrowers != 0 {
+			pr.mu.Unlock()
+			return ErrProviderBusy
+		}
+	}
+	pr.lifecycleLocked(id)
+	pr.lifecycles[id] = &providerLifecycle{}
+	catalogstate.Invalidate(id)
+	pr.providers[id] = provider
 	shouldSave := saveConfig
 	pr.mu.Unlock()
 
@@ -85,12 +110,34 @@ func (pr *ProviderRegistry) GetProvider(instanceID string) (types.Provider, erro
 	return provider, nil
 }
 
+// TouchProvider invalidates provider caches and schedules metadata persistence
+// after updating an existing provider without replacing its lifecycle.
+func (pr *ProviderRegistry) TouchProvider(instanceID string) error {
+	pr.mu.Lock()
+	if _, exists := pr.providers[instanceID]; !exists {
+		pr.mu.Unlock()
+		return fmt.Errorf("provider %q not found", instanceID)
+	}
+	if pr.lifecycleLocked(instanceID).exclusive {
+		pr.mu.Unlock()
+		return ErrProviderBusy
+	}
+	catalogstate.Invalidate(instanceID)
+	pr.mu.Unlock()
+	pr.saveConfigInBackground()
+	return nil
+}
+
 func (pr *ProviderRegistry) SetActive(instanceID string) (types.Provider, error) {
 	pr.mu.Lock()
 	provider, exists := pr.providers[instanceID]
 	if !exists {
 		pr.mu.Unlock()
 		return nil, fmt.Errorf("provider '%s' not found", instanceID)
+	}
+	if pr.lifecycleLocked(instanceID).exclusive {
+		pr.mu.Unlock()
+		return nil, ErrProviderBusy
 	}
 
 	pr.activeProvider = provider
@@ -120,6 +167,10 @@ func (pr *ProviderRegistry) AddActive(instanceID string) (types.Provider, error)
 		pr.mu.Unlock()
 		return nil, fmt.Errorf("provider '%s' not found", instanceID)
 	}
+	if pr.lifecycleLocked(instanceID).exclusive {
+		pr.mu.Unlock()
+		return nil, ErrProviderBusy
+	}
 
 	pr.activeProviders[instanceID] = struct{}{}
 	if pr.activeProvider == nil {
@@ -134,6 +185,10 @@ func (pr *ProviderRegistry) AddActive(instanceID string) (types.Provider, error)
 
 func (pr *ProviderRegistry) RemoveActive(instanceID string) error {
 	pr.mu.Lock()
+	if _, exists := pr.providers[instanceID]; exists && pr.lifecycleLocked(instanceID).exclusive {
+		pr.mu.Unlock()
+		return ErrProviderBusy
+	}
 	delete(pr.activeProviders, instanceID)
 	if pr.activeProvider != nil && pr.activeProvider.GetInstanceID() == instanceID {
 		// Pick another active provider as the primary, or nil
@@ -211,6 +266,11 @@ func (pr *ProviderRegistry) Rename(oldInstanceID, newInstanceID string) error {
 		pr.mu.Unlock()
 		return fmt.Errorf("provider '%s' not found", oldInstanceID)
 	}
+	lifecycle := pr.lifecycleLocked(oldInstanceID)
+	if lifecycle.exclusive || lifecycle.borrowers != 0 {
+		pr.mu.Unlock()
+		return ErrProviderBusy
+	}
 
 	if _, exists := pr.providers[newInstanceID]; exists {
 		pr.mu.Unlock()
@@ -222,6 +282,8 @@ func (pr *ProviderRegistry) Rename(oldInstanceID, newInstanceID string) error {
 	catalogstate.Invalidate(newInstanceID)
 	delete(pr.providers, oldInstanceID)
 	pr.providers[newInstanceID] = provider
+	delete(pr.lifecycles, oldInstanceID)
+	pr.lifecycles[newInstanceID] = lifecycle
 
 	if _, wasActive := pr.activeProviders[oldInstanceID]; wasActive {
 		delete(pr.activeProviders, oldInstanceID)
@@ -235,15 +297,24 @@ func (pr *ProviderRegistry) Rename(oldInstanceID, newInstanceID string) error {
 }
 
 func (pr *ProviderRegistry) Remove(instanceID string) error {
+	// Avoid rejecting ordinary removal just because an earlier activation save
+	// is still persisting the same provider.
+	pr.WaitForPendingSaves()
 	pr.mu.Lock()
 	_, exists := pr.providers[instanceID]
 	if !exists {
 		pr.mu.Unlock()
 		return fmt.Errorf("provider '%s' not found", instanceID)
 	}
+	lifecycle := pr.lifecycleLocked(instanceID)
+	if lifecycle.exclusive || lifecycle.borrowers != 0 {
+		pr.mu.Unlock()
+		return ErrProviderBusy
+	}
 
 	catalogstate.Invalidate(instanceID)
 	delete(pr.providers, instanceID)
+	delete(pr.lifecycles, instanceID)
 	delete(pr.activeProviders, instanceID)
 	if pr.activeProvider != nil && pr.activeProvider.GetInstanceID() == instanceID {
 		pr.activeProvider = nil
@@ -281,47 +352,27 @@ func (pr *ProviderRegistry) GetInstancesOfType(providerType string) []types.Prov
 	return instances
 }
 
-func (pr *ProviderRegistry) NextInstanceID(providerType string) string {
-	existing := pr.GetInstancesOfType(providerType)
-
-	// First instance keeps the plain ID, subsequent ones get unique suffixes
-	if len(existing) == 0 {
-		return providerType
-	}
-
-	// For providers that use username-based IDs (like GitHub Copilot),
-	// we need to avoid conflicts with existing instances
-	counter := 2
-	var candidateID string
-	for {
-		candidateID = fmt.Sprintf("%s-%d", providerType, counter)
-		if !pr.IsRegistered(candidateID) {
-			break
-		}
-		counter++
-	}
-
-	return candidateID
-}
-
 func (pr *ProviderRegistry) saveConfigAsync() error {
-	// Snapshot data under lock to avoid holding it during I/O
+	// Serialize saves, then lease each provider while reading and persisting it.
+	// A stale snapshot must never recreate an identity after it is renamed.
+	pr.persistenceMu.Lock()
+	defer pr.persistenceMu.Unlock()
 	pr.mu.RLock()
-	providers := make(map[string]types.Provider, len(pr.providers))
-	for k, v := range pr.providers {
-		providers[k] = v
-	}
-	activeProviders := make(map[string]struct{}, len(pr.activeProviders))
-	for k, v := range pr.activeProviders {
-		activeProviders[k] = v
+	ids := make([]string, 0, len(pr.providers))
+	for id := range pr.providers {
+		ids = append(ids, id)
 	}
 	pr.mu.RUnlock()
 
 	// Persist activation state to provider_instances — this is the single source
 	// of truth for which providers are active. The old config.active_providers
 	// key is no longer written.
-	for id, provider := range providers {
-		_, isActive := activeProviders[id]
+	for _, id := range ids {
+		provider, release, err := pr.BorrowProvider(id)
+		if err != nil {
+			continue
+		}
+		isActive := pr.IsActiveProvider(id)
 
 		record := &database.ProviderInstanceRecord{
 			InstanceID: id,
@@ -345,12 +396,15 @@ func (pr *ProviderRegistry) saveConfigAsync() error {
 		if err := pr.instanceStore.Save(record); err != nil {
 			log.Warn().Err(err).Str("instance", id).Msg("Failed to save provider instance")
 		}
+		release()
 	}
 
-	activeIDs := make([]string, 0, len(activeProviders))
-	for id := range activeProviders {
+	pr.mu.RLock()
+	activeIDs := make([]string, 0, len(pr.activeProviders))
+	for id := range pr.activeProviders {
 		activeIDs = append(activeIDs, id)
 	}
+	pr.mu.RUnlock()
 	log.Debug().Strs("active", activeIDs).Msg("Provider configuration saved")
 	return nil
 }

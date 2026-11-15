@@ -136,6 +136,12 @@ func (h *chatCompletionHandler) handleChatCompletions(c *gin.Context) {
 		}
 	}
 
+	providers, releaseProviders, ok := borrowModelProviders(c)
+	if !ok {
+		return
+	}
+	defer releaseProviders()
+
 	// Resolve providers for the requested model
 	attempts, err := resolveRequestedModelsForRequest(requestIDStr, canonicalRequest.Model, canonicalRequest)
 	if err != nil {
@@ -148,7 +154,7 @@ func (h *chatCompletionHandler) handleChatCompletions(c *gin.Context) {
 		toDispatchAttempts(attempts),
 		canonicalRequest,
 		modelCache,
-		modelrouting.ResolveProvidersForModel,
+		modelrouting.ProviderResolver(providers),
 		func(attempt providerdispatch.Attempt) {
 			log.Warn().Str("request_id", requestIDStr).Str("model", attempt.RequestedModel).Msg("No providers available for model attempt")
 		},

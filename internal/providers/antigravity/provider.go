@@ -16,7 +16,10 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-const defaultBaseURL = ProductionBaseURL
+const defaultBaseURL = DailyBaseURL
+
+// Keep generation header and payload identity aligned with the supported IDE.
+const generationUserAgent = "antigravity/2.6.0"
 
 // Shared HTTP client for Antigravity (only used for streaming).
 var antigravityStreamClient = shared.DefaultStreamClient()
@@ -33,6 +36,9 @@ var Models = []types.Model{
 	{ID: "gemini-3.1-flash-image", Name: "Gemini 3.1 Flash Image", MaxTokens: 65535, Provider: "antigravity"},
 	{ID: "gemini-3.1-pro-high", Name: "Gemini 3.1 Pro (High)", MaxTokens: 65535, Provider: "antigravity"},
 	{ID: "gemini-3.1-pro-low", Name: "Gemini 3.1 Pro (Low)", MaxTokens: 65535, Provider: "antigravity"},
+	{ID: "gemini-3.8-flash-low", Name: "Gemini 3.8 Flash (Low)", MaxTokens: 65535, Provider: "antigravity"},
+	{ID: "gemini-3.8-flash-medium", Name: "Gemini 3.8 Flash (Medium)", MaxTokens: 65535, Provider: "antigravity"},
+	{ID: "gemini-3.8-flash-high", Name: "Gemini 3.8 Flash (High)", MaxTokens: 65535, Provider: "antigravity"},
 	{ID: "gpt-oss-120b-medium", Name: "GPT-OSS 120B (Medium)", MaxTokens: 32768, Provider: "antigravity"},
 }
 
@@ -87,8 +93,13 @@ func Stream(ctx context.Context, token, baseURL, projectID string, request *cif.
 			decl := map[string]interface{}{
 				"name": tool.Name,
 			}
-			if params := shared.SanitizeGeminiSchema(tool.ParametersSchema); params != nil {
-				decl["parameters"] = params
+			if tool.ParametersSchema != nil {
+				if strings.HasPrefix(model, "claude-") {
+					// The restricted OpenAPI field cannot preserve Claude's nested JSON Schema unions.
+					decl["parametersJsonSchema"] = tool.ParametersSchema
+				} else {
+					decl["parameters"] = shared.SanitizeGeminiSchema(tool.ParametersSchema)
+				}
 			}
 			if tool.Description != nil {
 				decl["description"] = *tool.Description
@@ -113,7 +124,7 @@ func Stream(ctx context.Context, token, baseURL, projectID string, request *cif.
 
 	payload := map[string]interface{}{
 		"model":       model,
-		"userAgent":   "antigravity/1.19.6",
+		"userAgent":   generationUserAgent,
 		"requestType": "agent",
 		"requestId":   shared.RandomID(),
 		"request":     geminiReq,
@@ -141,7 +152,7 @@ func Stream(ctx context.Context, token, baseURL, projectID string, request *cif.
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "antigravity/1.19.6")
+	req.Header.Set("User-Agent", generationUserAgent)
 	req.Header.Set("X-Goog-Api-Client", "google-cloud-sdk vscode_cloudshelleditor/0.1")
 	req.Header.Set("Client-Metadata", `{"ideType":"IDE_UNSPECIFIED","platform":"PLATFORM_UNSPECIFIED","pluginType":"GEMINI"}`)
 
@@ -154,7 +165,7 @@ func Stream(ctx context.Context, token, baseURL, projectID string, request *cif.
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		return nil, fmt.Errorf("antigravity API failed with status %d: %s", resp.StatusCode, string(b))
+		return nil, &upstreamHTTPError{status: resp.StatusCode, body: string(b)}
 	}
 
 	eventCh := make(chan cif.CIFStreamEvent, 64)
@@ -169,4 +180,17 @@ func Execute(ctx context.Context, token, baseURL, projectID string, request *cif
 		return nil, err
 	}
 	return shared.CollectStream(ch)
+}
+
+type upstreamHTTPError struct {
+	status int
+	body   string
+}
+
+func (e *upstreamHTTPError) Error() string {
+	return fmt.Sprintf("antigravity API failed with status %d: %s", e.status, e.body)
+}
+
+func (e *upstreamHTTPError) NonStreamingFallbackAllowed() bool {
+	return e.status < http.StatusBadRequest || e.status >= http.StatusInternalServerError
 }

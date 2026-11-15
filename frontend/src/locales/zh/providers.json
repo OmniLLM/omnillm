@@ -27,6 +27,17 @@
   "remaining": "剩余",
   "rawData": "原始数据",
   "renameProvider": "重命名提供者",
+  "identity": {
+    "edit": "编辑 ID",
+    "input": "提供者实例 ID",
+    "save": "保存 ID",
+    "cancel": "取消",
+    "invalid": "请输入 1–64 位字母、数字、句点、下划线或连字符，并以字母或数字开头。",
+    "confirmTitle": "更改提供者 ID？",
+    "confirmMessage": "将 {{oldId}} 更改为 {{newId}}？请更新使用旧 ID 的外部客户端、配置和已保存的模型选择。",
+    "saved": "提供者 ID 已更新",
+    "failed": "无法更改提供者 ID：{{error}}"
+  },
   "editSubtitle": "编辑副标题",
   "modelsEnabled": "已启用的模型",
   "noAccounts": "未配置{{type}}账户",

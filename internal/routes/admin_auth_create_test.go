@@ -14,9 +14,19 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
+
+func requireProviderUUID(t *testing.T, id string) {
+	t.Helper()
+	parsed, err := uuid.Parse(id)
+	if err != nil || parsed.Version() != 4 || parsed.String() != id {
+		t.Fatalf("expected canonical UUID v4, got %q", id)
+	}
+}
 
 func TestMain(m *testing.M) {
 	gin.SetMode(gin.TestMode)
@@ -109,8 +119,12 @@ func TestCreateProviderFailureRemovesReservedParent(t *testing.T) {
 	resetAdminTestState(t)
 	t.Cleanup(func() { resetAdminTestState(t) })
 
-	provider := alibabapkg.NewProvider("alibaba-failed-create", "Alibaba")
-	err := createProvider(provider, func() error {
+	reservation, err := reserveRandomProvider("alibaba")
+	if err != nil {
+		t.Fatalf("reserve provider: %v", err)
+	}
+	provider := alibabapkg.NewProvider(reservation.instanceID, "Alibaba")
+	err = createReservedProvider(reservation, provider, func() error {
 		if err := database.NewTokenStore().Save(provider.GetInstanceID(), map[string]any{"access_token": "partial"}); err != nil {
 			return err
 		}
@@ -198,9 +212,7 @@ func TestHandleAuthAndCreateProviderAzureOpenAISavesAuthenticatedProvider(t *tes
 	if !payload.Success {
 		t.Fatal("expected success=true")
 	}
-	if payload.Provider.ID != "azure-openai" {
-		t.Fatalf("expected canonical instance id azure-openai, got %q", payload.Provider.ID)
-	}
+	requireProviderUUID(t, payload.Provider.ID)
 	if payload.Provider.Type != "azure-openai" {
 		t.Fatalf("expected provider type azure-openai, got %q", payload.Provider.Type)
 	}
@@ -209,11 +221,11 @@ func TestHandleAuthAndCreateProviderAzureOpenAISavesAuthenticatedProvider(t *tes
 	}
 
 	reg := registry.GetProviderRegistry()
-	if !reg.IsRegistered("azure-openai") {
+	if !reg.IsRegistered(payload.Provider.ID) {
 		t.Fatal("expected azure-openai provider to be registered")
 	}
 
-	record, err := database.NewTokenStore().Get("azure-openai")
+	record, err := database.NewTokenStore().Get(payload.Provider.ID)
 	if err != nil {
 		t.Fatalf("failed to read saved token: %v", err)
 	}
@@ -257,14 +269,12 @@ func TestHandleAuthAndCreateProviderAlibabaAPIKeyUsesCanonicalID(t *testing.T) {
 		} `json:"provider"`
 	}](t, recorder)
 
-	const expectedID = "alibaba-standard-global-123456"
+	expectedID := payload.Provider.ID
 
 	if !payload.Success {
 		t.Fatal("expected success=true")
 	}
-	if payload.Provider.ID != expectedID {
-		t.Fatalf("expected canonical instance id %q, got %q", expectedID, payload.Provider.ID)
-	}
+	requireProviderUUID(t, payload.Provider.ID)
 	if payload.Provider.Type != "alibaba" {
 		t.Fatalf("expected provider type alibaba, got %q", payload.Provider.Type)
 	}
@@ -363,9 +373,7 @@ func TestHandleAuthAndCreateProviderGoogleAPIKeyRegistersGoogleProvider(t *testi
 	if !payload.Success {
 		t.Fatal("expected success=true")
 	}
-	if payload.Provider.ID != "google" {
-		t.Fatalf("expected canonical instance id google, got %q", payload.Provider.ID)
-	}
+	requireProviderUUID(t, payload.Provider.ID)
 	if payload.Provider.Type != "google" {
 		t.Fatalf("expected provider type google, got %q", payload.Provider.Type)
 	}
@@ -377,7 +385,7 @@ func TestHandleAuthAndCreateProviderGoogleAPIKeyRegistersGoogleProvider(t *testi
 	}
 
 	reg := registry.GetProviderRegistry()
-	provider, err := reg.GetProvider("google")
+	provider, err := reg.GetProvider(payload.Provider.ID)
 	if err != nil {
 		t.Fatalf("expected google provider to be registered: %v", err)
 	}
@@ -385,7 +393,7 @@ func TestHandleAuthAndCreateProviderGoogleAPIKeyRegistersGoogleProvider(t *testi
 		t.Fatalf("expected registered provider type google, got %q", provider.GetID())
 	}
 
-	tokenRecord, err := database.NewTokenStore().Get("google")
+	tokenRecord, err := database.NewTokenStore().Get(payload.Provider.ID)
 	if err != nil {
 		t.Fatalf("failed to read token record: %v", err)
 	}
@@ -425,9 +433,7 @@ func TestHandleAuthAndCreateProviderKimiAPIKeyRegistersKimiProvider(t *testing.T
 	if !payload.Success {
 		t.Fatal("expected success=true")
 	}
-	if payload.Provider.ID != "kimi" {
-		t.Fatalf("expected canonical instance id kimi, got %q", payload.Provider.ID)
-	}
+	requireProviderUUID(t, payload.Provider.ID)
 	if payload.Provider.Type != "kimi" {
 		t.Fatalf("expected provider type kimi, got %q", payload.Provider.Type)
 	}
@@ -439,7 +445,7 @@ func TestHandleAuthAndCreateProviderKimiAPIKeyRegistersKimiProvider(t *testing.T
 	}
 
 	reg := registry.GetProviderRegistry()
-	provider, err := reg.GetProvider("kimi")
+	provider, err := reg.GetProvider(payload.Provider.ID)
 	if err != nil {
 		t.Fatalf("expected kimi provider to be registered: %v", err)
 	}
@@ -447,7 +453,7 @@ func TestHandleAuthAndCreateProviderKimiAPIKeyRegistersKimiProvider(t *testing.T
 		t.Fatalf("expected registered provider type kimi, got %q", provider.GetID())
 	}
 
-	tokenRecord, err := database.NewTokenStore().Get("kimi")
+	tokenRecord, err := database.NewTokenStore().Get(payload.Provider.ID)
 	if err != nil {
 		t.Fatalf("failed to read token record: %v", err)
 	}
@@ -550,10 +556,8 @@ func TestHandleAuthAndCreateProviderGitHubCopilotTokenUsesCanonicalID(t *testing
 	if !payload.Success {
 		t.Fatal("expected success=true")
 	}
-	const expectedID = "github-copilot-octocat"
-	if payload.Provider.ID != expectedID {
-		t.Fatalf("expected canonical instance id %q, got %q", expectedID, payload.Provider.ID)
-	}
+	expectedID := payload.Provider.ID
+	requireProviderUUID(t, expectedID)
 	if payload.Provider.Type != "github-copilot" {
 		t.Fatalf("expected provider type github-copilot, got %q", payload.Provider.Type)
 	}
@@ -576,6 +580,136 @@ func TestHandleAuthAndCreateProviderGitHubCopilotTokenUsesCanonicalID(t *testing
 	}
 	if !strings.Contains(tokenRecord.TokenData, `"copilot_token":"copilot-access-token"`) {
 		t.Fatalf("expected copilot token in saved record, got %s", tokenRecord.TokenData)
+	}
+	reauth := performJSONRequest(
+		t, router, http.MethodPost, "/api/admin/providers/login", `{"provider":"`+expectedID+`","token":"gh-test-token"}`,
+	)
+	if reauth.Code != http.StatusOK {
+		t.Fatalf("reauthenticate Copilot: %d %s", reauth.Code, reauth.Body.String())
+	}
+	reauthResult := decodeJSONBody[struct {
+		ProviderID string `json:"provider_id"`
+		IsNew      bool   `json:"is_new"`
+	}](t, reauth)
+	if reauthResult.ProviderID != expectedID || reauthResult.IsNew {
+		t.Fatalf("reauthentication changed identity: %#v", reauthResult)
+	}
+	registry.GetProviderRegistry().WaitForPendingSaves()
+	rename := performJSONRequest(
+		t, router, http.MethodPatch, "/api/admin/providers/"+expectedID+"/identity", `{"new_id":"copilot-custom"}`,
+	)
+	if rename.Code != http.StatusOK {
+		t.Fatalf("rename Copilot provider: %d %s", rename.Code, rename.Body.String())
+	}
+	renamed, err := registry.GetProviderRegistry().GetProvider("copilot-custom")
+	if err != nil || renamed.GetToken() != "copilot-access-token" {
+		t.Fatalf("renamed Copilot credentials: %v", err)
+	}
+}
+
+func TestGitHubDeviceCreationKeepsPendingUUID(t *testing.T) {
+	resetAdminTestState(t)
+	t.Cleanup(func() { resetAdminTestState(t) })
+	stubDefaultTransport(t, func(req *http.Request) (*http.Response, error) {
+		var body string
+		switch {
+		case req.URL.Host == "github.com" && req.URL.Path == "/login/device/code":
+			body = `{"device_code":"device","user_code":"code","verification_uri":"https://github.com/login/device","expires_in":60,"interval":1}`
+		case req.URL.Host == "github.com" && req.URL.Path == "/login/oauth/access_token":
+			body = `{"access_token":"github-token"}`
+		case req.URL.Host == "api.github.com" && req.URL.Path == "/copilot_internal/v2/token":
+			body = `{"token":"copilot-token","expires_at":4102444800}`
+		case req.URL.Host == "api.github.com" && req.URL.Path == "/user":
+			body = `{"login":"octocat"}`
+		default:
+			return nil, context.Canceled
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: req}, nil
+	})
+	response := performJSONRequest(
+		t, newAdminTestRouter(), http.MethodPost, "/api/admin/providers/auth-and-create/github-copilot",
+		`{"method":"oauth"}`,
+	)
+	if response.Code != http.StatusOK {
+		t.Fatalf("start device flow: %d %s", response.Code, response.Body.String())
+	}
+	result := decodeJSONBody[struct {
+		PendingID string `json:"pending_id"`
+	}](t, response)
+	requireProviderUUID(t, result.PendingID)
+	reg := registry.GetProviderRegistry()
+	deadline := time.After(5 * time.Second)
+	for !reg.IsRegistered(result.PendingID) {
+		select {
+		case <-deadline:
+			t.Fatal("device flow did not register the reserved provider")
+		case <-time.After(time.Millisecond):
+		}
+	}
+	activeAuthFlowMu.RLock()
+	flow := activeAuthFlow
+	if flow == nil || flow.ProviderID != result.PendingID {
+		activeAuthFlowMu.RUnlock()
+		t.Fatalf("device flow changed the reserved provider ID: %#v", flow)
+	}
+	activeAuthFlowMu.RUnlock()
+	if token, err := database.NewTokenStore().Get(result.PendingID); err != nil || token == nil {
+		t.Fatalf("device flow token: %#v, %v", token, err)
+	}
+}
+
+func TestGitHubDeviceCancellationRemovesReservedProvider(t *testing.T) {
+	resetAdminTestState(t)
+	t.Cleanup(func() { resetAdminTestState(t) })
+	pollStarted := make(chan struct{}, 1)
+	stubDefaultTransport(t, func(req *http.Request) (*http.Response, error) {
+		var body string
+		switch {
+		case req.URL.Host == "github.com" && req.URL.Path == "/login/device/code":
+			body = `{"device_code":"device","user_code":"code","verification_uri":"https://github.com/login/device","expires_in":60,"interval":20}`
+		case req.URL.Host == "github.com" && req.URL.Path == "/login/oauth/access_token":
+			pollStarted <- struct{}{}
+			body = `{"error":"authorization_pending"}`
+		default:
+			return nil, context.Canceled
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: req}, nil
+	})
+	router := newAdminTestRouter()
+	response := performJSONRequest(t, router, http.MethodPost, "/api/admin/providers/auth-and-create/github-copilot", `{"method":"oauth"}`)
+	if response.Code != http.StatusOK {
+		t.Fatalf("start device flow: %d %s", response.Code, response.Body.String())
+	}
+	result := decodeJSONBody[struct {
+		PendingID string `json:"pending_id"`
+	}](t, response)
+	requireProviderUUID(t, result.PendingID)
+	select {
+	case <-pollStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("device token polling did not start")
+	}
+	canceled := performJSONRequest(t, router, http.MethodPost, "/api/admin/auth/cancel", `{}`)
+	if canceled.Code != http.StatusOK {
+		t.Fatalf("cancel device flow: %d %s", canceled.Code, canceled.Body.String())
+	}
+	deadline := time.After(5 * time.Second)
+	for {
+		record, err := database.NewProviderInstanceStore().Get(result.PendingID)
+		if err != nil {
+			t.Fatalf("read reserved provider: %v", err)
+		}
+		if record == nil {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("canceled flow left the reserved provider")
+		case <-time.After(time.Millisecond):
+		}
+	}
+	if registry.GetProviderRegistry().IsRegistered(result.PendingID) {
+		t.Fatal("canceled flow registered the provider")
 	}
 }
 

@@ -201,7 +201,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 			if !providerOK && nextStep == "" {
 				nextStep = "Run 'omnillm auth' to add and authenticate a provider."
 			} else if activeCount == 0 && len(providers) > 0 && nextStep == "" {
-				nextStep = "Run 'omnillm provider activate <id>' to activate a provider."
+				nextStep = "Run 'omnillm provider enable <id>' to enable a provider."
 			}
 
 			providerTable := NewTable("CHECK", "STATUS", "VALUE")

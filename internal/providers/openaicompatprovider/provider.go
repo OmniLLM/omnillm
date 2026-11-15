@@ -24,7 +24,6 @@ import (
 	"omnillm/internal/providers/shared"
 	"omnillm/internal/providers/types"
 	"omnillm/internal/security"
-	"regexp"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -61,10 +60,11 @@ func NewProvider(instanceID, name string) *Provider {
 
 // ─── Identity ─────────────────────────────────────────────────────────────────
 
-func (p *Provider) GetID() string         { return "openai-compatible" }
-func (p *Provider) GetInstanceID() string { return p.instanceID }
-func (p *Provider) GetName() string       { return p.name }
-func (p *Provider) SetName(name string)   { p.name = name }
+func (p *Provider) GetID() string           { return "openai-compatible" }
+func (p *Provider) GetInstanceID() string   { return p.instanceID }
+func (p *Provider) SetInstanceID(id string) { p.instanceID = id }
+func (p *Provider) GetName() string         { return p.name }
+func (p *Provider) SetName(name string)     { p.name = name }
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -464,16 +464,6 @@ func SetupProviderAuth(instanceID string, options *types.AuthOptions) (token, ba
 	return apiKey, endpoint, displayName, config, nil
 }
 
-// CanonicalInstanceID derives a stable instance ID from endpoint + key suffix.
-func CanonicalInstanceID(endpoint, apiKey string) string {
-	slug := urlSlug(endpoint)
-	suffix := keySuffix(apiKey)
-	if suffix == "" {
-		return "openai-compatible-" + slug
-	}
-	return "openai-compatible-" + slug + "-" + suffix
-}
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 // normalizeBaseURL adds https scheme and strips trailing slash.
@@ -553,43 +543,6 @@ func normalizePromptCacheMode(raw string) string {
 
 func normalizeOpenAICompatibleAPIFormat(raw string) string {
 	return shared.NormalizeOpenAICompatibleAPIFormat(raw)
-}
-
-// urlSlug converts a URL to a safe identifier fragment.
-var nonAlphanumRe = regexp.MustCompile(`[^a-z0-9]+`)
-
-func urlSlug(rawURL string) string {
-	u, err := url.Parse(normalizeBaseURL(rawURL))
-	if err != nil || u.Host == "" {
-		return "custom"
-	}
-	host := strings.ToLower(u.Host)
-	// Strip port for well-known local hosts to keep IDs short.
-	if h, _, err := splitHostPort(host); err == nil {
-		host = h
-	}
-	return nonAlphanumRe.ReplaceAllString(host, "-")
-}
-
-// splitHostPort separates host and port without importing net (to keep deps light).
-func splitHostPort(hostport string) (host, port string, err error) {
-	i := strings.LastIndex(hostport, ":")
-	if i < 0 {
-		return hostport, "", nil
-	}
-	return hostport[:i], hostport[i+1:], nil
-}
-
-// keySuffix returns the last 6 chars of the API key for use in instance IDs.
-func keySuffix(apiKey string) string {
-	k := strings.TrimSpace(apiKey)
-	if k == "" {
-		return ""
-	}
-	if len(k) > 6 {
-		return k[len(k)-6:]
-	}
-	return k
 }
 
 // fetchModels calls GET <baseURL>/models and returns the model list.

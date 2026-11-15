@@ -58,7 +58,13 @@ const supportedAuthProviderTypesSummary = "github-copilot, openai-compatible, al
 var ProviderCmd = &cobra.Command{
 	Use:   "provider",
 	Short: "Manage LLM providers",
-	Long:  "List, add, remove, and configure LLM provider instances.",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) > 0 {
+			return fmt.Errorf("unknown command %q for %q", args[0], cmd.CommandPath())
+		}
+		return cmd.Help()
+	},
+	Long: "List, add, remove, and configure LLM provider instances.",
 }
 
 func init() {
@@ -69,6 +75,7 @@ func init() {
 
 	// provider list
 	ProviderCmd.AddCommand(providerListCmd)
+	ProviderCmd.AddCommand(providerShowCmd)
 
 	// provider add
 	addProviderAuthFlags(providerAddCmd)
@@ -85,7 +92,7 @@ func init() {
 	providerDeleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation")
 	ProviderCmd.AddCommand(providerDeleteCmd)
 
-	// provider activate / deactivate / switch
+	// provider enable / disable / switch
 	ProviderCmd.AddCommand(providerActivateCmd)
 	ProviderCmd.AddCommand(providerDeactivateCmd)
 	ProviderCmd.AddCommand(providerSwitchCmd)
@@ -106,7 +113,7 @@ func init() {
 
 	for _, sub := range []*cobra.Command{
 		providerDeleteCmd, providerActivateCmd, providerDeactivateCmd,
-		providerSwitchCmd, providerRenameCmd, providerUsageCmd,
+		providerSwitchCmd, providerRenameCmd, providerUsageCmd, providerShowCmd,
 	} {
 		sub.ValidArgsFunction = providerIDCompletionFunc
 	}
@@ -758,11 +765,11 @@ var providerDeleteCmd = &cobra.Command{
 	},
 }
 
-// ─── activate ─────────────────────────────────────────────────────────────────
+// ─── enable ───────────────────────────────────────────────────────────────────
 
 var providerActivateCmd = &cobra.Command{
-	Use:   "activate <id>",
-	Short: "Activate a provider (add to active set)",
+	Use:   "enable <id>",
+	Short: "Enable a provider (add to active set)",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := NewClient(cmd)
@@ -778,16 +785,16 @@ var providerActivateCmd = &cobra.Command{
 			c.PrintJSON(data)
 			return nil
 		}
-		SuccessMsg(cmd, "Provider '%s' activated.", id)
+		SuccessMsg(cmd, "Provider '%s' enabled.", id)
 		return nil
 	},
 }
 
-// ─── deactivate ───────────────────────────────────────────────────────────────
+// ─── disable ──────────────────────────────────────────────────────────────────
 
 var providerDeactivateCmd = &cobra.Command{
-	Use:   "deactivate <id>",
-	Short: "Deactivate a provider",
+	Use:   "disable <id>",
+	Short: "Disable a provider (remove from active set)",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := NewClient(cmd)
@@ -803,7 +810,7 @@ var providerDeactivateCmd = &cobra.Command{
 			c.PrintJSON(data)
 			return nil
 		}
-		SuccessMsg(cmd, "Provider '%s' deactivated.", id)
+		SuccessMsg(cmd, "Provider '%s' disabled.", id)
 		return nil
 	},
 }

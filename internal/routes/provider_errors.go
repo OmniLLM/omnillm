@@ -71,7 +71,14 @@ func isClientCanceled(c *gin.Context, err error) bool {
 }
 
 func shouldFallbackToNonStreaming(err error) bool {
-	return err != nil && !isAuthenticationError(err)
+	if err == nil || isAuthenticationError(err) {
+		return false
+	}
+	var fallbackErr interface{ NonStreamingFallbackAllowed() bool }
+	if errors.As(err, &fallbackErr) {
+		return fallbackErr.NonStreamingFallbackAllowed()
+	}
+	return true
 }
 
 func providerFailureStatus(err error) int {

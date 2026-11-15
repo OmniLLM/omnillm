@@ -33,7 +33,7 @@ var providerLoginFlows = struct {
 var supportedProviderLoginTypes = map[string]struct{}{
 	"github-copilot": {}, "openai-compatible": {}, "alibaba": {},
 	"azure-openai": {}, "google": {}, "antigravity": {}, "openai": {},
-	"kimi": {}, "typesafe": {}, "codex": {}, "modelscope": {},
+	"kimi": {}, "typesafe": {}, "codex": {}, "modelscope": {}, "alibaba-modelscope": {},
 }
 
 func newProviderLoginFlow(flow providerLoginFlow) (string, error) {
@@ -120,6 +120,9 @@ func handleProviderLogin(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported provider type", "type": typeName})
 		return
 	}
+	if typeName == "modelscope" {
+		typeName = "alibaba-modelscope"
+	}
 
 	delete(req, "type")
 	delete(req, "provider")
@@ -138,6 +141,11 @@ func handleProviderLogin(c *gin.Context) {
 		resolvedID, _ := result["provider_id"].(string)
 		flowID, err := newProviderLoginFlow(providerLoginFlow{Kind: typeName, ProviderID: resolvedID, IsNew: isNew})
 		if err != nil {
+			if typeName == "openai" {
+				cancelOpenAIOAuth(resolvedID)
+			} else {
+				cancelAntigravityOAuth(resolvedID)
+			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create login flow"})
 			return
 		}
@@ -165,6 +173,11 @@ func handleProviderLogin(c *gin.Context) {
 		activeAuthFlowMu.RUnlock()
 		flowID, err := newProviderLoginFlow(providerLoginFlow{Kind: "device", ProviderID: flowProviderID, IsNew: isNew})
 		if err != nil {
+			activeAuthFlowMu.Lock()
+			if activeAuthFlow != nil && activeAuthFlow.ProviderID == flowProviderID && activeAuthFlow.cancelFn != nil {
+				activeAuthFlow.cancelFn()
+			}
+			activeAuthFlowMu.Unlock()
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create login flow"})
 			return
 		}
@@ -231,11 +244,12 @@ func handleProviderLoginCancel(c *gin.Context) {
 	flowID := c.Param("flow_id")
 	providerLoginFlows.Lock()
 	flow, ok := providerLoginFlows.values[flowID]
-	if ok {
+	if ok && time.Now().After(flow.ExpiresAt) {
 		delete(providerLoginFlows.values, flowID)
+		ok = false
 	}
 	providerLoginFlows.Unlock()
-	if !ok || time.Now().After(flow.ExpiresAt) {
+	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"status": "expired", "error": "login flow not found or expired"})
 		return
 	}
@@ -248,6 +262,16 @@ func handleProviderLoginCancel(c *gin.Context) {
 			activeAuthFlow = nil
 		}
 		activeAuthFlowMu.Unlock()
+	} else if flow.Kind == "openai" {
+		cancelOpenAIOAuth(flow.ProviderID)
+	} else if flow.Kind == "antigravity" {
+		if !cancelAntigravityOAuth(flow.ProviderID) {
+			c.JSON(http.StatusConflict, gin.H{"error": "OAuth flow is already completing or has finished"})
+			return
+		}
 	}
+	providerLoginFlows.Lock()
+	delete(providerLoginFlows.values, flowID)
+	providerLoginFlows.Unlock()
 	c.JSON(http.StatusOK, gin.H{"status": "canceled", "provider_id": flow.ProviderID, "is_new": flow.IsNew})
 }

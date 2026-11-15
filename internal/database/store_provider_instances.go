@@ -1,6 +1,10 @@
 package database
 
-import "database/sql"
+import (
+	"context"
+	"database/sql"
+	"fmt"
+)
 
 // Provider instance operations
 type ProviderInstanceStore struct {
@@ -31,6 +35,59 @@ func (pis *ProviderInstanceStore) Get(instanceID string) (*ProviderInstanceRecor
 	record.CreatedAt = parseTime(createdAtStr)
 	record.UpdatedAt = parseTime(updatedAtStr)
 	return &record, nil
+}
+
+// RenameIdentity transfers the provider and its owned rows in one transaction.
+// Callers must coordinate this operation with the provider's runtime lifecycle.
+func (pis *ProviderInstanceStore) RenameIdentity(ctx context.Context, oldID, newID string) error {
+	tx, err := pis.db.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin provider identity transfer: %w", err)
+	}
+	defer tx.Rollback()
+
+	result, err := tx.ExecContext(ctx, `
+		INSERT INTO provider_instances
+		(instance_id, provider_id, name, subtitle, priority, activated, created_at, updated_at)
+		SELECT ?, provider_id, name, subtitle, priority, activated, created_at, datetime('now')
+		FROM provider_instances WHERE instance_id = ?`, newID, oldID)
+	if err != nil {
+		return fmt.Errorf("copy provider identity: %w", err)
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("inspect provider identity transfer: %w", err)
+	}
+	if count != 1 {
+		return fmt.Errorf("provider instance %q not found", oldID)
+	}
+	if err := transferUpstreamIdentityHints(ctx, tx, oldID, newID); err != nil {
+		return err
+	}
+
+	queries := []string{
+		`UPDATE tokens SET instance_id = ? WHERE instance_id = ?`,
+		`UPDATE provider_configs SET instance_id = ? WHERE instance_id = ?`,
+		`UPDATE provider_model_states SET instance_id = ? WHERE instance_id = ?`,
+		`UPDATE model_configs SET instance_id = ? WHERE instance_id = ?`,
+		`UPDATE provider_models_cache SET instance_id = ? WHERE instance_id = ?`,
+		`UPDATE virtual_model_upstreams SET provider_id = ? WHERE provider_id = ?`,
+	}
+	for _, query := range queries {
+		if _, err := tx.ExecContext(ctx, query, newID, oldID); err != nil {
+			return fmt.Errorf("transfer provider-owned records: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM provider_instances WHERE instance_id = ?`, oldID); err != nil {
+		return fmt.Errorf("remove old provider identity: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit provider identity transfer: %w", err)
+	}
+	GetModelResolutionCache().InvalidateInstances()
+	GetModelResolutionCache().InvalidateVMs()
+	GetModelStateCache().Invalidate()
+	return nil
 }
 
 func (pis *ProviderInstanceStore) GetAll() ([]ProviderInstanceRecord, error) {

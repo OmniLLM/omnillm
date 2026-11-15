@@ -61,23 +61,6 @@ func TestNormalizeBaseURL(t *testing.T) {
 	}
 }
 
-func TestCanonicalInstanceID(t *testing.T) {
-	tests := []struct {
-		endpoint string
-		apiKey   string
-		wantPfx  string
-	}{
-		{"http://localhost:11434/v1", "", "openai-compatible-localhost"},
-		{"https://api.example.com/v1", "sk-abcdef", "openai-compatible-api-example-com-abcdef"},
-	}
-	for _, tt := range tests {
-		got := CanonicalInstanceID(tt.endpoint, tt.apiKey)
-		if got != tt.wantPfx {
-			t.Errorf("CanonicalInstanceID(%q, %q) = %q, want %q", tt.endpoint, tt.apiKey, got, tt.wantPfx)
-		}
-	}
-}
-
 func TestDeriveDisplayName(t *testing.T) {
 	tests := []struct {
 		url  string

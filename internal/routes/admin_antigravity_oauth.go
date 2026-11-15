@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -28,6 +29,29 @@ type antigravityOAuthState struct {
 	IsNewProvider bool // true = auth-and-create, false = re-auth existing
 	Done          bool
 	Error         string
+	reservation   *providerInstanceReservation
+	release       func()
+	expiryTimer   *time.Timer
+	finishOnce    sync.Once
+}
+
+func (s *antigravityOAuthState) finish() {
+	s.finishOnce.Do(func() {
+		agOAuthMu.Lock()
+		if agOAuthActive[s.ProviderID] == s {
+			delete(agOAuthActive, s.ProviderID)
+		}
+		agOAuthMu.Unlock()
+		if s.expiryTimer != nil {
+			s.expiryTimer.Stop()
+		}
+		if s.reservation != nil {
+			cleanupProviderReservation(s.reservation)
+		}
+		if s.release != nil {
+			s.release()
+		}
+	})
 }
 
 var (
@@ -35,9 +59,12 @@ var (
 		return oauthcode.GenerateState(16, oauthcode.StateEncodingHex)
 	}
 	exchangeAntigravityOAuthCode = antigravitypkg.ExchangeCode
+	discoverAntigravityProject   = antigravitypkg.DiscoverProject
+	fetchAntigravityEmail        = antigravitypkg.FetchUserEmail
 
 	agOAuthMu     sync.Mutex
 	agOAuthStates = map[string]*antigravityOAuthState{} // keyed by state nonce
+	agOAuthActive = map[string]*antigravityOAuthState{} // keyed by provider ID, including callbacks in progress
 
 	// agOAuthResults holds completed OAuth results keyed by provider_id so the
 	// frontend can poll for completion instead of relying on window.opener
@@ -55,9 +82,29 @@ type antigravityOAuthResult struct {
 }
 
 func newAntigravityOAuthState(providerID, clientID, clientSecret, redirectURI string, isNew bool) (*antigravityOAuthState, error) {
+	return newAntigravityOAuthStateWithReservation(providerID, clientID, clientSecret, redirectURI, isNew, nil)
+}
+
+func newAntigravityOAuthStateWithReservation(
+	providerID, clientID, clientSecret, redirectURI string,
+	isNew bool,
+	reservation *providerInstanceReservation,
+) (*antigravityOAuthState, error) {
 	nonce, err := generateAntigravityOAuthState()
 	if err != nil {
 		return nil, fmt.Errorf("antigravity: failed to generate OAuth state: %w", err)
+	}
+	var release func()
+	if !isNew {
+		provider, releaseProvider, borrowErr := registry.GetProviderRegistry().BorrowProvider(providerID)
+		if borrowErr != nil {
+			return nil, fmt.Errorf("antigravity: provider unavailable: %w", borrowErr)
+		}
+		if _, ok := provider.(*antigravitypkg.Provider); !ok {
+			releaseProvider()
+			return nil, fmt.Errorf("antigravity: incorrect provider type")
+		}
+		release = releaseProvider
 	}
 	s := &antigravityOAuthState{
 		ProviderID:    providerID,
@@ -67,9 +114,32 @@ func newAntigravityOAuthState(providerID, clientID, clientSecret, redirectURI st
 		State:         nonce,
 		Expiry:        time.Now().Add(10 * time.Minute),
 		IsNewProvider: isNew,
+		reservation:   reservation,
+		release:       release,
 	}
 	agOAuthMu.Lock()
+	if agOAuthActive[providerID] != nil || agOAuthStates[nonce] != nil {
+		agOAuthMu.Unlock()
+		if release != nil {
+			release()
+		}
+		return nil, fmt.Errorf("antigravity: OAuth flow already active: %w", registry.ErrProviderBusy)
+	}
 	agOAuthStates[nonce] = s
+	agOAuthActive[providerID] = s
+	if reservation != nil || release != nil {
+		s.expiryTimer = time.AfterFunc(time.Until(s.Expiry), func() {
+			agOAuthMu.Lock()
+			current := agOAuthStates[nonce]
+			if current == s {
+				delete(agOAuthStates, nonce)
+			}
+			agOAuthMu.Unlock()
+			if current == s {
+				s.finish()
+			}
+		})
+	}
 	agOAuthMu.Unlock()
 	return s, nil
 }
@@ -82,12 +152,20 @@ func getAntigravityOAuthState(nonce string) *antigravityOAuthState {
 
 func takeAntigravityOAuthState(nonce string, now time.Time) *antigravityOAuthState {
 	agOAuthMu.Lock()
-	defer agOAuthMu.Unlock()
 	state := agOAuthStates[nonce]
-	if state == nil || now.After(state.Expiry) {
+	if state == nil {
+		agOAuthMu.Unlock()
 		return nil
 	}
 	delete(agOAuthStates, nonce)
+	if state.expiryTimer != nil {
+		state.expiryTimer.Stop()
+	}
+	agOAuthMu.Unlock()
+	if now.After(state.Expiry) {
+		state.finish()
+		return nil
+	}
 	return state
 }
 
@@ -115,9 +193,15 @@ func handleAntigravityStartOAuth(c *gin.Context) {
 	// Determine provider ID — use an existing one or allocate a new one.
 	isNew := req.ProviderID == ""
 	providerID := req.ProviderID
+	var reservation *providerInstanceReservation
 	if isNew {
-		reg := registry.GetProviderRegistry()
-		providerID = reg.NextInstanceID("antigravity")
+		var err error
+		reservation, err = reserveRandomProvider("antigravity")
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Unable to reserve provider ID. Please retry."})
+			return
+		}
+		providerID = reservation.instanceID
 	}
 
 	// Build redirect URI pointing back to this server.
@@ -125,12 +209,22 @@ func handleAntigravityStartOAuth(c *gin.Context) {
 	host := c.Request.Host
 	redirectURI := fmt.Sprintf("%s://%s/api/admin/providers/antigravity/oauth-callback", scheme, host)
 
-	state, err := newAntigravityOAuthState(providerID, req.ClientID, req.ClientSecret, redirectURI, isNew)
+	state, err := newAntigravityOAuthStateWithReservation(providerID, req.ClientID, req.ClientSecret, redirectURI, isNew, reservation)
 	if err != nil {
+		if reservation != nil {
+			cleanupProviderReservation(reservation)
+		}
 		log.Error().Err(err).Str("provider", providerID).Msg("Antigravity: failed to generate OAuth state")
+		if errors.Is(err, registry.ErrProviderBusy) {
+			c.JSON(http.StatusConflict, gin.H{"error": "An OAuth flow is already active for this provider"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Unable to start OAuth. Please retry."})
 		return
 	}
+	agOAuthResultsMu.Lock()
+	delete(agOAuthResults, providerID)
+	agOAuthResultsMu.Unlock()
 	authURL := antigravitypkg.BuildAuthURL(req.ClientID, redirectURI, state.State)
 
 	log.Info().
@@ -172,6 +266,7 @@ func handleAntigravityOAuthCallback(c *gin.Context) {
 		renderOAuthResult(c, false, "OAuth state expired or not found — please try again")
 		return
 	}
+	defer state.finish()
 
 	// Exchange authorization code for tokens.
 	tokenResp, err := exchangeAntigravityOAuthCode(state.ClientID, state.ClientSecret, code, state.RedirectURI)
@@ -182,11 +277,11 @@ func handleAntigravityOAuthCallback(c *gin.Context) {
 	}
 
 	// Discover the user's Cloud Code project ID (required for API calls).
-	projectID := antigravitypkg.DiscoverProject(tokenResp.AccessToken)
+	projectID := discoverAntigravityProject(tokenResp.AccessToken)
 	log.Info().Str("provider", state.ProviderID).Str("project_id", projectID).Msg("Antigravity: discovered project")
 
 	// Fetch the authenticated user's email to use as a friendly identifier.
-	email := antigravitypkg.FetchUserEmail(tokenResp.AccessToken)
+	email := fetchAntigravityEmail(tokenResp.AccessToken)
 	log.Info().Str("provider", state.ProviderID).Str("email", email).Msg("Antigravity: fetched user email")
 
 	// Persist credentials + tokens + project_id.
@@ -196,6 +291,9 @@ func handleAntigravityOAuthCallback(c *gin.Context) {
 		"client_id":     state.ClientID,
 		"client_secret": state.ClientSecret,
 		"project_id":    projectID,
+	}
+	if tokenResp.ExpiresIn > 0 {
+		tokenData["expires_at"] = time.Now().Unix() + tokenResp.ExpiresIn
 	}
 	if email != "" {
 		tokenData["email"] = email
@@ -207,12 +305,12 @@ func handleAntigravityOAuthCallback(c *gin.Context) {
 	reg := registry.GetProviderRegistry()
 	if state.IsNewProvider {
 		prov := antigravitypkg.NewProvider(state.ProviderID, "")
-		if err := createProvider(prov, func() error {
+		if err := createReservedProvider(state.reservation, prov, func() error {
 			if err := tokenStore.Save(state.ProviderID, tokenData); err != nil {
 				return fmt.Errorf("save credentials: %w", err)
 			}
 			prov.ApplyTokenFromDB()
-			return reg.Register(prov, true)
+			return nil
 		}); err != nil {
 			log.Error().Err(err).Str("provider", state.ProviderID).Msg("Antigravity: failed to persist provider")
 			renderOAuthResult(c, false, "Failed to save credentials — please try again")
@@ -244,6 +342,22 @@ func handleAntigravityOAuthCallback(c *gin.Context) {
 
 	log.Info().Str("provider", state.ProviderID).Msg("Antigravity: Google OAuth completed successfully")
 	renderOAuthResult(c, true, "")
+}
+
+func cancelAntigravityOAuth(providerID string) bool {
+	agOAuthMu.Lock()
+	states := make([]*antigravityOAuthState, 0)
+	for nonce, state := range agOAuthStates {
+		if state.ProviderID == providerID {
+			delete(agOAuthStates, nonce)
+			states = append(states, state)
+		}
+	}
+	agOAuthMu.Unlock()
+	for _, state := range states {
+		state.finish()
+	}
+	return len(states) != 0
 }
 
 // renderOAuthResult writes a small self-closing HTML page.

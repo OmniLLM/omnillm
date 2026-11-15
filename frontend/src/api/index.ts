@@ -455,6 +455,12 @@ export const renameProvider = (
     body: JSON.stringify(fields),
   })
 
+export const changeProviderIdentity = (id: string, newId: string) =>
+  apiFetch<{ success: boolean; id: string }>(
+    `/api/admin/providers/${encodeURIComponent(id)}/identity`,
+    { method: "PATCH", body: JSON.stringify({ new_id: newId }) },
+  )
+
 // ─── Antigravity Google OAuth ─────────────────────────────────────────────────
 
 export const startAntigravityOAuth = (

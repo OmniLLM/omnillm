@@ -25,10 +25,10 @@ The CLI SHALL resolve its admin API key from `--api-key` and then `OMNILLM_API_K
 - **THEN** the request is sent without an Authorization header
 
 ### Requirement: Output formats
-Read operations SHALL support table and JSON output, default to table, and return raw server JSON when JSON is selected.
+Read operations SHALL support table and JSON output, default to table, and return raw server JSON when JSON is selected, except that the provider and model show commands SHALL return the selected detail object as specified by their inspection requirement.
 
 #### Scenario: JSON output selected
-- **WHEN** an operator uses `--output json`
+- **WHEN** an operator uses `--output json` with a read operation other than provider or model show
 - **THEN** the CLI prints the server JSON without table rendering
 
 ### Requirement: Server operation and administration
@@ -395,4 +395,63 @@ unless the operator explicitly requests hidden fields.
 #### Scenario: Existing response-summary formatting
 - **WHEN** a response-summary event has model and token metadata without HTTP method, path, or status
 - **THEN** formatting preserves existing model aliases and redundant-field suppression without inventing HTTP fields
+
+### Requirement: Provider and model detail inspection
+The CLI SHALL provide `omnillm provider show <reference>` and `omnillm provider model show <reference> <model-id>` to inspect one configured provider or one of its catalog models. Provider references SHALL use exact instance ID, then unique case-insensitive alias, then unique case-insensitive display name, consistent with provider reference resolution. Model IDs SHALL match exactly, including embedded slashes. Both commands SHALL support table and JSON output. Provider details SHALL include the available ID, type, name, alias, authentication status, activation status, and model counts. Model details SHALL include available ID, name, enablement, description, token limits, and capabilities. The provider show command MUST omit configuration and unknown fields from both output formats so that credential material in those fields is not exposed.
+
+#### Scenario: Show provider by alias
+- **WHEN** an operator invokes `omnillm provider show` with a unique alias
+- **THEN** the CLI displays the matching provider's safe identity and status fields
+
+#### Scenario: Reference precedence
+- **WHEN** an exact instance ID and another provider's alias or name match the supplied reference
+- **THEN** the exact instance is shown
+
+#### Scenario: Ambiguous provider reference
+- **WHEN** the highest-precedence matching alias or display name belongs to multiple providers
+- **THEN** the command fails without choosing a provider and identifies the matching instance IDs
+
+#### Scenario: Show a namespaced model
+- **WHEN** an operator invokes `omnillm provider model show` with a provider reference and an exact model ID containing slashes
+- **THEN** the CLI displays that model's available catalog details without interpreting the slash as a provider boundary
+
+#### Scenario: Show JSON
+- **WHEN** an operator selects `--output json` for either show command
+- **THEN** the CLI prints one selected detail object rather than the list response; provider output contains only the approved safe fields
+
+#### Scenario: Missing provider or model
+- **WHEN** the requested provider or exact model ID does not exist
+- **THEN** the command returns a non-success result and an actionable not-found error
+
+#### Scenario: Provider configuration contains secrets
+- **WHEN** a provider list entry contains credential material in configuration or unknown fields
+- **THEN** neither table nor JSON provider show output contains those fields or their values
+
+#### Scenario: Existing model command compatibility
+- **WHEN** an operator invokes the hidden legacy root form `omnillm model show <reference> <model-id>`
+- **THEN** it performs the same inspection as `omnillm provider model show`
+
+### Requirement: Provider enable and disable commands
+
+The CLI SHALL advertise `omnillm provider enable` and `omnillm provider disable` as the canonical commands for adding and removing providers from the active set. It MUST NOT accept `provider activate` or `provider deactivate` as command aliases. The canonical commands SHALL preserve provider reference handling, validation, completion, output formats, and existing server-side activation semantics.
+
+#### Scenario: Provider help
+
+- **WHEN** an operator views ordinary provider command help
+- **THEN** the CLI lists `enable` and `disable` as the active-set management commands rather than listing `activate` and `deactivate` as separate commands
+
+#### Scenario: Enable a provider
+
+- **WHEN** an operator invokes `provider enable` with a valid provider reference
+- **THEN** the CLI requests the same active-set operation as the prior `provider activate` command
+
+#### Scenario: Disable a provider
+
+- **WHEN** an operator invokes `provider disable` with a valid provider reference
+- **THEN** the CLI requests the same active-set operation as the prior `provider deactivate` command
+
+#### Scenario: Legacy commands rejected
+
+- **WHEN** an operator or automation invokes `provider activate` or `provider deactivate`
+- **THEN** the CLI rejects the unknown command without requesting a provider state change
 

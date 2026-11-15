@@ -1,6 +1,7 @@
 package database
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"slices"
@@ -85,7 +86,8 @@ func (c *ModelResolutionCache) loadVMsLocked() error {
 	}
 
 	uRows, err := db.db.Query(`
-		SELECT id, virtual_model_id, provider_id, model_id, weight, priority, created_at, updated_at
+		SELECT id, virtual_model_id, provider_id, model_id, weight, priority, created_at, updated_at,
+		       (SELECT value FROM config WHERE key = '` + upstreamIdentityHintKeyPrefix + `' || virtual_model_upstreams.id)
 		FROM virtual_model_upstreams ORDER BY priority ASC, id ASC
 	`)
 	if err != nil {
@@ -97,8 +99,12 @@ func (c *ModelResolutionCache) loadVMsLocked() error {
 	for uRows.Next() {
 		var u VirtualModelUpstreamRecord
 		var createdAtStr, updatedAtStr string
-		if err := uRows.Scan(&u.ID, &u.VirtualModelID, &u.ProviderID, &u.ModelID, &u.Weight, &u.Priority, &createdAtStr, &updatedAtStr); err != nil {
+		var hint sql.NullString
+		if err := uRows.Scan(&u.ID, &u.VirtualModelID, &u.ProviderID, &u.ModelID, &u.Weight, &u.Priority, &createdAtStr, &updatedAtStr, &hint); err != nil {
 			return err
+		}
+		if hint.Valid {
+			u.IdentityHint = &hint.String
 		}
 		u.CreatedAt = parseTime(createdAtStr)
 		u.UpdatedAt = parseTime(updatedAtStr)

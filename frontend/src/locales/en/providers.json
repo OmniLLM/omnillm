@@ -27,6 +27,17 @@
   "remaining": "remaining",
   "rawData": "Raw Data",
   "renameProvider": "Rename provider",
+  "identity": {
+    "edit": "Edit ID",
+    "input": "Provider instance ID",
+    "save": "Save ID",
+    "cancel": "Cancel",
+    "invalid": "Use 1–64 letters, digits, periods, underscores, or hyphens; start with a letter or digit.",
+    "confirmTitle": "Change provider ID?",
+    "confirmMessage": "Change {{oldId}} to {{newId}}? Update external clients, configuration, and saved model selections that use the old ID.",
+    "saved": "Provider ID updated",
+    "failed": "Unable to change provider ID: {{error}}"
+  },
   "editSubtitle": "Edit subtitle",
   "modelsEnabled": "Models enabled",
   "noAccounts": "No {{type}} accounts configured",

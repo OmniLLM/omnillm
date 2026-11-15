@@ -45,7 +45,12 @@ func handleModelMetadata(c *gin.Context) {
 func handleModels(c *gin.Context) {
 	providerRegistry := registry.GetProviderRegistry()
 
-	activeProviders := providerRegistry.GetActiveProviders()
+	activeProviders, releaseProviders, err := providerRegistry.BorrowActiveProviders()
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Provider identity is being updated; retry the request"})
+		return
+	}
+	defer releaseProviders()
 	allModels := make([]map[string]interface{}, 0)
 
 	if len(activeProviders) == 0 {

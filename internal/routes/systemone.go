@@ -30,6 +30,11 @@ func handleSystemOne(c *gin.Context) {
 		return
 	}
 	requestID := c.GetString("request_id")
+	providers, releaseProviders, ok := borrowModelProviders(c)
+	if !ok {
+		return
+	}
+	defer releaseProviders()
 	attempts, err := resolveRequestedModels(requestID, request.Model)
 	if err != nil {
 		writeSystemOneError(c, http.StatusBadRequest, "invalid provider reference")
@@ -45,7 +50,7 @@ func handleSystemOne(c *gin.Context) {
 		if attempt.OnlyIfPreviousUnavailable && !unavailable {
 			continue
 		}
-		resolved, err := modelrouting.ResolveEvaluationProviders(
+		resolved, err := modelrouting.EvaluationResolver(providers)(
 			attempt.RequestedModel, attempt.NormalizedModel, attempt.ProviderID, modelCache,
 		)
 		if err != nil {

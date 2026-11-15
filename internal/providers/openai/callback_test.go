@@ -2,6 +2,7 @@ package openai
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -123,6 +124,26 @@ func TestListenForCallbackTimesOut(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > 5*time.Second {
 		t.Errorf("timeout took %s; the deadline was not honoured", elapsed)
+	}
+}
+
+func TestListenForCallbackCancelsWhileAnotherFlowOwnsPort(t *testing.T) {
+	callbackGate <- struct{}{}
+	defer func() { <-callbackGate }()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	result := make(chan error, 1)
+	go func() {
+		_, err := ListenForCallback(ctx, "state", time.Minute)
+		result <- err
+	}()
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("callback error = %v, want cancellation", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("callback waited for an occupied port after cancellation")
 	}
 }
 

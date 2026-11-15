@@ -2,11 +2,13 @@ package routes
 
 import (
 	"errors"
+	"fmt"
 	"omnillm/internal/cif"
 	"omnillm/internal/database"
 	"omnillm/internal/lib/affinity"
 	"omnillm/internal/lib/modelrouting"
 	"omnillm/internal/lib/virtualmodelrouting"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 )
@@ -49,7 +51,13 @@ func resolveRequestedModels(requestID, requestedModel string) ([]resolvedModelAt
 		prefix, bareUpstreamModel := modelrouting.ParseProviderPrefix(upstream.ModelID)
 		executionModel := upstream.ModelID
 		providerID := upstream.ProviderID
-		if resolvedInstanceID, ok := lookupProviderPrefix(prefix); ok {
+		formerQualifier, hasHint, hintErr := upstream.FormerQualifier()
+		if hintErr != nil {
+			return nil, fmt.Errorf("invalid virtual model upstream identity: %w", hintErr)
+		}
+		if hasHint {
+			executionModel = strings.TrimPrefix(upstream.ModelID, formerQualifier+"/")
+		} else if resolvedInstanceID, ok := lookupProviderPrefix(prefix); ok {
 			executionModel = bareUpstreamModel
 			if providerID == "" {
 				providerID = resolvedInstanceID

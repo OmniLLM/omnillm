@@ -53,10 +53,11 @@ func NewProvider(instanceID, name string) *Provider {
 
 // ─── Identity ────────────────────────────────────────────────────────────────
 
-func (p *Provider) GetID() string         { return "alibaba-modelscope" }
-func (p *Provider) GetInstanceID() string { return p.instanceID }
-func (p *Provider) GetName() string       { return p.name }
-func (p *Provider) SetName(name string)   { p.name = name }
+func (p *Provider) GetID() string           { return "alibaba-modelscope" }
+func (p *Provider) GetInstanceID() string   { return p.instanceID }
+func (p *Provider) SetInstanceID(id string) { p.instanceID = id }
+func (p *Provider) GetName() string         { return p.name }
+func (p *Provider) SetName(name string)     { p.name = name }
 
 // ─── Authentication ──────────────────────────────────────────────────────────
 

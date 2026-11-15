@@ -3,6 +3,7 @@ package antigravity
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,7 +22,9 @@ const (
 	// Scopes required to call the Antigravity (Cloud Code) API.
 	OAuthScopes = "https://www.googleapis.com/auth/cloud-platform openid email"
 
-	// Production Cloud Code endpoint (use daily sandbox only for testing).
+	// DailyBaseURL is the generation endpoint used by the current Antigravity client.
+	DailyBaseURL = "https://daily-cloudcode-pa.googleapis.com"
+	// ProductionBaseURL remains available as a project-discovery fallback.
 	ProductionBaseURL = "https://cloudcode-pa.googleapis.com"
 	// DefaultProjectID is used as a fallback when project discovery fails.
 	DefaultProjectID = "rising-fact-p41fc"
@@ -83,13 +86,19 @@ func ExchangeCode(clientID, clientSecret, code, redirectURI string) (*OAuthToken
 
 // RefreshAccessToken exchanges a refresh token for a new access token.
 func RefreshAccessToken(clientID, clientSecret, refreshToken string) (*OAuthTokenResponse, error) {
+	return refreshAccessToken(context.Background(), clientID, clientSecret, refreshToken)
+}
+
+func refreshAccessToken(ctx context.Context, clientID, clientSecret, refreshToken string) (*OAuthTokenResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 	data := url.Values{}
 	data.Set("client_id", clientID)
 	data.Set("client_secret", clientSecret)
 	data.Set("refresh_token", refreshToken)
 	data.Set("grant_type", "refresh_token")
 
-	req, err := http.NewRequest("POST", googleTokenURL, bytes.NewBufferString(data.Encode()))
+	req, err := http.NewRequestWithContext(ctx, "POST", googleTokenURL, bytes.NewBufferString(data.Encode()))
 	if err != nil {
 		return nil, fmt.Errorf("antigravity: failed to build refresh request: %w", err)
 	}
@@ -100,17 +109,22 @@ func RefreshAccessToken(clientID, clientSecret, refreshToken string) (*OAuthToke
 		return nil, fmt.Errorf("antigravity: refresh request failed: %w", err)
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, fmt.Errorf("antigravity: failed to read refresh response")
+	}
 	t, err := oauthcode.DecodeTokenResponse(body)
 	if err != nil {
-		return nil, fmt.Errorf("antigravity: failed to parse refresh response: %w", err)
+		return nil, fmt.Errorf("antigravity: malformed refresh response (HTTP %d)", resp.StatusCode)
 	}
-	if t.Error != "" {
-		return nil, fmt.Errorf("antigravity: token refresh failed: %s — %s", t.Error, t.ErrorDesc)
+	if t.Error == "invalid_grant" || t.Error == "invalid_client" {
+		return nil, fmt.Errorf("antigravity: refresh grant rejected (invalid_grant or invalid_client); re-authenticate this provider")
+	}
+	if resp.StatusCode != http.StatusOK || t.Error != "" {
+		return nil, fmt.Errorf("antigravity: token refresh failed (HTTP %d)", resp.StatusCode)
 	}
 	if t.AccessToken == "" {
-		return nil, fmt.Errorf("antigravity: no access_token in refresh response: %s", string(body))
+		return nil, fmt.Errorf("antigravity: refresh response missing access token")
 	}
 	return t, nil
 }
@@ -161,7 +175,8 @@ func DiscoverProject(accessToken string) string {
 
 	reqBody, _ := json.Marshal(loadPayload{})
 	endpoints := []string{
-		"https://cloudcode-pa.googleapis.com",
+		DailyBaseURL,
+		ProductionBaseURL,
 		"https://daily-cloudcode-pa.sandbox.googleapis.com",
 	}
 

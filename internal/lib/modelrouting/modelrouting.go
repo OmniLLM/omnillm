@@ -6,7 +6,6 @@ import (
 	"omnillm/internal/database"
 	"omnillm/internal/lib/catalogcache"
 	"omnillm/internal/providers/types"
-	"omnillm/internal/registry"
 	"omnillm/internal/systemone"
 	"sort"
 	"strings"
@@ -93,23 +92,24 @@ func SortProvidersByPriority(providers []types.Provider) []types.Provider {
 	return sorted
 }
 
-// ResolveProvidersForModel determines which providers and models to use for a given request.
-// If providerID is non-empty, only that specific provider is considered as a candidate.
-//
-//nolint:gocyclo // model resolution involves multiple fallback strategies
-func ResolveProvidersForModel(requestedModel, normalizedModel, providerID string, cache *ModelCache) (*ResolvedModelRoute, error) {
-	return resolveProvidersForOperation(requestedModel, normalizedModel, providerID, cache, false)
+// ProviderResolver resolves generation against a caller-owned provider snapshot.
+// Callers must hold lifecycle leases for the snapshot until execution completes.
+func ProviderResolver(providers []types.Provider) func(string, string, string, *ModelCache) (*ResolvedModelRoute, error) {
+	return func(requestedModel, normalizedModel, providerID string, cache *ModelCache) (*ResolvedModelRoute, error) {
+		return resolveProvidersForOperation(providers, requestedModel, normalizedModel, providerID, cache, false)
+	}
 }
 
-// ResolveEvaluationProviders applies the same identity and ordering rules to native evaluations.
-func ResolveEvaluationProviders(requestedModel, normalizedModel, providerID string, cache *ModelCache) (*ResolvedModelRoute, error) {
-	return resolveProvidersForOperation(requestedModel, normalizedModel, providerID, cache, true)
+// EvaluationResolver resolves evaluation against a caller-owned provider snapshot.
+func EvaluationResolver(providers []types.Provider) func(string, string, string, *ModelCache) (*ResolvedModelRoute, error) {
+	return func(requestedModel, normalizedModel, providerID string, cache *ModelCache) (*ResolvedModelRoute, error) {
+		return resolveProvidersForOperation(providers, requestedModel, normalizedModel, providerID, cache, true)
+	}
 }
 
-func resolveProvidersForOperation(requestedModel, normalizedModel, providerID string, cache *ModelCache, evaluation bool) (*ResolvedModelRoute, error) {
-	reg := registry.GetProviderRegistry()
+func resolveProvidersForOperation(providers []types.Provider, requestedModel, normalizedModel, providerID string, cache *ModelCache, evaluation bool) (*ResolvedModelRoute, error) {
 	activeProviders := make([]types.Provider, 0)
-	for _, p := range reg.GetActiveProviders() {
+	for _, p := range providers {
 		_, native := p.(systemone.Evaluator)
 		if native != evaluation {
 			if p.GetInstanceID() == providerID && !evaluation {
@@ -139,7 +139,7 @@ func resolveProvidersForOperation(requestedModel, normalizedModel, providerID st
 	}
 
 	if len(activeProviders) == 0 {
-		if len(reg.GetActiveProviders()) > 0 {
+		if len(providers) > 0 {
 			return &ResolvedModelRoute{CandidateProviders: []types.Provider{}}, nil
 		}
 		return nil, fmt.Errorf("no active providers available")

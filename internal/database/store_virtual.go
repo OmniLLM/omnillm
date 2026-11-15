@@ -96,11 +96,22 @@ func (s *VirtualModelStore) Update(r *VirtualModelRecord) error {
 }
 
 func (s *VirtualModelStore) Delete(virtualModelID string) error {
-	_, err := s.db.db.Exec("DELETE FROM virtual_models WHERE virtual_model_id = ?", virtualModelID)
-	if err == nil {
-		GetModelResolutionCache().InvalidateVMs()
+	tx, err := s.db.db.Begin()
+	if err != nil {
+		return err
 	}
-	return err
+	defer tx.Rollback()
+	if err := deleteUpstreamIdentityHints(tx, virtualModelID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("DELETE FROM virtual_models WHERE virtual_model_id = ?", virtualModelID); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	GetModelResolutionCache().InvalidateVMs()
+	return nil
 }
 
 func (s *VirtualModelStore) Rename(oldID string, newID string) error {
@@ -185,6 +196,9 @@ func (s *VirtualModelUpstreamStore) SetForVModel(virtualModelID string, upstream
 	}
 	defer tx.Rollback()
 
+	if err := deleteUpstreamIdentityHints(tx, virtualModelID); err != nil {
+		return err
+	}
 	if _, err := tx.Exec("DELETE FROM virtual_model_upstreams WHERE virtual_model_id = ?", virtualModelID); err != nil {
 		return err
 	}

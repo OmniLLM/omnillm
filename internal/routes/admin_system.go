@@ -41,7 +41,12 @@ func MakePublicInfoHandler(port int) gin.HandlerFunc {
 
 func handleGetStatus(c *gin.Context) {
 	providerRegistry := registry.GetProviderRegistry()
-	activeProviders := providerRegistry.GetActiveProviders()
+	activeProviders, releaseProviders, err := providerRegistry.BorrowActiveProviders()
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Provider identity is being updated; retry the request"})
+		return
+	}
+	defer releaseProviders()
 	var activeProvider map[string]interface{}
 	activeProviderList := make([]map[string]interface{}, 0, len(activeProviders))
 	modelCount := 0
@@ -64,7 +69,11 @@ func handleGetStatus(c *gin.Context) {
 
 	// Build auth flow state for response
 	activeAuthFlowMu.RLock()
-	flow := activeAuthFlow
+	var flow *authFlowState
+	if activeAuthFlow != nil {
+		snapshot := *activeAuthFlow
+		flow = &snapshot
+	}
 	activeAuthFlowMu.RUnlock()
 
 	var authFlowResp interface{}
@@ -115,7 +124,12 @@ func handleGetStatus(c *gin.Context) {
 
 func handleGetAuthStatus(c *gin.Context) {
 	activeAuthFlowMu.RLock()
-	flow := activeAuthFlow
+	current := activeAuthFlow
+	var flow *authFlowState
+	if current != nil {
+		snapshot := *current
+		flow = &snapshot
+	}
 	activeAuthFlowMu.RUnlock()
 
 	if flow == nil {
@@ -140,7 +154,7 @@ func handleGetAuthStatus(c *gin.Context) {
 	// Clear completed/errored flows after reporting them
 	if flow.Status == "complete" || flow.Status == "error" {
 		activeAuthFlowMu.Lock()
-		if activeAuthFlow == flow {
+		if activeAuthFlow == current {
 			activeAuthFlow = nil
 		}
 		activeAuthFlowMu.Unlock()

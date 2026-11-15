@@ -5,6 +5,7 @@ import (
 	"omnillm/internal/database"
 	"omnillm/internal/lib/modelrouting"
 	"omnillm/internal/lib/virtualmodelrouting"
+	"omnillm/internal/registry"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -153,6 +154,12 @@ func handleGetVirtualModel(c *gin.Context) {
 }
 
 func handleCreateVirtualModel(c *gin.Context) {
+	_, releaseProviders, err := registry.GetProviderRegistry().BorrowProviders()
+	if err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "Provider identity is being updated; retry the request"})
+		return
+	}
+	defer releaseProviders()
 	var payload virtualModelPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -202,6 +209,12 @@ func handleCreateVirtualModel(c *gin.Context) {
 }
 
 func handleUpdateVirtualModel(c *gin.Context) {
+	_, releaseProviders, err := registry.GetProviderRegistry().BorrowProviders()
+	if err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "Provider identity is being updated; retry the request"})
+		return
+	}
+	defer releaseProviders()
 	id := c.Param("id")
 	var payload virtualModelPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {

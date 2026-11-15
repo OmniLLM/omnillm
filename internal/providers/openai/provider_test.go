@@ -322,6 +322,22 @@ func TestGetHeadersOmitsAccountIDWhenUnknown(t *testing.T) {
 	}
 }
 
+func TestCloneForIdentityPreservesInMemoryCredentials(t *testing.T) {
+	p := NewProvider("old-id", "Custom name")
+	p.accessToken = "access"
+	p.refreshToken = "refresh"
+	p.accountID = "account"
+	p.email = "user@example.test"
+	p.expiresAt = 123
+	clone := p.CloneForIdentity("new-id")
+	if clone == p || clone.GetInstanceID() != "new-id" || clone.GetName() != "Custom name" {
+		t.Fatalf("clone identity = %#v", clone)
+	}
+	if clone.accessToken != p.accessToken || clone.refreshToken != p.refreshToken || clone.accountID != p.accountID || clone.email != p.email || clone.expiresAt != p.expiresAt {
+		t.Fatal("clone did not preserve OAuth state")
+	}
+}
+
 func TestGetTokenSkipsRefreshWithoutRefreshToken(t *testing.T) {
 	// An expired token with no refresh token must return as-is rather than
 	// making a doomed network call.

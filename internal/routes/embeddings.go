@@ -28,7 +28,14 @@ func handleEmbeddings(c *gin.Context) {
 
 	// Try active providers in priority order
 	providerRegistry := registry.GetProviderRegistry()
-	activeProviders := providerRegistry.GetActiveProviders()
+	activeProviders, releaseProviders, err := providerRegistry.BorrowActiveProviders()
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": gin.H{"message": "Provider identity is being updated; retry the request", "type": "provider_error"},
+		})
+		return
+	}
+	defer releaseProviders()
 
 	if len(activeProviders) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{

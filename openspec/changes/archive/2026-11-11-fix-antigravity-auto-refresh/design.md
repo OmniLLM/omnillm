@@ -1,0 +1,16 @@
+## Context
+The adapter currently loads access_token for every request, ignores load errors, and has a no-op RefreshToken. A refresh exchange helper exists but generation does not call it. OAuth completion saves client credentials and refresh_token without expiry. The low-level streaming function returns HTTP failures before starting its SSE goroutine, providing a safe retry boundary.
+
+## Decisions
+- Store absolute expiry derived from a positive expires_in on OAuth completion and refresh. Refresh within a 60-second safety window. For legacy credentials with no expiry and a refresh token, refresh before first use; never infer expiry from the database modification timestamp. Access-token-only legacy records may attempt generation but report re-authentication required on 401.
+- Coordinate refresh per provider with context-aware waiting and immutable credential snapshots. Re-read persisted state after acquiring coordination so concurrent requests reuse the renewed token. Preserve lifecycle leases across refresh and generation, so rename/delete cannot race owned-state updates. Do not hold registry-wide locks during network calls.
+- Use conditional database updates against the credential snapshot used for exchange. If OAuth completion or another process changed credentials, reload the newer record instead of overwriting it. Preserve client credentials, project, email, unknown metadata, and the previous refresh token when the response omits a replacement. Publish refreshed memory only after persistence succeeds. No schema migration is needed.
+- Honor caller cancellation and bounded token exchange timeouts. Validate HTTP status and token response; never log response bodies or token values in refresh diagnostics. Missing refresh credentials or invalid_grant produce an actionable re-authentication error, while transient failures remain distinguishable and retain credentials.
+- Represent upstream HTTP status structurally. Retry generation at most once after a pre-stream HTTP 401, using a refreshed token or a newer credential snapshot if another request refreshed the rejected token. Do not retry 403, unrelated failures, cancellation, a second 401, or any failure after stream delivery starts. Replay the same request with unchanged tools and history.
+- Implement explicit RefreshToken through the same coordination and persistence path. Propagate database load errors instead of sending stale state.
+
+## Compatibility and rollout
+Existing provider IDs, aliases, project IDs, and routing remain intact. Existing OAuth records become refreshable without repeating login when their refresh grant remains valid. Deploy through the normal build and service restart after verification. Rolling back leaves additional JSON expiry metadata harmless to older code but restores the old lack of automatic refresh.
+
+## Risks and failure handling
+Refresh grants may be revoked: report re-authentication required rather than promise automatic recovery. Refresh failures must not corrupt stored credentials. Concurrent OAuth and refresh must not restore old credentials. A token already rejected twice must not trigger an unbounded replay. Tests must exercise both streaming and collected non-streaming execution with the race detector.

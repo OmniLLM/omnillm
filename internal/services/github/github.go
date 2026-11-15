@@ -3,6 +3,7 @@ package github
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -98,17 +99,26 @@ func GetDeviceCode() (*DeviceCodeResponse, error) {
 
 // PollAccessToken polls for the access token after the user has authorized the device
 func PollAccessToken(deviceCode *DeviceCodeResponse) (string, error) {
-	body, _ := json.Marshal(map[string]string{
+	return PollAccessTokenContext(context.Background(), deviceCode)
+}
+
+// PollAccessTokenContext polls until authorization, expiry, or cancellation.
+func PollAccessTokenContext(ctx context.Context, deviceCode *DeviceCodeResponse) (string, error) {
+	body, err := json.Marshal(map[string]string{
 		"client_id":   ClientID,
 		"device_code": deviceCode.DeviceCode,
 		"grant_type":  "urn:ietf:params:oauth:grant-type:device_code",
 	})
+	if err != nil {
+		return "", fmt.Errorf("encode device token request: %w", err)
+	}
 
 	interval := time.Duration(deviceCode.Interval+1) * time.Second
-	deadline := time.Now().Add(time.Duration(deviceCode.ExpiresIn) * time.Second)
+	pollCtx, cancel := context.WithTimeout(ctx, time.Duration(deviceCode.ExpiresIn)*time.Second)
+	defer cancel()
 
-	for time.Now().Before(deadline) {
-		req, err := http.NewRequest("POST", GitHubBaseURL+"/login/oauth/access_token", bytes.NewBuffer(body))
+	for pollCtx.Err() == nil {
+		req, err := http.NewRequestWithContext(pollCtx, "POST", GitHubBaseURL+"/login/oauth/access_token", bytes.NewBuffer(body))
 		if err != nil {
 			return "", fmt.Errorf("failed to create request: %w", err)
 		}
@@ -118,8 +128,13 @@ func PollAccessToken(deviceCode *DeviceCodeResponse) (string, error) {
 		client := httpClient
 		resp, err := client.Do(req)
 		if err != nil {
+			if pollCtx.Err() != nil {
+				break
+			}
 			log.Warn().Err(err).Msg("Token poll request failed, retrying...")
-			time.Sleep(interval)
+			if !waitForDevicePoll(pollCtx, interval) {
+				break
+			}
 			continue
 		}
 
@@ -127,7 +142,9 @@ func PollAccessToken(deviceCode *DeviceCodeResponse) (string, error) {
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			resp.Body.Close()
 			log.Warn().Err(err).Msg("Failed to decode token response, retrying...")
-			time.Sleep(interval)
+			if !waitForDevicePoll(pollCtx, interval) {
+				break
+			}
 			continue
 		}
 		resp.Body.Close()
@@ -146,10 +163,25 @@ func PollAccessToken(deviceCode *DeviceCodeResponse) (string, error) {
 			interval += 5 * time.Second
 		}
 
-		time.Sleep(interval)
+		if !waitForDevicePoll(pollCtx, interval) {
+			break
+		}
 	}
-
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	return "", fmt.Errorf("device code expired before authorization")
+}
+
+func waitForDevicePoll(ctx context.Context, interval time.Duration) bool {
+	timer := time.NewTimer(interval)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 // GetCopilotToken exchanges a GitHub access token for a short-lived Copilot API token

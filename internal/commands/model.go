@@ -26,23 +26,29 @@ var LegacyModelCmd = &cobra.Command{
 }
 
 func executeLegacyModelCommand(source, parent *cobra.Command, args []string) error {
-	if len(args) == 0 || (len(args) == 1 && (args[0] == "--help" || args[0] == "-h")) {
+	commandIndex, err := legacyModelCommandIndex(source, args)
+	if err != nil {
+		return err
+	}
+	if commandIndex == len(args) || args[commandIndex] == "--help" || args[commandIndex] == "-h" {
 		parent.SetIn(source.InOrStdin())
 		parent.SetOut(source.OutOrStdout())
 		parent.SetErr(source.ErrOrStderr())
 		return parent.Help()
 	}
+	remaining := append([]string{}, args[:commandIndex]...)
+	remaining = append(remaining, args[commandIndex+1:]...)
 	for _, target := range parent.Commands() {
-		if target.Name() != args[0] {
+		if target.Name() != args[commandIndex] {
 			continue
 		}
 		if target.HasSubCommands() {
-			return executeLegacyModelCommand(source, target, args[1:])
+			return executeLegacyModelCommand(source, target, remaining)
 		}
 		target.SetIn(source.InOrStdin())
 		target.SetOut(source.OutOrStdout())
 		target.SetErr(source.ErrOrStderr())
-		if err := target.ParseFlags(args[1:]); err != nil {
+		if err := target.ParseFlags(remaining); err != nil {
 			return err
 		}
 		positional := target.Flags().Args()
@@ -57,12 +63,49 @@ func executeLegacyModelCommand(source, parent *cobra.Command, args []string) err
 		}
 		return target.RunE(target, positional)
 	}
-	return fmt.Errorf("unknown model command %q", args[0])
+	return fmt.Errorf("unknown model command %q", args[commandIndex])
+}
+
+// legacyModelCommandIndex skips inherited flags that Cobra leaves unparsed for
+// the legacy shim. The selected leaf command parses them normally afterward.
+func legacyModelCommandIndex(source *cobra.Command, args []string) (int, error) {
+	flags := source.Root().PersistentFlags()
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--help" || arg == "-h" || !strings.HasPrefix(arg, "-") || arg == "-" || arg == "--" {
+			return i, nil
+		}
+		var hasValue bool
+		var flagName string
+		if strings.HasPrefix(arg, "--") {
+			flagName, _, hasValue = strings.Cut(strings.TrimPrefix(arg, "--"), "=")
+			flag := flags.Lookup(flagName)
+			if flag == nil {
+				return 0, fmt.Errorf("unknown flag: --%s", flagName)
+			}
+			hasValue = hasValue || flag.NoOptDefVal != ""
+		} else {
+			flagName = arg[1:2]
+			flag := flags.ShorthandLookup(flagName)
+			if flag == nil {
+				return 0, fmt.Errorf("unknown shorthand flag: %q", flagName)
+			}
+			hasValue = len(arg) > 2 || flag.NoOptDefVal != ""
+		}
+		if !hasValue {
+			i++
+			if i == len(args) {
+				return 0, fmt.Errorf("flag needs an argument: %s", arg)
+			}
+		}
+	}
+	return len(args), nil
 }
 
 func init() {
 	ModelCmd.SilenceUsage = true
 	ModelCmd.AddCommand(modelListCmd)
+	ModelCmd.AddCommand(modelShowCmd)
 	ModelCmd.AddCommand(modelRefreshCmd)
 	ModelCmd.AddCommand(modelMetadataCmd)
 	modelMetadataCmd.Flags().Bool("refresh", false, "Refresh metadata from models.dev instead of using cache")

@@ -1,6 +1,7 @@
 package copilot
 
 import (
+	"context"
 	"fmt"
 
 	"omnillm/internal/providers/types"
@@ -60,11 +61,19 @@ func (p *GitHubCopilotProvider) InitiateDeviceCodeFlow() (*ghservice.DeviceCodeR
 
 // PollAndCompleteDeviceCodeFlow polls for the access token after user authorizes
 func (p *GitHubCopilotProvider) PollAndCompleteDeviceCodeFlow(deviceCode *ghservice.DeviceCodeResponse) error {
+	return p.PollAndCompleteDeviceCodeFlowContext(context.Background(), deviceCode)
+}
+
+// PollAndCompleteDeviceCodeFlowContext stops polling when the flow is canceled.
+func (p *GitHubCopilotProvider) PollAndCompleteDeviceCodeFlowContext(ctx context.Context, deviceCode *ghservice.DeviceCodeResponse) error {
 	log.Info().Str("provider", p.instanceID).Msg("Polling for GitHub access token")
 
-	accessToken, err := ghservice.PollAccessToken(deviceCode)
+	accessToken, err := ghservice.PollAccessTokenContext(ctx, deviceCode)
 	if err != nil {
 		return fmt.Errorf("failed to poll access token: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
 	p.mu.Lock()
@@ -74,6 +83,9 @@ func (p *GitHubCopilotProvider) PollAndCompleteDeviceCodeFlow(deviceCode *ghserv
 
 	// Get user info to update the provider name
 	user, err := ghservice.GetUser(accessToken)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
 	if err != nil {
 		log.Warn().Err(err).Msg("Failed to get user info after OAuth")
 	} else {
@@ -90,6 +102,9 @@ func (p *GitHubCopilotProvider) PollAndCompleteDeviceCodeFlow(deviceCode *ghserv
 	// Exchange GitHub token for Copilot token
 	if err := p.RefreshToken(); err != nil {
 		log.Warn().Err(err).Str("provider", p.instanceID).Msg("Failed to get Copilot token")
+		return err
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 

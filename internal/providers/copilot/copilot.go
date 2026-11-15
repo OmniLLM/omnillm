@@ -2,6 +2,7 @@
 package copilot
 
 import (
+	"maps"
 	"strings"
 
 	ghservice "omnillm/internal/services/github"
@@ -37,6 +38,27 @@ func (p *GitHubCopilotProvider) SetName(name string) {
 // SetInstanceID updates the provider's in-memory instance ID.
 // Used by auth-and-create flow to assign the canonical ID after successful auth.
 func (p *GitHubCopilotProvider) SetInstanceID(newID string) { p.instanceID = newID }
+
+// CloneForIdentity creates an unpublished provider without refreshing tokens.
+// The caller must hold exclusive lifecycle access to the original provider.
+func (p *GitHubCopilotProvider) CloneForIdentity(instanceID string) *GitHubCopilotProvider {
+	p.mu.RLock()
+	clone := &GitHubCopilotProvider{
+		id:           p.id,
+		instanceID:   instanceID,
+		name:         p.name,
+		token:        p.token,
+		githubToken:  p.githubToken,
+		expiresAt:    p.expiresAt,
+		baseURL:      p.baseURL,
+		tokenFetcher: p.tokenFetcher,
+	}
+	p.mu.RUnlock()
+	p.shapeMu.RLock()
+	clone.shapeCache = maps.Clone(p.shapeCache)
+	p.shapeMu.RUnlock()
+	return clone
+}
 
 // GetBaseURL returns the configured upstream base URL for Copilot API calls.
 func (p *GitHubCopilotProvider) GetBaseURL() string { return p.baseURL }

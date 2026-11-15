@@ -1052,6 +1052,24 @@ func TestRenameProviderEndpointValidatesAndPersistsMetadata(t *testing.T) {
 	})
 }
 
+func TestProviderIdentityChangeRequiresAuthentication(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+	request, err := http.NewRequest(http.MethodPatch, srv.URL+"/api/admin/providers/nonexistent/identity", strings.NewReader(`{"new_id":"new-provider"}`))
+	if err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("send request: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated identity change status = %d, want 401", response.StatusCode)
+	}
+}
+
 func TestRenameProviderEndpointPreservesCustomNameAfterReload(t *testing.T) {
 	instanceID := fmt.Sprintf("alibaba-reload-%d", time.Now().UnixNano())
 	provider := alibabapkg.NewProvider(instanceID, "Original Name")

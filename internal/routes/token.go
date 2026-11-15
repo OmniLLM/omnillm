@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"errors"
 	"net/http"
 	"omnillm/internal/registry"
 
@@ -13,8 +14,12 @@ func SetupTokenRoutes(router *gin.RouterGroup) {
 
 func handleToken(c *gin.Context) {
 	providerRegistry := registry.GetProviderRegistry()
-	activeProvider, err := providerRegistry.GetActive()
+	activeProvider, releaseProvider, err := providerRegistry.BorrowActiveProvider()
 	if err != nil {
+		if errors.Is(err, registry.ErrProviderBusy) {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{"message": "Provider identity is being updated; retry the request", "type": "provider_error"}})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": gin.H{
 				"message": "No active provider",
@@ -23,6 +28,7 @@ func handleToken(c *gin.Context) {
 		})
 		return
 	}
+	defer releaseProvider()
 
 	token := activeProvider.GetToken()
 	if token == "" {

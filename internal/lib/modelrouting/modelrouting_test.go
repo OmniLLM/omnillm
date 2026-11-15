@@ -349,7 +349,12 @@ func TestResolveProvidersForModel_AlibabaOpenAICompatibleIncluded(t *testing.T) 
 	}
 
 	cache := NewModelCache()
-	route, err := ResolveProvidersForModel("qwen3.6-plus", "qwen3.6-plus", "", cache)
+	providers, release, err := reg.BorrowActiveProviders()
+	if err != nil {
+		t.Fatalf("borrow active providers: %v", err)
+	}
+	defer release()
+	route, err := ProviderResolver(providers)("qwen3.6-plus", "qwen3.6-plus", "", cache)
 	if err != nil {
 		t.Fatalf("ResolveProvidersForModel() error = %v", err)
 	}

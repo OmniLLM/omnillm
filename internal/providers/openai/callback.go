@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -18,8 +17,9 @@ type CallbackResult struct {
 	Err   error
 }
 
-// callbackMu ensures only one listener binds port 1455 at a time.
-var callbackMu sync.Mutex
+// callbackGate ensures only one listener binds port 1455 at a time while
+// allowing a waiting flow to be canceled.
+var callbackGate = make(chan struct{}, 1)
 
 // ListenForCallback starts a short-lived HTTP server on the whitelisted
 // callback port and blocks until the browser redirect arrives, the context is
@@ -29,8 +29,12 @@ var callbackMu sync.Mutex
 // be folded into the main OmniLLM server port the way the antigravity provider
 // does it.
 func ListenForCallback(ctx context.Context, expectedState string, timeout time.Duration) (*CallbackResult, error) {
-	callbackMu.Lock()
-	defer callbackMu.Unlock()
+	select {
+	case callbackGate <- struct{}{}:
+		defer func() { <-callbackGate }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 
 	addr := fmt.Sprintf("127.0.0.1:%d", CallbackPort)
 	ln, err := net.Listen("tcp", addr)

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 
 import {
   activateProvider,
+  changeProviderIdentity,
   createChatCompletion,
   getChatSession,
   getLogLevel,
@@ -81,6 +82,34 @@ describe("frontend api helpers", () => {
         === "/api/admin/providers/provider-1/activate",
     )
     expect(call?.[1]?.method).toBe("POST")
+  })
+
+  test("changeProviderIdentity sends the new ID to the identity endpoint", async () => {
+    mockFetch = setupFetchMocks(globalThis, {
+      "/api/admin/info": { GET: { response: { version: "test", port: 4141 } } },
+      "/api/admin/providers/provider-1/identity": {
+        PATCH: { response: { success: true, id: "custom-id" } },
+      },
+    })
+    const result = await changeProviderIdentity("provider-1", "custom-id")
+    expect(result.id).toBe("custom-id")
+    const call = mockFetch.mock.calls.find(
+      ([url]) => new URL(String(url), "http://localhost:4141").pathname
+        === "/api/admin/providers/provider-1/identity",
+    )
+    expect(call?.[1]?.method).toBe("PATCH")
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({ new_id: "custom-id" })
+  })
+
+  test("changeProviderIdentity exposes a retryable server error", async () => {
+    mockFetch = setupFetchMocks(globalThis, {
+      "/api/admin/info": { GET: { response: { version: "test", port: 4141 } } },
+      "/api/admin/providers/provider-1/identity": {
+        PATCH: { status: 409, response: { error: "Provider is busy. Please retry." } },
+      },
+    })
+    await expect(changeProviderIdentity("provider-1", "custom-id"))
+      .rejects.toThrow("Provider is busy")
   })
 
   test("getLogLevel normalizes warning to warn", async () => {

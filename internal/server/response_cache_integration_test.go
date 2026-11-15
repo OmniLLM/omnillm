@@ -618,6 +618,9 @@ func TestResponsesCacheDoesNotPopulateCanceledStream(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("provider did not observe client cancellation")
 	}
+	// The provider can observe cancellation just before the handler releases
+	// its lifecycle lease. Wait for the handler before provider cleanup.
+	srv.Close()
 
 	stats, err := store.Stats(context.Background())
 	if err != nil {

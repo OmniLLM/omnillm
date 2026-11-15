@@ -3,20 +3,24 @@ package antigravity
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"omnillm/internal/cif"
 	"omnillm/internal/database"
+	"omnillm/internal/providers/shared"
 	"omnillm/internal/providers/types"
 	"sync"
 )
 
 type Provider struct {
-	instanceID string
-	name       string
-	token      string
-	baseURL    string
-	config     map[string]interface{}
-	configOnce sync.Once
+	instanceID  string
+	name        string
+	token       string
+	baseURL     string
+	config      map[string]interface{}
+	mu          sync.RWMutex
+	refreshGate chan struct{}
 }
 
 type Adapter struct {
@@ -29,16 +33,18 @@ func NewProvider(instanceID, name string) *Provider {
 		displayName = "Antigravity"
 	}
 	return &Provider{
-		instanceID: instanceID,
-		name:       displayName,
-		baseURL:    defaultBaseURL,
+		instanceID:  instanceID,
+		name:        displayName,
+		baseURL:     defaultBaseURL,
+		refreshGate: make(chan struct{}, 1),
 	}
 }
 
-func (p *Provider) GetID() string         { return string(types.ProviderAntigravity) }
-func (p *Provider) GetInstanceID() string { return p.instanceID }
-func (p *Provider) GetName() string       { return p.name }
-func (p *Provider) SetName(name string)   { p.name = name }
+func (p *Provider) GetID() string           { return string(types.ProviderAntigravity) }
+func (p *Provider) GetInstanceID() string   { return p.instanceID }
+func (p *Provider) SetInstanceID(id string) { p.instanceID = id }
+func (p *Provider) GetName() string         { return p.name }
+func (p *Provider) SetName(name string)     { p.name = name }
 
 func (p *Provider) SetupAuth(options *types.AuthOptions) error {
 	clientID := options.ClientID
@@ -59,17 +65,19 @@ func (p *Provider) SetupAuth(options *types.AuthOptions) error {
 	return nil
 }
 
-func (p *Provider) GetToken() string { return p.token }
-func (p *Provider) RefreshToken() error { return nil }
+func (p *Provider) GetToken() string { p.mu.RLock(); defer p.mu.RUnlock(); return p.token }
+func (p *Provider) RefreshToken() error {
+	_, err := p.credentials(context.Background(), "*")
+	return err
+}
 
 func (p *Provider) GetBaseURL() string {
-	p.LoadFromDB()
 	return p.baseURL
 }
 
 func (p *Provider) GetHeaders(forVision bool) map[string]string {
 	return map[string]string{
-		"Authorization": "Bearer " + p.token,
+		"Authorization": "Bearer " + p.GetToken(),
 		"Content-Type":  "application/json",
 	}
 }
@@ -95,6 +103,8 @@ func (p *Provider) GetAdapter() types.ProviderAdapter {
 }
 
 func (p *Provider) LoadFromDB() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	tokenStore := database.NewTokenStore()
 	record, err := tokenStore.Get(p.instanceID)
 	if err != nil {
@@ -130,25 +140,32 @@ func (p *Provider) ApplyTokenFromDB() {
 	_ = p.LoadFromDB()
 }
 
-func (a *Adapter) GetProvider() types.Provider { return a.provider }
+func (a *Adapter) GetProvider() types.Provider    { return a.provider }
 func (a *Adapter) RemapModel(model string) string { return RemapModel(model) }
 func (a *Adapter) Execute(ctx context.Context, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
-	a.provider.LoadFromDB()
-	projectID := ""
-	if a.provider.config != nil {
-		if v, ok := a.provider.config["project_id"].(string); ok {
-			projectID = v
-		}
+	ch, err := a.ExecuteStream(ctx, request)
+	if err != nil {
+		return nil, err
 	}
-	return Execute(ctx, a.provider.token, a.provider.baseURL, projectID, request)
+	return shared.CollectStream(ch)
 }
 func (a *Adapter) ExecuteStream(ctx context.Context, request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
-	a.provider.LoadFromDB()
-	projectID := ""
-	if a.provider.config != nil {
-		if v, ok := a.provider.config["project_id"].(string); ok {
-			projectID = v
-		}
+	d, err := a.provider.credentials(ctx, "")
+	if err != nil {
+		return nil, err
 	}
-	return Stream(ctx, a.provider.token, a.provider.baseURL, projectID, request)
+	token, _ := d["access_token"].(string)
+	project, _ := d["project_id"].(string)
+	ch, err := Stream(ctx, token, a.provider.baseURL, project, request)
+	var upstream *upstreamHTTPError
+	if !errors.As(err, &upstream) || upstream.status != http.StatusUnauthorized || ctx.Err() != nil {
+		return ch, err
+	}
+	d, err = a.provider.credentials(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	token, _ = d["access_token"].(string)
+	project, _ = d["project_id"].(string)
+	return Stream(ctx, token, a.provider.baseURL, project, request)
 }

@@ -90,6 +90,23 @@ func (p *CodexProvider) SetName(name string) {
 }
 func (p *CodexProvider) SetInstanceID(id string) { p.instanceID = id }
 
+// CloneForIdentity creates an unpublished provider without refreshing tokens.
+// The caller must hold exclusive lifecycle access to the original provider.
+func (p *CodexProvider) CloneForIdentity(instanceID string) *CodexProvider {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return &CodexProvider{
+		id:          p.id,
+		instanceID:  instanceID,
+		name:        p.name,
+		apiKey:      p.apiKey,
+		token:       p.token,
+		githubToken: p.githubToken,
+		expiresAt:   p.expiresAt,
+		baseURL:     p.baseURL,
+	}
+}
+
 // SetupAuth configures the provider.  Pass an OpenAI API key via
 // options.APIKey (primary), or a GitHub OAuth token via options.GithubToken /
 // options.Token for the legacy GitHub Copilot path.

@@ -8,6 +8,7 @@ import {
   authAndCreateProvider,
   authProvider,
   cancelAuth,
+  changeProviderIdentity,
   deactivateProvider,
   deleteProvider,
   getAuthStatus,
@@ -38,6 +39,7 @@ import { useConfirm } from "@/lib/useConfirm"
 import { AuthFlowBanner } from "@/pages/providers/components/AuthFlowBanner"
 import { GroupHeader } from "@/pages/providers/components/GroupHeader"
 import { PriorityModal } from "@/pages/providers/components/PriorityModal"
+import { ProviderIdentityEditor } from "@/pages/providers/components/ProviderIdentityEditor"
 import { StatsBar } from "@/pages/providers/components/StatsBar"
 import { UsageDialog } from "@/pages/providers/components/UsageDialog"
 import {
@@ -2822,6 +2824,7 @@ function ProviderCard({
   onAuthSubmit,
   onModelsChanged,
   onRename,
+  onIdentityChange,
   priorityIndex,
   multiProvider,
 }: {
@@ -2834,6 +2837,7 @@ function ProviderCard({
   onAuthSubmit: (id: string, body: Record<string, string>) => Promise<void>
   onModelsChanged: () => void
   onRename: (id: string, fields: { name?: string; alias?: string }) => void
+  onIdentityChange: (id: string, newId: string) => Promise<boolean>
   priorityIndex: number
   multiProvider: boolean
 }) {
@@ -3167,6 +3171,7 @@ function ProviderCard({
         <div
           style={{
             display: "flex",
+            flexWrap: "wrap",
             gap: 16,
             marginBottom: 12,
             fontSize: 11,
@@ -3174,12 +3179,22 @@ function ProviderCard({
             fontFamily: "var(--font-mono)",
           }}
         >
-          <span>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              gap: 4,
+            }}
+          >
             <span style={{ color: "var(--color-text-secondary)" }}>
               instance:{" "}
             </span>
-            {provider.id}
-          </span>
+            <ProviderIdentityEditor
+              id={provider.id}
+              onSave={onIdentityChange}
+            />
+          </div>
           <span>
             <span style={{ color: "var(--color-text-secondary)" }}>
               prefix:{" "}
@@ -4814,6 +4829,7 @@ const PROVIDER_TYPES = [
 // ─── Providers Page ───────────────────────────────────────────────────────────
 
 export function ProvidersPage({ showToast }: ProvidersPageProps) {
+  const { t } = useTranslation("providers")
   const [providers, setProviders] = useState<Array<Provider>>([])
   const [status, setStatus] = useState<Status | null>(null)
   const [loading, setLoading] = useState(true)
@@ -4981,6 +4997,28 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
         "Rename failed: " + (e instanceof Error ? e.message : String(e)),
         "error",
       )
+    }
+  }
+
+  const handleIdentityChange = async (id: string, newId: string) => {
+    try {
+      const result = await changeProviderIdentity(id, newId)
+      setProviders((previous) =>
+        previous.map((provider) =>
+          provider.id === id ? { ...provider, id: result.id } : provider,
+        ),
+      )
+      await load()
+      showToast(t("identity.saved"))
+      return true
+    } catch (error) {
+      showToast(
+        t("identity.failed", {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+        "error",
+      )
+      return false
     }
   }
 
@@ -5242,6 +5280,7 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
                           onAuthSubmit={handleAuthSubmit}
                           onModelsChanged={load}
                           onRename={handleRename}
+                          onIdentityChange={handleIdentityChange}
                           priorityIndex={activeProviders.findIndex(
                             (x) => x.id === p.id,
                           )}

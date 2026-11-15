@@ -81,6 +81,12 @@ func handleResponses(c *gin.Context) {
 		}
 	}
 
+	providers, releaseProviders, ok := borrowModelProviders(c)
+	if !ok {
+		return
+	}
+	defer releaseProviders()
+
 	// Resolve providers using the same ordered attempt pipeline as the other
 	// generation dialects so provider pinning and failover remain intact.
 	attempts, err := resolveRequestedModelsForRequest(requestIDStr, canonicalRequest.Model, canonicalRequest)
@@ -94,7 +100,7 @@ func handleResponses(c *gin.Context) {
 		toDispatchAttempts(attempts),
 		canonicalRequest,
 		modelCache,
-		modelrouting.ResolveProvidersForModel,
+		modelrouting.ProviderResolver(providers),
 		nil,
 		func(attempt providerdispatch.Attempt, err error) {
 			resolveFailed = true

@@ -139,6 +139,22 @@ func (p *Provider) SetName(name string) {
 	p.mu.Unlock()
 }
 
+// CloneForIdentity creates an unpublished provider without refreshing tokens.
+// The caller must hold exclusive lifecycle access to the original provider.
+func (p *Provider) CloneForIdentity(instanceID string) *Provider {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return &Provider{
+		instanceID:   instanceID,
+		name:         p.name,
+		accessToken:  p.accessToken,
+		refreshToken: p.refreshToken,
+		accountID:    p.accountID,
+		email:        p.email,
+		expiresAt:    p.expiresAt,
+	}
+}
+
 // ── Authentication ───────────────────────────────────────────────────────────
 
 // SetupAuth is not used for this provider: credentials arrive through the

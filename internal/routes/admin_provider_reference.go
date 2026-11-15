@@ -4,14 +4,34 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 
 	"omnillm/internal/database"
+	"omnillm/internal/registry"
 )
+
+// Serializes short durable provider identity and metadata changes.
+var providerMetadataMu sync.Mutex
 
 func resolveProviderReference(reference string) (string, error) {
 	return database.GetModelResolutionCache().ResolveProviderReference(reference)
+}
+
+func leaseProviderReference(c *gin.Context) {
+	_, release, err := registry.GetProviderRegistry().BorrowProvider(c.Param("id"))
+	if err != nil {
+		if errors.Is(err, registry.ErrProviderBusy) {
+			c.JSON(http.StatusConflict, gin.H{"error": "Provider is busy. Please retry."})
+		} else {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Provider not found"})
+		}
+		c.Abort()
+		return
+	}
+	defer release()
+	c.Next()
 }
 
 func writeProviderReferenceError(c *gin.Context, reference string, err error) {

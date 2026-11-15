@@ -167,20 +167,6 @@ func TestRemoveDeletesProviderAndToken(t *testing.T) {
 	}
 }
 
-func TestNextInstanceIDSkipsExistingSuffixes(t *testing.T) {
-	reg := newTestRegistry()
-	if err := reg.Register(&testProvider{id: "mock", instanceID: "mock", name: "Mock"}, false); err != nil {
-		t.Fatalf("register base instance failed: %v", err)
-	}
-	if err := reg.Register(&testProvider{id: "mock", instanceID: "mock-2", name: "Mock 2"}, false); err != nil {
-		t.Fatalf("register suffixed instance failed: %v", err)
-	}
-
-	if got := reg.NextInstanceID("mock"); got != "mock-3" {
-		t.Fatalf("expected mock-3, got %s", got)
-	}
-}
-
 func TestGetProviderMapReturnsCopy(t *testing.T) {
 	reg := newTestRegistry()
 	if err := reg.Register(&testProvider{id: "mock", instanceID: "mock-1", name: "Mock"}, false); err != nil {

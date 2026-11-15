@@ -41,6 +41,9 @@ type openaiOAuthResult struct {
 var (
 	openaiOAuthMu      sync.Mutex
 	openaiOAuthResults = map[string]*openaiOAuthResult{} // keyed by provider_id
+	openaiOAuthActive  = map[string]context.CancelFunc{}
+	listenOpenAIOAuth  = openaipkg.ListenForCallback
+	exchangeOpenAICode = openaipkg.ExchangeCode
 )
 
 func setOpenAIOAuthResult(res *openaiOAuthResult) {
@@ -64,11 +67,6 @@ func handleOpenAIStartOAuth(c *gin.Context) {
 
 	isNew := req.ProviderID == ""
 	providerID := req.ProviderID
-	reg := registry.GetProviderRegistry()
-	if isNew {
-		providerID = reg.NextInstanceID(string(types.ProviderOpenAI))
-	}
-
 	pkce, err := openaipkg.GeneratePKCE()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -79,12 +77,51 @@ func handleOpenAIStartOAuth(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	var reservation *providerInstanceReservation
+	var releaseProvider func()
+	if isNew {
+		reservation, err = reserveRandomProvider(string(types.ProviderOpenAI))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Unable to reserve provider ID. Please retry."})
+			return
+		}
+		providerID = reservation.instanceID
+	} else {
+		provider, release, borrowErr := registry.GetProviderRegistry().BorrowProvider(providerID)
+		if borrowErr != nil {
+			c.JSON(http.StatusConflict, gin.H{"error": "Provider is unavailable or busy. Please retry."})
+			return
+		}
+		if _, ok := provider.(*openaipkg.Provider); !ok {
+			release()
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Provider is not an OpenAI OAuth instance"})
+			return
+		}
+		releaseProvider = release
+	}
 
 	authURL := openaipkg.BuildAuthURL(pkce.Challenge, state)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), 6*time.Minute)
+	openaiOAuthMu.Lock()
+	if _, exists := openaiOAuthActive[providerID]; exists {
+		openaiOAuthMu.Unlock()
+		cancel()
+		if releaseProvider != nil {
+			releaseProvider()
+		}
+		if reservation != nil {
+			cleanupProviderReservation(reservation)
+		}
+		c.JSON(http.StatusConflict, gin.H{"error": "An OAuth flow is already active for this provider"})
+		return
+	}
+	openaiOAuthActive[providerID] = cancel
+	delete(openaiOAuthResults, providerID)
+	openaiOAuthMu.Unlock()
 
 	// Wait for the browser redirect out of band so this request can return the
 	// URL immediately; the frontend polls oauth-status for the outcome.
-	go completeOpenAIOAuth(providerID, isNew, pkce.Verifier, state)
+	go completeOpenAIOAuth(ctx, providerID, isNew, pkce.Verifier, state, reservation, releaseProvider)
 
 	log.Info().Str("provider", providerID).Bool("is_new", isNew).Msg("OpenAI: ChatGPT OAuth flow started")
 
@@ -97,23 +134,46 @@ func handleOpenAIStartOAuth(c *gin.Context) {
 
 // completeOpenAIOAuth blocks on the local callback, exchanges the code, and
 // registers or refreshes the provider.
-func completeOpenAIOAuth(providerID string, isNew bool, verifier, state string) {
+func completeOpenAIOAuth(
+	ctx context.Context,
+	providerID string,
+	isNew bool,
+	verifier, state string,
+	reservation *providerInstanceReservation,
+	releaseProvider func(),
+) {
+	defer func() {
+		openaiOAuthMu.Lock()
+		cancel := openaiOAuthActive[providerID]
+		delete(openaiOAuthActive, providerID)
+		openaiOAuthMu.Unlock()
+		if cancel != nil {
+			cancel()
+		}
+		if releaseProvider != nil {
+			releaseProvider()
+		}
+	}()
+	if reservation != nil {
+		defer cleanupProviderReservation(reservation)
+	}
 	fail := func(err error) {
 		log.Error().Err(err).Str("provider", providerID).Msg("OpenAI: OAuth failed")
 		setOpenAIOAuthResult(&openaiOAuthResult{Done: true, ProviderID: providerID, Error: err.Error()})
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
-	defer cancel()
-
-	cb, err := openaipkg.ListenForCallback(ctx, state, 5*time.Minute)
+	cb, err := listenOpenAIOAuth(ctx, state, 5*time.Minute)
 	if err != nil {
 		fail(err)
 		return
 	}
 
-	tokens, err := openaipkg.ExchangeCode(cb.Code, verifier)
+	tokens, err := exchangeOpenAICode(cb.Code, verifier)
 	if err != nil {
+		fail(err)
+		return
+	}
+	if err := ctx.Err(); err != nil {
 		fail(err)
 		return
 	}
@@ -122,11 +182,11 @@ func completeOpenAIOAuth(providerID string, isNew bool, verifier, state string) 
 
 	if isNew {
 		prov := openaipkg.NewProvider(providerID, "")
-		if err := createProvider(prov, func() error {
+		if err := createReservedProvider(reservation, prov, func() error {
 			if err := prov.ApplyTokens(tokens); err != nil {
 				return err
 			}
-			return reg.Register(prov, true)
+			return nil
 		}); err != nil {
 			fail(err)
 			return
@@ -150,6 +210,15 @@ func completeOpenAIOAuth(providerID string, isNew bool, verifier, state string) 
 
 	log.Info().Str("provider", providerID).Msg("OpenAI: ChatGPT OAuth completed successfully")
 	setOpenAIOAuthResult(&openaiOAuthResult{Done: true, ProviderID: providerID, IsNew: isNew})
+}
+
+func cancelOpenAIOAuth(providerID string) {
+	openaiOAuthMu.Lock()
+	cancel := openaiOAuthActive[providerID]
+	openaiOAuthMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 }
 
 // ─── Route: GET /providers/openai/oauth-status ───────────────────────────────
