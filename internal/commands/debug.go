@@ -13,6 +13,7 @@ import (
 var DebugCmd = &cobra.Command{
 	Use:   "debug",
 	Short: "Print debug information about the runtime and configuration",
+	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		out := cmd.OutOrStdout()
 
@@ -40,43 +41,60 @@ var DebugCmd = &cobra.Command{
 		fmt.Fprintf(out, "  Config:   %s\n", configDir)
 		fmt.Fprintf(out, "  Database: %s\n", dbPath)
 
-		// Check if database exists
-		if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		// Avoid creating a database file when inspecting an uninitialized machine.
+		info, err := os.Stat(dbPath)
+		if os.IsNotExist(err) {
 			fmt.Fprintln(out, "  Database: NOT FOUND")
-		} else {
-			info, _ := os.Stat(dbPath)
-			fmt.Fprintf(out, "  DB Size:  %d bytes\n", info.Size())
+			fmt.Fprintln(out)
+			fmt.Fprintln(out, "Tokens:")
+			fmt.Fprintln(out, "  No tokens stored. Run 'omnillm provider login' to authenticate.")
+			fmt.Fprintln(out)
+			fmt.Fprintln(out, "Provider Instances:")
+			fmt.Fprintln(out, "  No provider instances stored.")
+			return nil
 		}
+		if err != nil {
+			fmt.Fprintf(out, "  Database error: %v\n", err)
+			return nil
+		}
+		fmt.Fprintf(out, "  DB Size:  %d bytes\n", info.Size())
 		fmt.Fprintln(out)
 
-		// Token status
 		if err := database.InitializeDatabase(configDir); err != nil {
 			fmt.Fprintf(out, "  Database error: %v\n", err)
 			return nil
 		}
+		defer func() {
+			database.StopAsyncWorkers()
+			_ = database.GetDatabase().Close()
+		}()
 
+		instanceStore := database.NewProviderInstanceStore()
+		instances, instErr := instanceStore.GetAll()
 		tokenStore := database.NewTokenStore()
-		tokens, err := tokenStore.GetAllByProvider("github-copilot")
-		if err != nil {
-			fmt.Fprintf(out, "  Token error: %v\n", err)
+
+		fmt.Fprintln(out, "Tokens:")
+		if instErr != nil {
+			fmt.Fprintf(out, "  Token error: %v\n", instErr)
 		} else {
-			fmt.Fprintln(out, "Tokens:")
-			if len(tokens) == 0 {
-				fmt.Fprintln(out, "  No tokens stored. Run 'omnillm auth' to authenticate.")
+			tokenCount := 0
+			for _, inst := range instances {
+				rec, tokenErr := tokenStore.Get(inst.InstanceID)
+				if tokenErr == nil && rec != nil {
+					fmt.Fprintf(out, "  Instance: %s [%s]\n", rec.InstanceID, inst.ProviderID)
+					tokenCount++
+				}
 			}
-			for _, t := range tokens {
-				fmt.Fprintf(out, "  Instance: %s\n", t.InstanceID)
+			if tokenCount == 0 {
+				fmt.Fprintln(out, "  No tokens stored. Run 'omnillm provider login' to authenticate.")
 			}
 		}
 		fmt.Fprintln(out)
 
-		// Provider instances
-		instanceStore := database.NewProviderInstanceStore()
-		instances, err := instanceStore.GetAll()
-		if err != nil {
-			fmt.Fprintf(out, "  Instance error: %v\n", err)
+		fmt.Fprintln(out, "Provider Instances:")
+		if instErr != nil {
+			fmt.Fprintf(out, "  Instance error: %v\n", instErr)
 		} else {
-			fmt.Fprintln(out, "Provider Instances:")
 			if len(instances) == 0 {
 				fmt.Fprintln(out, "  No provider instances stored.")
 			}

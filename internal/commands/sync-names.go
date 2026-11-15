@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
-	antigravitypkg "omnillm/internal/providers/antigravity"
 	"omnillm/internal/database"
+	antigravitypkg "omnillm/internal/providers/antigravity"
 	ghservice "omnillm/internal/services/github"
 
 	"github.com/spf13/cobra"
@@ -25,6 +25,7 @@ stored in the database.  Changes take effect immediately in the UI — no server
 restart required.
 
 Supported providers: github-copilot, antigravity`,
+	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		out := cmd.OutOrStdout()
 		homeDir, err := os.UserHomeDir()

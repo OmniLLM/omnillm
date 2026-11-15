@@ -34,6 +34,7 @@ var settingsGetCmd = &cobra.Command{
 var settingsGetLogLevelCmd = &cobra.Command{
 	Use:   "log-level",
 	Short: "Get the current log level",
+	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := NewClient(cmd)
 		data, err := c.Get("/api/admin/settings/log-level")
@@ -91,6 +92,7 @@ var settingsSetLogLevelCmd = &cobra.Command{
 var settingsGetResponseCacheCmd = &cobra.Command{
 	Use:   "response-cache",
 	Short: "Show exact-match response cache status and stats",
+	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := NewClient(cmd)
 		data, err := c.Get("/api/admin/settings/response-cache")
@@ -149,7 +151,11 @@ var settingsSetResponseCacheCmd = &cobra.Command{
 		default:
 			return fmt.Errorf("expected 'on' or 'off', got %q", args[0])
 		}
-		if ttl, _ := cmd.Flags().GetInt("ttl"); ttl >= 0 {
+		if cmd.Flags().Changed("ttl") {
+			ttl, _ := cmd.Flags().GetInt("ttl")
+			if ttl < 0 {
+				return fmt.Errorf("invalid --ttl %d: must be >= 0", ttl)
+			}
 			body["ttl_seconds"] = ttl
 		}
 		data, err := c.Put("/api/admin/settings/response-cache", body)
@@ -168,6 +174,7 @@ var settingsSetResponseCacheCmd = &cobra.Command{
 var settingsClearResponseCacheCmd = &cobra.Command{
 	Use:   "clear-response-cache",
 	Short: "Purge all cached responses",
+	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := NewClient(cmd)
 		data, err := c.Delete("/api/admin/settings/response-cache")

@@ -158,6 +158,9 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
+	if getSecurityOptions().AllowLocalEndpoints {
+		req.AllowLocalEndpoints = true
+	}
 
 	// Cancel any existing active auth flow before starting a new one to prevent
 	// concurrent goroutines from corrupting the singleton activeAuthFlow state.
@@ -864,6 +867,9 @@ func handleProviderAuth(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
+	}
+	if getSecurityOptions().AllowLocalEndpoints {
+		req.AllowLocalEndpoints = true
 	}
 
 	providerRegistry := registry.GetProviderRegistry()

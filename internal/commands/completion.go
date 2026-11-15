@@ -1,14 +1,10 @@
 package commands
 
-import (
-	"os"
-
-	"github.com/spf13/cobra"
-)
+import "github.com/spf13/cobra"
 
 // CompletionCmd generates shell completion scripts.
 var CompletionCmd = &cobra.Command{
-	Use:   "completion [bash|zsh|fish|powershell]",
+	Use:   "completion <bash|zsh|fish|powershell>",
 	Short: "Generate shell completion scripts",
 	Long: `Generate shell completion scripts for omnillm.
 
@@ -31,15 +27,16 @@ To load completions in your current shell session:
 	DisableFlagsInUseLine: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		root := cmd.Root()
+		out := cmd.OutOrStdout()
 		switch args[0] {
 		case "bash":
-			return root.GenBashCompletion(os.Stdout)
+			return root.GenBashCompletion(out)
 		case "zsh":
-			return root.GenZshCompletion(os.Stdout)
+			return root.GenZshCompletion(out)
 		case "fish":
-			return root.GenFishCompletion(os.Stdout, true)
+			return root.GenFishCompletion(out, true)
 		case "powershell":
-			return root.GenPowerShellCompletionWithDesc(os.Stdout)
+			return root.GenPowerShellCompletionWithDesc(out)
 		}
 		return nil
 	},

@@ -48,17 +48,12 @@ type StartOptions struct {
 	Port                      int
 	Host                      string
 	Verbose                   bool
-	AccountType               string
 	Manual                    bool
 	RateLimit                 *int
 	RateLimitWait             bool
 	MaxConcurrentRequests     int
 	GithubToken               string
-	ClaudeCode                bool
-	Console                   bool
 	ShowToken                 bool
-	ProxyEnv                  bool
-	Provider                  string
 	APIKey                    string
 	AllowLocalEndpoints       bool
 	EnableConfigEdit          bool
@@ -105,8 +100,9 @@ func RunServer(options StartOptions) error {
 	}
 	options.APIKey = apiKey
 	routes.ConfigureSecurityOptions(routes.SecurityOptions{
-		ShowToken:        options.ShowToken,
-		EnableConfigEdit: options.EnableConfigEdit,
+		ShowToken:           options.ShowToken,
+		EnableConfigEdit:    options.EnableConfigEdit,
+		AllowLocalEndpoints: options.AllowLocalEndpoints,
 	})
 	configureAllowedOrigins(options.AllowedChromeExtensionIDs)
 
@@ -143,12 +139,6 @@ func RunServer(options StartOptions) error {
 		bindHost = "127.0.0.1"
 	}
 	bindAddr := fmt.Sprintf("%s:%d", bindHost, options.Port)
-
-	// Claude Code mode output
-	if options.ClaudeCode {
-		serverURL := fmt.Sprintf("http://%s:%d", bindHost, options.Port)
-		printClaudeCodeConfig(serverURL)
-	}
 
 	serverURL := fmt.Sprintf("http://%s:%d", bindHost, options.Port)
 	adminURL := fmt.Sprintf("%s/admin", serverURL)
@@ -627,13 +617,4 @@ func registerDefaultProviders(reg *registry.ProviderRegistry, options StartOptio
 
 	log.Info().Msg("Default providers registered")
 	return nil
-}
-
-func printClaudeCodeConfig(serverURL string) {
-	fmt.Println("\n# Claude Code Configuration")
-	fmt.Println("# Add these environment variables:")
-	fmt.Printf("export OPENAI_API_KEY=dummy\n")
-	fmt.Printf("export OPENAI_BASE_URL=%s/v1\n", serverURL)
-	fmt.Printf("export ANTHROPIC_BASE_URL=%s/v1\n", serverURL)
-	fmt.Println()
 }

@@ -166,7 +166,7 @@ bun run dev
 bun run dev:frontend
 omnillm status
 omnillm restart
-omnillm logs --follow
+omnillm logs
 ```
 
 Make is limited to `make build`, `make install`, `make uninstall`,
@@ -322,18 +322,19 @@ High-value admin groups include:
 
 The main `omnillm` binary includes:
 
-- `start`
-- `usage`
-- `check-usage`
-- `sync-names`
-- `debug`
-- `provider` (login, instances, and models)
+- `start` / `stop` / `restart`
+- `provider` (login, instances, enable/disable, and models)
 - `virtualmodel`
+- `cache`
 - `config`
 - `settings`
 - `status`
-- `chat`
 - `logs`
+- `usage`
+- `doctor`
+- `debug`
+- `sync-names`
+- `completion`
 
 ### Provider management
 
@@ -373,16 +374,17 @@ Selected `start` flags for the server binary:
 |---|---|---|
 | `--port` | `5000` | Server port |
 | `--host` | `127.0.0.1` | Bind address |
-| `--provider` | `github-copilot` | Default provider on startup |
 | `--api-key` | generated if absent | Inbound auth key |
 | `--manual` | `false` | Manual approval mode |
 | `--rate-limit` | `0` | Minimum seconds between requests |
 | `--wait` | `false` | Wait instead of erroring on rate limit |
+| `--max-concurrent` | `0` | Max concurrent in-flight proxy requests (`0` = unlimited) |
 | `--allow-local-endpoints` | `false` | Allow localhost and private OpenAI-compatible upstreams |
 | `--enable-config-edit` | `false` | Enable editing external config files via admin API |
 | `--response-cache-redis-url` | `redis://127.0.0.1:6379/0` | Redis/Valkey URL for exact-response cache storage |
 | `--response-cache-redis-prefix` | `omnillm` | Versioned response-cache key namespace prefix |
 | `--claude-code` | `false` | Print guided Claude Code launch configuration |
+| `--foreground` | `false` | Stay attached to the current terminal |
 
 ## Repository Map
 

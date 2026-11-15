@@ -148,7 +148,7 @@ bun run dev
 bun run dev:frontend
 omnillm status
 omnillm restart
-omnillm logs --follow
+omnillm logs
 ```
 
 Make 仅提供 `make build`、`make install`、`make uninstall`、
@@ -296,20 +296,19 @@ OmniLLM 可以统一管理 Claude Code、Codex、Droid、OpenCode、AMP 等工�
 
 主二进制 `omnillm` 当前包含：
 
-- `start`
-- `auth`
-- `usage`
-- `check-usage`
-- `sync-names`
-- `debug`
+- `start` / `stop` / `restart`
 - `provider`
-- `model`
 - `virtualmodel`
+- `cache`
 - `config`
 - `settings`
 - `status`
-- `chat`
 - `logs`
+- `usage`
+- `doctor`
+- `debug`
+- `sync-names`
+- `completion`
 
 查看单个提供商或模型的详细信息：
 
@@ -328,14 +327,15 @@ omnillm provider model show my-google vendor/model --output json
 |---|---|---|
 | `--port` | `5000` | 服务端口 |
 | `--host` | `127.0.0.1` | 绑定地址 |
-| `--provider` | `github-copilot` | 启动时默认提供商 |
 | `--api-key` | 缺省时自动生成 | 入站认证密钥 |
 | `--manual` | `false` | 手工审批模式 |
 | `--rate-limit` | `0` | 请求最小间隔秒数 |
 | `--wait` | `false` | 限流时等待而不是报错 |
+| `--max-concurrent` | `0` | 最大并发代理请求数（`0` 为不限制） |
 | `--allow-local-endpoints` | `false` | 允许 localhost 和私网 OpenAI 兼容上游 |
 | `--enable-config-edit` | `false` | 允许通过管理 API 编辑外部配置文件 |
 | `--claude-code` | `false` | 输出 Claude Code 的引导配置 |
+| `--foreground` | `false` | 在当前终端前台保持运行 |
 
 ## 仓库结构速览
 

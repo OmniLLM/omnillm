@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net/url"
 	"os"
 
 	"github.com/spf13/cobra"
 )
+
+var knownConfigNames = []string{"claude-code", "codex", "droid", "opencode", "amp"}
 
 var ConfigCmd = &cobra.Command{
 	Use:   "config",
@@ -18,18 +21,23 @@ var ConfigCmd = &cobra.Command{
 
 func init() {
 	ConfigCmd.AddCommand(configListCmd)
+
+	configGetCmd.ValidArgs = knownConfigNames
 	ConfigCmd.AddCommand(configGetCmd)
 
+	configSetCmd.ValidArgs = knownConfigNames
 	configSetCmd.Flags().StringP("file", "f", "", "Path to file to read content from")
 	configSetCmd.Flags().Bool("stdin", false, "Read content from stdin")
 	configSetCmd.MarkFlagsOneRequired("file", "stdin")
 	configSetCmd.MarkFlagsMutuallyExclusive("file", "stdin")
 	ConfigCmd.AddCommand(configSetCmd)
 
+	configImportCmd.ValidArgs = knownConfigNames
 	configImportCmd.Flags().StringP("file", "f", "", "Path to file to import (required)")
 	_ = configImportCmd.MarkFlagRequired("file")
 	ConfigCmd.AddCommand(configImportCmd)
 
+	configBackupCmd.ValidArgs = knownConfigNames
 	ConfigCmd.AddCommand(configBackupCmd)
 }
 
@@ -38,6 +46,7 @@ func init() {
 var configListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List available config files",
+	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := NewClient(cmd)
 		data, err := c.Get("/api/admin/config")
@@ -81,7 +90,7 @@ var configGetCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := NewClient(cmd)
-		data, err := c.Get("/api/admin/config/" + args[0])
+		data, err := c.Get("/api/admin/config/" + url.PathEscape(args[0]))
 		if err != nil {
 			return err
 		}
@@ -111,7 +120,7 @@ var configGetCmd = &cobra.Command{
 
 var configSetCmd = &cobra.Command{
 	Use:   "set <name>",
-	Short: "Write content to a config file (from --file or --stdin)",
+	Short: "Write content to a config file (from --file or --stdin; requires --enable-config-edit on server)",
 	Args:  cobra.ExactArgs(1),
 	Example: `  # Write from a local file
   omnillm config set claude-code --file ~/.claude/settings.json
@@ -131,7 +140,7 @@ var configSetCmd = &cobra.Command{
 			}
 			content = string(b)
 		case fromStdin:
-			b, err := io.ReadAll(os.Stdin)
+			b, err := io.ReadAll(cmd.InOrStdin())
 			if err != nil {
 				return fmt.Errorf("read stdin: %w", err)
 			}
@@ -140,7 +149,7 @@ var configSetCmd = &cobra.Command{
 
 		c := NewClient(cmd)
 		body := map[string]string{"content": content}
-		data, err := c.Put("/api/admin/config/"+args[0], body)
+		data, err := c.Put("/api/admin/config/"+url.PathEscape(args[0]), body)
 		if err != nil {
 			return err
 		}
@@ -157,7 +166,7 @@ var configSetCmd = &cobra.Command{
 
 var configImportCmd = &cobra.Command{
 	Use:   "import <name>",
-	Short: "Import a config file via file upload",
+	Short: "Import a config file via file upload (requires --enable-config-edit on server)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		filePath, _ := cmd.Flags().GetString("file")
@@ -180,7 +189,7 @@ var configImportCmd = &cobra.Command{
 		w.Close()
 
 		c := NewClient(cmd)
-		data, err := c.DoRaw("POST", "/api/admin/config/"+args[0]+"/import", w.FormDataContentType(), &buf)
+		data, err := c.DoRaw("POST", "/api/admin/config/"+url.PathEscape(args[0])+"/import", w.FormDataContentType(), &buf)
 		if err != nil {
 			return err
 		}
@@ -201,7 +210,7 @@ var configBackupCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := NewClient(cmd)
-		data, err := c.Post("/api/admin/config/"+args[0]+"/backup", nil)
+		data, err := c.Post("/api/admin/config/"+url.PathEscape(args[0])+"/backup", nil)
 		if err != nil {
 			return err
 		}

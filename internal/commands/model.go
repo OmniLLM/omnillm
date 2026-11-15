@@ -125,6 +125,20 @@ func init() {
 	modelVersionCmd.AddCommand(modelVersionGetCmd)
 	modelVersionCmd.AddCommand(modelVersionSetCmd)
 	ModelCmd.AddCommand(modelVersionCmd)
+
+	for _, sub := range []*cobra.Command{
+		modelListCmd, modelRefreshCmd, modelToggleCmd,
+		modelEnableCmd, modelDisableCmd, modelVersionGetCmd, modelVersionSetCmd,
+	} {
+		sub.ValidArgsFunction = modelProviderCompletionFunc
+	}
+}
+
+func modelProviderCompletionFunc(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	if len(args) == 0 {
+		return providerIDCompletionFunc(cmd, args, toComplete)
+	}
+	return nil, cobra.ShellCompDirectiveNoFileComp
 }
 
 func formatFloat(v *float64) string {
@@ -161,6 +175,7 @@ type modelMetadataResponse struct {
 var modelMetadataCmd = &cobra.Command{
 	Use:   "metadata [filter]",
 	Short: "Show normalized model pricing and token limits from backend metadata cache",
+	Long:  "Show normalized model pricing and token limits from the backend metadata cache.\n\nAn optional [filter] narrows table output by model ID, name, or provider ID. With --output json, the complete raw server response is printed.",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := NewClient(cmd)
@@ -424,7 +439,7 @@ var modelVersionGetCmd = &cobra.Command{
 
 var modelVersionSetCmd = &cobra.Command{
 	Use:   "set <provider-id> <model-id> <version>",
-	Short: "Pin a model to a specific version",
+	Short: "Pin a model to a specific numeric version",
 	Args:  cobra.ExactArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := NewClient(cmd)

@@ -46,6 +46,9 @@ func addLogsTailFlags(cmd *cobra.Command) {
 	_ = cmd.RegisterFlagCompletionFunc("level", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return []string{"fatal", "error", "warn", "info", "debug", "trace"}, cobra.ShellCompDirectiveNoFileComp
 	})
+	_ = cmd.RegisterFlagCompletionFunc("source", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"backend", "frontend"}, cobra.ShellCompDirectiveNoFileComp
+	})
 }
 
 var logsTailCmd = &cobra.Command{
@@ -72,7 +75,8 @@ func runLogsTail(cmd *cobra.Command) error {
 	levelFilter, _ := cmd.Flags().GetString("level")
 	sourceFilter, _ := cmd.Flags().GetString("source")
 	grepPattern, _ := cmd.Flags().GetString("grep")
-	asJSON, _ := cmd.Flags().GetBool("json")
+	c := NewClient(cmd)
+	asJSON := getBoolFlag(cmd, "json") || c.IsJSON()
 	hideFields, _ := cmd.Flags().GetBool("no-fields")
 
 	if levelFilter != "" {
@@ -90,7 +94,6 @@ func runLogsTail(cmd *cobra.Command) error {
 		}
 	}
 
-	c := NewClient(cmd)
 	resp, err := c.GetStream("/api/admin/logs/stream")
 	if err != nil {
 		return fmt.Errorf("connect to log stream: %w", err)

@@ -14,12 +14,12 @@ func TestStartCmdDefaults(t *testing.T) {
 		t.Fatalf("expected default port 5000, got %d", port)
 	}
 
-	provider, err := StartCmd.Flags().GetString("provider")
+	host, err := StartCmd.Flags().GetString("host")
 	if err != nil {
-		t.Fatalf("get provider flag: %v", err)
+		t.Fatalf("get host flag: %v", err)
 	}
-	if provider != "github-copilot" {
-		t.Fatalf("expected default provider github-copilot, got %q", provider)
+	if host != "127.0.0.1" {
+		t.Fatalf("expected default host 127.0.0.1, got %q", host)
 	}
 
 	redisURL, err := StartCmd.Flags().GetString("response-cache-redis-url")

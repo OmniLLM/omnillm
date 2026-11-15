@@ -3,8 +3,9 @@ package routes
 import "sync"
 
 type SecurityOptions struct {
-	ShowToken        bool
-	EnableConfigEdit bool
+	ShowToken           bool
+	EnableConfigEdit    bool
+	AllowLocalEndpoints bool
 }
 
 var (
