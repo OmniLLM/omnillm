@@ -20,6 +20,7 @@ func SetupAdminRoutes(router *gin.RouterGroup, port int) {
 	providerByReference.DELETE("", handleDeleteProvider)
 	providerByReference.PATCH("/identity", handleChangeProviderIdentity)
 	leasedProvider := providerByReference.Group("", leaseProviderReference)
+	leasedProvider.GET("/metadata", handleProviderMetadata)
 	leasedProvider.GET("/models", handleListProviderModels)
 	leasedProvider.POST("/models/refresh", handleRefreshProviderModels)
 	leasedProvider.POST("/models/toggle", handleToggleProviderModel)
