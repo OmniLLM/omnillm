@@ -14,9 +14,13 @@ import (
 var providerShowCmd = &cobra.Command{
 	Use:   "show <reference>",
 	Short: "Show details of a provider",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		client := NewClient(cmd)
+		reference, err := resolveProviderID(cmd, client, args)
+		if err != nil {
+			return err
+		}
 		data, err := client.Get("/api/admin/providers")
 		if err != nil {
 			return err
@@ -25,7 +29,7 @@ var providerShowCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		provider, err := findProviderForShow(providers, args[0])
+		provider, err := findProviderForShow(providers, reference)
 		if err != nil {
 			return err
 		}
@@ -47,15 +51,10 @@ var providerShowCmd = &cobra.Command{
 }
 
 var modelShowCmd = &cobra.Command{
-	Use:   "show <reference> <model-id>",
-	Short: "Show details of a provider model",
-	Args:  cobra.ExactArgs(2),
-	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		if len(args) == 0 {
-			return providerIDCompletionFunc(cmd, args, toComplete)
-		}
-		return nil, cobra.ShellCompDirectiveNoFileComp
-	},
+	Use:               "show <reference> <model-id>",
+	Short:             "Show details of a provider model",
+	Args:              cobra.ExactArgs(2),
+	ValidArgsFunction: modelProviderCompletionFunc,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		client := NewClient(cmd)
 		path := "/api/admin/providers/" + url.PathEscape(args[0]) + "/models"

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -71,6 +72,7 @@ func init() {
 	addProviderAuthFlags(providerLoginCmd)
 	providerLoginCmd.Flags().Bool("new", false, "Create a new provider instance of the specified type")
 	providerLoginCmd.ValidArgsFunction = providerLoginCompletionFunc
+	registerProviderAuthFlagCompletions(providerLoginCmd)
 	ProviderCmd.AddCommand(providerLoginCmd)
 
 	// provider list
@@ -81,6 +83,7 @@ func init() {
 	addProviderAuthFlags(providerAddCmd)
 	providerAddCmd.Hidden = true
 	providerAddCmd.Deprecated = "use 'provider login --new <type>'"
+	registerProviderAuthFlagCompletions(providerAddCmd)
 	ProviderCmd.AddCommand(providerAddCmd)
 
 	ProviderCmd.AddCommand(ModelCmd)
@@ -130,7 +133,21 @@ func providerLoginCompletionFunc(cmd *cobra.Command, args []string, toComplete s
 var providerLoginCmd = &cobra.Command{
 	Use:   "login [type-or-provider]",
 	Short: "Log in to a new or existing provider",
-	Args:  cobra.MaximumNArgs(1),
+	Long: "Log in to a new provider type or re-authenticate an existing provider reference (ID, alias, or name).\n\n" +
+		"Supported provider types: " + supportedAuthProviderTypesSummary + ".\n\n" +
+		"When both provider credentials and admin server authentication are required, --api-key sets the provider credential while OMNILLM_API_KEY (or root --api-key before 'provider') authenticates against the OmniLLM server.",
+	Example: `  # Interactive provider type picker
+  omnillm provider login
+
+  # Create a new provider instance explicitly
+  omnillm provider login --new google --api-key "$GOOGLE_API_KEY"
+
+  # Re-authenticate an existing provider by alias or ID
+  omnillm provider login my-google --api-key "$GOOGLE_API_KEY"
+
+  # Local OpenAI-compatible server (e.g. Ollama)
+  omnillm provider login --new openai-compatible --endpoint http://127.0.0.1:11434/v1 --allow-local-endpoints`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		subject := ""
 		if len(args) > 0 {
@@ -209,11 +226,17 @@ func providerTypeForLoginSubject(client *Client, subject string) (string, error)
 
 func loginProvider(cmd *cobra.Command, subject string, forceNew bool) error {
 	body := map[string]interface{}{
-		"api_key": getStringFlag(cmd, "api-key"), "apiKey": getStringFlag(cmd, "api-key"),
-		"client_id": getStringFlag(cmd, "client-id"), "client_secret": getStringFlag(cmd, "client-secret"),
-		"token": getStringFlag(cmd, "token"), "method": getStringFlag(cmd, "method"),
-		"endpoint": getStringFlag(cmd, "endpoint"), "region": getStringFlag(cmd, "region"),
-		"plan": getStringFlag(cmd, "plan"),
+		"api_key":               getStringFlag(cmd, "api-key"),
+		"apiKey":                getStringFlag(cmd, "api-key"),
+		"client_id":             getStringFlag(cmd, "client-id"),
+		"client_secret":         getStringFlag(cmd, "client-secret"),
+		"token":                 getStringFlag(cmd, "token"),
+		"method":                getStringFlag(cmd, "method"),
+		"endpoint":              getStringFlag(cmd, "endpoint"),
+		"region":                getStringFlag(cmd, "region"),
+		"plan":                  getStringFlag(cmd, "plan"),
+		"allow_local_endpoints": getBoolFlag(cmd, "allow-local-endpoints"),
+		"allowLocalEndpoints":   getBoolFlag(cmd, "allow-local-endpoints"),
 	}
 	if forceNew {
 		body["type"] = subject
@@ -332,6 +355,7 @@ func providerIDCompletionFunc(cmd *cobra.Command, args []string, toComplete stri
 var providerListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all configured providers",
+	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := NewClient(cmd)
 		data, err := c.Get("/api/admin/providers")
@@ -540,16 +564,29 @@ func promptForMissingFields(cmd *cobra.Command, fields ...providerPromptField) e
 }
 
 func addProviderAuthFlags(cmd *cobra.Command) {
-	cmd.Flags().String("api-key", "", "API key for the provider")
-	cmd.Flags().String("client-id", "", "OAuth client ID for the provider")
-	cmd.Flags().String("client-secret", "", "OAuth client secret for the provider")
-	cmd.Flags().String("token", "", "Provider token (for providers that support token auth)")
-	cmd.Flags().String("method", "", "Authentication method (for providers that support multiple methods)")
-	cmd.Flags().String("endpoint", "", "Base URL endpoint (openai-compatible)")
-	cmd.Flags().String("region", "", "Region (alibaba, azure-openai)")
+	cmd.Flags().String("api-key", "", "API key for the provider (admin auth uses OMNILLM_API_KEY or root --api-key before 'provider')")
+	cmd.Flags().String("client-id", "", "OAuth client ID for the provider (antigravity)")
+	cmd.Flags().String("client-secret", "", "OAuth client secret for the provider (antigravity)")
+	cmd.Flags().String("token", "", "Provider token (github-copilot)")
+	cmd.Flags().String("method", "", "Authentication method (github-copilot: oauth|token)")
+	cmd.Flags().String("endpoint", "", "Base URL endpoint (openai-compatible, azure-openai, alibaba)")
+	cmd.Flags().String("region", "", "Region (alibaba: global|china)")
 	cmd.Flags().String("plan", "", "Plan (alibaba: standard|coding-plan)")
+	cmd.Flags().Bool("allow-local-endpoints", false, "Allow localhost/private OpenAI-compatible endpoints")
 	cmd.Flags().BoolP("yes", "y", false, "Skip confirmations")
 	cmd.Flags().Bool("device", false, "Use device code flow without opening a browser automatically")
+}
+
+func registerProviderAuthFlagCompletions(cmd *cobra.Command) {
+	_ = cmd.RegisterFlagCompletionFunc("method", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"oauth", "token"}, cobra.ShellCompDirectiveNoFileComp
+	})
+	_ = cmd.RegisterFlagCompletionFunc("region", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"global", "china"}, cobra.ShellCompDirectiveNoFileComp
+	})
+	_ = cmd.RegisterFlagCompletionFunc("plan", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"standard", "coding-plan"}, cobra.ShellCompDirectiveNoFileComp
+	})
 }
 
 func authAndCreateProvider(cmd *cobra.Command, providerType string) error {
@@ -649,15 +686,17 @@ func authAndCreateProvider(cmd *cobra.Command, providerType string) error {
 	}
 
 	body := map[string]interface{}{
-		"api_key":       apiKey,
-		"apiKey":        apiKey,
-		"token":         token,
-		"method":        method,
-		"endpoint":      endpoint,
-		"region":        region,
-		"plan":          plan,
-		"client_id":     clientID,
-		"client_secret": clientSecret,
+		"api_key":               apiKey,
+		"apiKey":                apiKey,
+		"token":                 token,
+		"method":                method,
+		"endpoint":              endpoint,
+		"region":                region,
+		"plan":                  plan,
+		"client_id":             clientID,
+		"client_secret":         clientSecret,
+		"allow_local_endpoints": getBoolFlag(cmd, "allow-local-endpoints"),
+		"allowLocalEndpoints":   getBoolFlag(cmd, "allow-local-endpoints"),
 	}
 
 	data, err := c.Post("/api/admin/providers/auth-and-create/"+providerType, body)
@@ -932,6 +971,7 @@ func promptRenameField(cmd *cobra.Command, reader *bufio.Reader, label string) (
 var providerPrioritiesCmd = &cobra.Command{
 	Use:   "priorities",
 	Short: "Get or set provider priorities",
+	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := NewClient(cmd)
 		sets := getStringSliceFlag(cmd, "set")
@@ -962,14 +1002,14 @@ var providerPrioritiesCmd = &cobra.Command{
 		priorities := map[string]int{}
 		for _, s := range sets {
 			parts := strings.SplitN(s, ":", 2)
-			if len(parts) != 2 {
+			if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" {
 				return fmt.Errorf("invalid --set value %q: expected id:N", s)
 			}
-			var n int
-			if _, err := fmt.Sscanf(parts[1], "%d", &n); err != nil {
+			n, err := strconv.Atoi(strings.TrimSpace(parts[1]))
+			if err != nil {
 				return fmt.Errorf("invalid priority %q: %w", parts[1], err)
 			}
-			priorities[parts[0]] = n
+			priorities[strings.TrimSpace(parts[0])] = n
 		}
 		body := map[string]interface{}{"priorities": priorities}
 		data, err := c.Post("/api/admin/providers/priorities", body)

@@ -27,6 +27,7 @@ Verifies:
 Prints a recommended next action at the end.`,
 	Example: `  omnillm doctor
   omnillm doctor --server http://127.0.0.1:5000`,
+	Args: cobra.NoArgs,
 	RunE: runDoctor,
 }
 
@@ -199,7 +200,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 			}
 			providerOK := len(providers) > 0
 			if !providerOK && nextStep == "" {
-				nextStep = "Run 'omnillm auth' to add and authenticate a provider."
+				nextStep = "Run 'omnillm provider login' to add and authenticate a provider."
 			} else if activeCount == 0 && len(providers) > 0 && nextStep == "" {
 				nextStep = "Run 'omnillm provider enable <id>' to enable a provider."
 			}

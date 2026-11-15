@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -13,6 +14,7 @@ var UsageCmd = &cobra.Command{
 	Use:   "usage",
 	Short: "Show usage metrics for all providers",
 	Long:  "Show backend metering usage metrics across providers, models, clients, and API shapes.",
+	Args:  cobra.NoArgs,
 	RunE:  runUsage,
 }
 
@@ -20,6 +22,7 @@ var CheckUsageCmd = &cobra.Command{
 	Use:        "check-usage",
 	Short:      "Show usage metrics for all providers",
 	Deprecated: "use 'usage' instead",
+	Args:       cobra.NoArgs,
 	RunE:       runUsage,
 }
 
@@ -32,14 +35,41 @@ func addUsageFlags(cmd *cobra.Command) {
 	cmd.Flags().String("provider-id", "", "Filter by provider instance ID")
 	cmd.Flags().String("model-id", "", "Filter by model ID")
 	cmd.Flags().String("client", "", "Filter by client")
-	cmd.Flags().String("api-shape", "", "Filter by API shape (openai or anthropic)")
+	cmd.Flags().String("api-shape", "", "Filter by API shape (openai, anthropic, or responses)")
 	cmd.Flags().String("prompt-cache-status", "", "Filter by provider prompt-cache status (hit, miss, or unknown)")
 	cmd.Flags().String("since", "", "Filter from RFC3339 timestamp")
 	cmd.Flags().String("until", "", "Filter until RFC3339 timestamp")
 	cmd.Flags().String("breakdown", "provider", "Breakdown to show when not using JSON: provider/providers, model/models, client/clients, or none")
+
+	_ = cmd.RegisterFlagCompletionFunc("provider-id", providerIDCompletionFunc)
+	_ = cmd.RegisterFlagCompletionFunc("api-shape", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"openai", "anthropic", "responses"}, cobra.ShellCompDirectiveNoFileComp
+	})
+	_ = cmd.RegisterFlagCompletionFunc("prompt-cache-status", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"hit", "miss", "unknown"}, cobra.ShellCompDirectiveNoFileComp
+	})
+	_ = cmd.RegisterFlagCompletionFunc("breakdown", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"provider", "model", "client", "none"}, cobra.ShellCompDirectiveNoFileComp
+	})
+}
+
+func validateUsageFlags(cmd *cobra.Command) error {
+	for _, flagName := range []string{"since", "until"} {
+		value, _ := cmd.Flags().GetString(flagName)
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		if _, err := time.Parse(time.RFC3339, value); err != nil {
+			return fmt.Errorf("invalid --%s timestamp %q: expected RFC3339 format (e.g. 2026-11-15T00:00:00Z)", flagName, value)
+		}
+	}
+	return nil
 }
 
 func runUsage(cmd *cobra.Command, args []string) error {
+	if err := validateUsageFlags(cmd); err != nil {
+		return err
+	}
 	c := NewClient(cmd)
 	query := usageQuery(cmd)
 	out := cmd.OutOrStdout()

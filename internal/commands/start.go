@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"io"
 	"omnillm/internal/server"
 	"os"
 	"strings"
@@ -12,16 +13,17 @@ import (
 var StartCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start the LLM proxy server",
+	Args:  cobra.NoArgs,
 	Long: `Start the OmniLLM proxy server.
 
 The server listens on --host:--port and exposes:
-  - OpenAI-compatible API at /v1/chat/completions, /v1/models, /v1/embeddings
+  - OpenAI-compatible API at /v1/chat/completions, /v1/models, /v1/embeddings, /v1/responses
   - Anthropic-compatible API at /v1/messages
   - Admin API and UI at /admin/
 
 Configuration precedence (highest to lowest):
   1. CLI flags
-  2. Environment variables (OMNILLM_SERVER, OMNILLM_API_KEY, OMNILLM_RESPONSE_CACHE_REDIS_URL, etc.)
+  2. Environment variables (OMNILLM_API_KEY, OMNILLM_RESPONSE_CACHE_REDIS_URL, etc.)
   3. Files in ~/.config/omnillm/
 
 The exact-response cache stores payloads in optional Redis/Valkey. Redis failures
@@ -31,11 +33,11 @@ The inbound --api-key defaults to a generated key stored in ~/.config/omnillm/ap
 
 By default, the command waits for readiness and leaves the server running in the
 background. Use --foreground when running under a service manager or container.`,
-	Example: `  # Start with defaults (port 5000, github-copilot provider)
+	Example: `  # Start with defaults (port 5000, bound to 127.0.0.1)
   omnillm start
 
-  # Start on a different port with a specific provider
-  omnillm start --port 8080 --provider openai-compatible
+  # Start on a different port and allow local OpenAI-compatible endpoints
+  omnillm start --port 8080 --allow-local-endpoints
 
   # Start with an explicit API key and verbose logging
   omnillm start --api-key my-secret --verbose
@@ -43,7 +45,7 @@ background. Use --foreground when running under a service manager or container.`
   # Start with rate limiting (1 request per 3 seconds, wait instead of error)
   omnillm start --rate-limit 3 --wait
 
-  # Print the Claude Code launch command after starting
+  # Print the Claude Code client configuration after starting
   omnillm start --claude-code
 
   # Stay attached for Docker, systemd, or debugging
@@ -57,14 +59,9 @@ background. Use --foreground when running under a service manager or container.`
 		if err != nil {
 			return fmt.Errorf("get host flag: %w", err)
 		}
-
 		verbose, err := cmd.Flags().GetBool("verbose")
 		if err != nil {
 			return fmt.Errorf("get verbose flag: %w", err)
-		}
-		accountType, err := cmd.Flags().GetString("account-type")
-		if err != nil {
-			return fmt.Errorf("get account-type flag: %w", err)
 		}
 		manual, err := cmd.Flags().GetBool("manual")
 		if err != nil {
@@ -90,25 +87,13 @@ background. Use --foreground when running under a service manager or container.`
 		if err != nil {
 			return fmt.Errorf("get claude-code flag: %w", err)
 		}
-		console, err := cmd.Flags().GetBool("console")
-		if err != nil {
-			return fmt.Errorf("get console flag: %w", err)
-		}
 		showToken, err := cmd.Flags().GetBool("show-token")
 		if err != nil {
 			return fmt.Errorf("get show-token flag: %w", err)
 		}
-		proxyEnv, err := cmd.Flags().GetBool("proxy-env")
-		if err != nil {
-			return fmt.Errorf("get proxy-env flag: %w", err)
-		}
 		apiKey, err := cmd.Flags().GetString("api-key")
 		if err != nil {
 			return fmt.Errorf("get api-key flag: %w", err)
-		}
-		provider, err := cmd.Flags().GetString("provider")
-		if err != nil {
-			return fmt.Errorf("get provider flag: %w", err)
 		}
 		allowLocalEndpoints, err := cmd.Flags().GetBool("allow-local-endpoints")
 		if err != nil {
@@ -146,17 +131,12 @@ background. Use --foreground when running under a service manager or container.`
 			Port:                      port,
 			Host:                      host,
 			Verbose:                   verbose,
-			AccountType:               accountType,
 			Manual:                    manual,
 			RateLimit:                 rateLimit,
 			RateLimitWait:             wait,
 			MaxConcurrentRequests:     maxConcurrent,
 			GithubToken:               githubToken,
-			ClaudeCode:                claudeCode,
-			Console:                   console,
 			ShowToken:                 showToken,
-			ProxyEnv:                  proxyEnv,
-			Provider:                  provider,
 			APIKey:                    apiKey,
 			AllowLocalEndpoints:       allowLocalEndpoints,
 			EnableConfigEdit:          enableConfigEdit,
@@ -170,10 +150,42 @@ background. Use --foreground when running under a service manager or container.`
 			return fmt.Errorf("get foreground flag: %w", err)
 		}
 		if foreground {
+			if claudeCode {
+				writeClaudeCodeConfig(cmd.OutOrStdout(), host, port)
+			}
 			return server.RunServer(options)
 		}
-		return startBackground(cmd, options)
+		if err := startBackground(cmd, options); err != nil {
+			return err
+		}
+		if claudeCode {
+			writeClaudeCodeConfig(cmd.OutOrStdout(), host, port)
+		}
+		return nil
 	},
+}
+
+func writeClaudeCodeConfig(out io.Writer, host string, port int) {
+	clientHost := strings.TrimSpace(host)
+	switch clientHost {
+	case "", "0.0.0.0", "::", "[::]":
+		clientHost = "127.0.0.1"
+	default:
+		if strings.Contains(clientHost, ":") && !strings.HasPrefix(clientHost, "[") {
+			clientHost = "[" + clientHost + "]"
+		}
+	}
+	if port <= 0 {
+		port = 5000
+	}
+	serverURL := fmt.Sprintf("http://%s:%d", clientHost, port)
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "# Claude Code Configuration")
+	fmt.Fprintln(out, "# Set your OmniLLM API key (from --api-key, OMNILLM_API_KEY, or ~/.config/omnillm/api-key):")
+	fmt.Fprintln(out, `export ANTHROPIC_AUTH_TOKEN="${OMNILLM_API_KEY:-$(cat ~/.config/omnillm/api-key)}"`)
+	fmt.Fprintf(out, "export ANTHROPIC_BASE_URL=%s/v1\n", serverURL)
+	fmt.Fprintln(out, `export OPENAI_API_KEY="${OMNILLM_API_KEY:-$(cat ~/.config/omnillm/api-key)}"`)
+	fmt.Fprintf(out, "export OPENAI_BASE_URL=%s/v1\n", serverURL)
 }
 
 func environmentOverride(fallback, name string) string {
@@ -191,19 +203,15 @@ func addStartFlags(cmd *cobra.Command) {
 	cmd.Flags().IntP("port", "p", 5000, "Port to listen on")
 	cmd.Flags().String("host", "127.0.0.1", "IP or hostname to bind the server to")
 	cmd.Flags().BoolP("verbose", "v", false, "Enable verbose logging")
-	cmd.Flags().StringP("account-type", "a", "individual", "Account type to use (individual, business, enterprise)")
 	cmd.Flags().Bool("manual", false, "Enable manual request approval")
 	cmd.Flags().IntP("rate-limit", "r", 0, "Rate limit in seconds between requests")
 	cmd.Flags().BoolP("wait", "w", false, "Wait instead of error when rate limit is hit")
 	cmd.Flags().Int("max-concurrent", 0, "Max concurrent in-flight proxy requests (0 = unlimited); excess requests get HTTP 503")
-	cmd.Flags().StringP("github-token", "g", "", "Provide GitHub token directly")
-	cmd.Flags().BoolP("claude-code", "c", false, "Generate a command to launch Claude Code with proxy config")
-	cmd.Flags().Bool("console", false, "Automatically open the admin console in your default browser")
-	cmd.Flags().Bool("show-token", false, "Show tokens on fetch and refresh")
-	cmd.Flags().Bool("proxy-env", false, "Initialize proxy from environment variables")
-	cmd.Flags().String("provider", "github-copilot", "Provider to use (github-copilot, antigravity, alibaba, etc.)")
-	cmd.Flags().String("api-key", "", "Inbound API key for protecting server routes")
-	cmd.Flags().Bool("allow-local-endpoints", false, "Allow localhost/private OpenAI-compatible endpoints")
+	cmd.Flags().StringP("github-token", "g", "", "Provide GitHub token directly for GitHub Copilot")
+	cmd.Flags().BoolP("claude-code", "c", false, "Print Claude Code client configuration after starting")
+	cmd.Flags().Bool("show-token", false, "Show tokens on /token endpoint")
+	cmd.Flags().String("api-key", "", "Inbound API key for protecting server routes (or set OMNILLM_API_KEY)")
+	cmd.Flags().Bool("allow-local-endpoints", false, "Allow localhost/private OpenAI-compatible endpoints during onboarding")
 	cmd.Flags().Bool("enable-config-edit", false, "Allow editing external config files via admin API")
 	cmd.Flags().StringSlice("allow-chrome-extension", nil, "Allow specific Chrome extension IDs for CORS (repeat flag or pass comma-separated IDs)")
 	cmd.Flags().String("response-cache-redis-url", "redis://127.0.0.1:6379/0", "Redis URL for exact-response cache storage")

@@ -79,6 +79,7 @@ func (p *Provider) SetupAuth(options *types.AuthOptions) error {
 	p.baseURL = baseURL
 	p.name = name
 	p.config = cfg
+	p.allowLocal, _ = cfg["allow_local_endpoints"].(bool)
 	p.configLoaded = true
 	return nil
 }

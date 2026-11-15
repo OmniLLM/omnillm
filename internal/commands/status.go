@@ -10,6 +10,7 @@ import (
 var StatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show server status",
+	Args:  cobra.NoArgs,
 	RunE:  runServerStatus,
 }
 
@@ -146,6 +147,7 @@ func runServerStatus(cmd *cobra.Command, args []string) error {
 var statusAuthCmd = &cobra.Command{
 	Use:   "auth",
 	Short: "Show active authentication flow status",
+	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := NewClient(cmd)
 		data, err := c.Get("/api/admin/auth-status")
