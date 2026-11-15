@@ -454,17 +454,11 @@ func resolveProviderID(cmd *cobra.Command, c *Client, args []string) (string, er
 	if err != nil {
 		return "", fmt.Errorf("fetch providers: %w", err)
 	}
-	var providers []map[string]interface{}
-	if err := json.Unmarshal(data, &providers); err != nil {
+	choices, err := providerEntityChoices(data)
+	if err != nil {
 		return "", fmt.Errorf("parse providers: %w", err)
 	}
-	ids := make([]string, 0, len(providers))
-	for _, p := range providers {
-		if id, ok := p["id"].(string); ok && id != "" {
-			ids = append(ids, id)
-		}
-	}
-	return resolveIDFromList("Select a provider:", ids)
+	return resolveEntityFromList("Select a provider:", choices)
 }
 
 // resolveVirtualModelID returns the virtual model ID from args[0] if present,
@@ -480,17 +474,9 @@ func resolveVirtualModelID(cmd *cobra.Command, c *Client, args []string) (string
 	if err != nil {
 		return "", fmt.Errorf("fetch virtual models: %w", err)
 	}
-	var resp map[string]interface{}
-	if err := json.Unmarshal(data, &resp); err != nil {
+	choices, err := virtualModelEntityChoices(data)
+	if err != nil {
 		return "", fmt.Errorf("parse virtual models: %w", err)
 	}
-	items, _ := resp["data"].([]interface{})
-	ids := make([]string, 0, len(items))
-	for _, item := range items {
-		vm, _ := item.(map[string]interface{})
-		if id, ok := vm["virtual_model_id"].(string); ok && id != "" {
-			ids = append(ids, id)
-		}
-	}
-	return resolveIDFromList("Select a virtual model:", ids)
+	return resolveEntityFromList("Select a virtual model:", choices)
 }
