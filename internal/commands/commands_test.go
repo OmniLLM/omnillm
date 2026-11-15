@@ -241,7 +241,7 @@ func TestUsageHelpers(t *testing.T) {
 
 func TestProviderCmdStructure(t *testing.T) {
 	expectedSubs := []string{
-		"list", "add", "delete", "activate", "deactivate",
+		"list", "add", "delete", "enable", "disable",
 		"switch", "rename", "priorities", "usage",
 	}
 	subNames := make(map[string]bool)

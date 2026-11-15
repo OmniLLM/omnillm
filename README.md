@@ -503,7 +503,7 @@ set -a
 source ~/.config/typesafe/env
 set +a
 omnillm provider login --new typesafe
-omnillm provider activate <instance-id>
+omnillm provider enable <instance-id>
 ```
 
 `TYPESAFE_API_KEY` supplies the upstream key; an explicit provider `--api-key`
