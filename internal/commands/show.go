@@ -4,11 +4,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"omnillm/internal/lib/providermetadata"
 )
 
 var providerShowCmd = &cobra.Command{
@@ -34,6 +38,17 @@ var providerShowCmd = &cobra.Command{
 			return err
 		}
 		details := safeProviderDetails(provider)
+		id, _ := details["id"].(string)
+		providerType, _ := details["type"].(string)
+		metadata, unavailable, err := readProviderMetadata(client, id, providerType)
+		if err != nil {
+			return err
+		}
+		if unavailable {
+			fmt.Fprintln(cmd.ErrOrStderr(), "Warning: additional provider metadata is unavailable on this server.")
+		} else {
+			addProviderMetadata(details, metadata)
+		}
 		if client.IsJSON() {
 			return writeShowJSON(cmd, details)
 		}
@@ -46,6 +61,14 @@ var providerShowCmd = &cobra.Command{
 			{key: "isActive", label: "Active"},
 			{key: "enabledModelCount", label: "Enabled models"},
 			{key: "totalModelCount", label: "Total models"},
+			{key: "authorization_endpoint", label: "OAuth authorization endpoint"},
+			{key: "token_endpoint", label: "OAuth token endpoint"},
+			{key: "oauth_client_id", label: "OAuth client ID"},
+			{key: "api_endpoint_origin", label: "API endpoint origin"},
+			{key: "region", label: "Region"},
+			{key: "plan", label: "Plan"},
+			{key: "api_format", label: "API format"},
+			{key: "api_version", label: "API version"},
 		})
 	},
 }
@@ -90,6 +113,47 @@ var modelShowCmd = &cobra.Command{
 		}
 		return fmt.Errorf("model %q not found for provider %q", args[1], args[0])
 	},
+}
+
+// readProviderMetadata does not expose response bodies from failed metadata requests.
+func readProviderMetadata(client *Client, id, providerType string) (providermetadata.Metadata, bool, error) {
+	var metadata providermetadata.Metadata
+	resp, err := client.GetStream("/api/admin/providers/" + url.PathEscape(id) + "/metadata")
+	if err != nil {
+		return metadata, false, errors.New("fetch provider metadata: request failed")
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024+1))
+	if err != nil || len(data) > 64*1024 {
+		return metadata, false, errors.New("fetch provider metadata: invalid response")
+	}
+	if resp.StatusCode == http.StatusNotFound && strings.TrimSpace(string(data)) == "404 page not found" {
+		return metadata, true, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return metadata, false, fmt.Errorf("fetch provider metadata: server returned HTTP %d", resp.StatusCode)
+	}
+	if err := json.Unmarshal(data, &metadata); err != nil || metadata.ID != id {
+		return providermetadata.Metadata{}, false, errors.New("fetch provider metadata: invalid response")
+	}
+	return providermetadata.Sanitize(providerType, metadata), false, nil
+}
+
+func addProviderMetadata(details map[string]any, metadata providermetadata.Metadata) {
+	for key, value := range map[string]string{
+		"authorization_endpoint": metadata.AuthorizationEndpoint,
+		"token_endpoint":         metadata.TokenEndpoint,
+		"oauth_client_id":        metadata.OAuthClientID,
+		"api_endpoint_origin":    metadata.APIEndpointOrigin,
+		"region":                 metadata.Region,
+		"plan":                   metadata.Plan,
+		"api_format":             metadata.APIFormat,
+		"api_version":            metadata.APIVersion,
+	} {
+		if value != "" {
+			details[key] = value
+		}
+	}
 }
 
 // findProviderForShow follows the server's ID, alias, and name precedence.

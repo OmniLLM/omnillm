@@ -17,15 +17,17 @@ import (
 var httpClient = &http.Client{Timeout: 15 * time.Second}
 
 const (
-	GitHubBaseURL    = "https://github.com"
-	GitHubAPIBaseURL = "https://api.github.com"
-	ClientID         = "Iv1.b507a08c87ecfe98"
-	AppScopes        = "read:user"
-	CopilotVersion   = "0.26.7"
-	APIVersion       = "2025-04-01"
-	UserAgent        = "GitHubCopilotChat/0.26.7"
-	EditorVersion    = "vscode/1.83.1"
-	PluginVersion    = "copilot-chat/0.26.7"
+	GitHubBaseURL               = "https://github.com"
+	GitHubAPIBaseURL            = "https://api.github.com"
+	DeviceAuthorizationEndpoint = GitHubBaseURL + "/login/device/code"
+	OAuthTokenEndpoint          = GitHubBaseURL + "/login/oauth/access_token"
+	ClientID                    = "Iv1.b507a08c87ecfe98"
+	AppScopes                   = "read:user"
+	CopilotVersion              = "0.26.7"
+	APIVersion                  = "2025-04-01"
+	UserAgent                   = "GitHubCopilotChat/0.26.7"
+	EditorVersion               = "vscode/1.83.1"
+	PluginVersion               = "copilot-chat/0.26.7"
 )
 
 // DeviceCodeResponse from GitHub's device code endpoint
@@ -70,7 +72,7 @@ func GetDeviceCode() (*DeviceCodeResponse, error) {
 		"scope":     AppScopes,
 	})
 
-	req, err := http.NewRequest("POST", GitHubBaseURL+"/login/device/code", bytes.NewBuffer(body))
+	req, err := http.NewRequest("POST", DeviceAuthorizationEndpoint, bytes.NewBuffer(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -118,7 +120,7 @@ func PollAccessTokenContext(ctx context.Context, deviceCode *DeviceCodeResponse)
 	defer cancel()
 
 	for pollCtx.Err() == nil {
-		req, err := http.NewRequestWithContext(pollCtx, "POST", GitHubBaseURL+"/login/oauth/access_token", bytes.NewBuffer(body))
+		req, err := http.NewRequestWithContext(pollCtx, "POST", OAuthTokenEndpoint, bytes.NewBuffer(body))
 		if err != nil {
 			return "", fmt.Errorf("failed to create request: %w", err)
 		}

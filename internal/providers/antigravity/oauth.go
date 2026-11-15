@@ -16,8 +16,11 @@ import (
 )
 
 const (
-	googleAuthURL  = "https://accounts.google.com/o/oauth2/v2/auth"
-	googleTokenURL = "https://oauth2.googleapis.com/token"
+	// AuthorizationEndpoint and TokenEndpoint are stable OAuth endpoints, not flow-specific URLs.
+	AuthorizationEndpoint = "https://accounts.google.com/o/oauth2/v2/auth"
+	TokenEndpoint         = "https://oauth2.googleapis.com/token"
+	googleAuthURL         = AuthorizationEndpoint
+	googleTokenURL        = TokenEndpoint
 
 	// Scopes required to call the Antigravity (Cloud Code) API.
 	OAuthScopes = "https://www.googleapis.com/auth/cloud-platform openid email"

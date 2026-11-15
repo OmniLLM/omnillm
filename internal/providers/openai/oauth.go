@@ -25,10 +25,12 @@ import (
 )
 
 const (
-	// oauthAuthorizeURL is the ChatGPT authorization endpoint.
-	oauthAuthorizeURL = "https://auth.openai.com/oauth/authorize"
-	// oauthTokenURL exchanges/refreshes authorization codes and tokens.
-	oauthTokenURL = "https://auth.openai.com/oauth/token"
+	// AuthorizationEndpoint is the stable ChatGPT OAuth authorization endpoint.
+	AuthorizationEndpoint = "https://auth.openai.com/oauth/authorize"
+	// TokenEndpoint exchanges or refreshes authorization codes and tokens.
+	TokenEndpoint     = "https://auth.openai.com/oauth/token"
+	oauthAuthorizeURL = AuthorizationEndpoint
+	oauthTokenURL     = TokenEndpoint
 
 	// OAuthClientID is the public client ID used by the Codex CLI. The ChatGPT
 	// OAuth service only accepts this client for the Codex backend.

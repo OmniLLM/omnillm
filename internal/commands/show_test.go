@@ -48,7 +48,7 @@ func runShowForTest(t *testing.T, command *cobra.Command, serverURL, output stri
 	root.AddCommand(copyCommand)
 	var result bytes.Buffer
 	root.SetOut(&result)
-	root.SetErr(&result)
+	root.SetErr(&bytes.Buffer{})
 	root.SetArgs(append([]string{"show"}, args...))
 	err := root.Execute()
 	return result.String(), err
@@ -56,6 +56,10 @@ func runShowForTest(t *testing.T, command *cobra.Command, serverURL, output stri
 
 func TestProviderShowReferenceResolution(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/admin/providers" {
+			http.NotFound(w, r)
+			return
+		}
 		if r.Method != http.MethodGet || r.URL.Path != "/api/admin/providers" {
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
@@ -106,7 +110,11 @@ func TestProviderShowReferenceResolution(t *testing.T) {
 }
 
 func TestProviderShowSafeOutput(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/admin/providers" {
+			http.NotFound(w, r)
+			return
+		}
 		fmt.Fprint(w, showProvidersFixture)
 	}))
 	defer server.Close()
@@ -141,7 +149,11 @@ func TestProviderShowSafeOutput(t *testing.T) {
 }
 
 func TestProviderShowRejectsNonScalarSafeFields(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/admin/providers" {
+			http.NotFound(w, r)
+			return
+		}
 		fmt.Fprint(w, `[{"id":"first","name":{"api_key":"nested-secret"},"isActive":{"token":"nested-secret"},"totalModelCount":{"token":"nested-secret"}}]`)
 	}))
 	defer server.Close()

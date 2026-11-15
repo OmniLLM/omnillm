@@ -413,7 +413,7 @@ unless the operator explicitly requests hidden fields.
 - **THEN** formatting preserves existing model aliases and redundant-field suppression without inventing HTTP fields
 
 ### Requirement: Provider and model detail inspection
-The CLI SHALL provide `omnillm provider show <reference>` and `omnillm provider model show <reference> <model-id>` to inspect one configured provider or one of its catalog models. Provider references SHALL use exact instance ID, then unique case-insensitive alias, then unique case-insensitive display name, consistent with provider reference resolution. Model IDs SHALL match exactly, including embedded slashes. Both commands SHALL support table and JSON output. Provider details SHALL include the available ID, type, name, alias, authentication status, activation status, and model counts. Model details SHALL include available ID, name, enablement, description, token limits, and capabilities. The provider show command MUST omit configuration and unknown fields from both output formats so that credential material in those fields is not exposed.
+The CLI SHALL provide `omnillm provider show <reference>` and `omnillm provider model show <reference> <model-id>` to inspect one configured provider or one of its catalog models. Provider references SHALL use exact instance ID, then unique case-insensitive alias, then unique case-insensitive display name, consistent with provider reference resolution. Model IDs SHALL match exactly, including embedded slashes. Both commands SHALL support table and JSON output. Provider details SHALL include the available ID, type, name, alias, authentication status, activation status, and model counts, together with available allowlisted non-secret authentication and provider metadata, such as a stable authorization endpoint and OAuth client ID. Model details SHALL include available ID, name, enablement, description, token limits, and capabilities. The provider show command MUST omit raw configuration, unknown fields, credentials, and temporary authorization material from both output formats.
 
 #### Scenario: Show provider by alias
 - **WHEN** an operator invokes `omnillm provider show` with a unique alias
@@ -446,6 +446,14 @@ The CLI SHALL provide `omnillm provider show <reference>` and `omnillm provider 
 #### Scenario: Existing model command compatibility
 - **WHEN** an operator invokes the hidden legacy root form `omnillm model show <reference> <model-id>`
 - **THEN** it performs the same inspection as `omnillm provider model show`
+
+#### Scenario: Authentication metadata is available
+- **WHEN** an operator shows a provider for which a stable OAuth authorization endpoint and public client ID are available
+- **THEN** the CLI displays those fields in table and JSON output without displaying a temporary authorization URL
+
+#### Scenario: Metadata unavailable on an older server
+- **WHEN** provider inspection succeeds against an older server that does not expose the metadata endpoint
+- **THEN** the CLI retains the existing safe details and reports that additional metadata is unavailable without inventing fields
 
 ### Requirement: Provider enable and disable commands
 
