@@ -31,6 +31,9 @@ func TestCatalogRefreshRestoresAllClientToolHistories(t *testing.T) {
 	for _, fixture := range testcompat.ClientCacheFixtures() {
 		t.Run(fixture.Name, func(t *testing.T) {
 			expected = fixture.Exchanges
+			// Activation schedules persistence that borrows the provider; finish it
+			// before replacing the fixture's lifecycle and catalog snapshot.
+			registry.GetProviderRegistry().WaitForPendingSaves()
 			p.models = &types.ModelsResponse{Data: []types.Model{{ID: "fallback"}}, Degraded: true}
 			// Replace registration to retire a previous successful snapshot.
 			if err := registry.GetProviderRegistry().Register(p, false); err != nil {
